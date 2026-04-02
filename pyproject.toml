@@ -1,9 +1,9 @@
 [project]
 name = "spectral-comparison"
 version = "0.1.0"
-description = "Analysis of EEG PATHS project data"
+description = "Analysis of intractranial and reconstructed spectral features"
 readme = "README.md"
-requires-python = ">=3.13.11, <=3.14"
+requires-python = ">=3.13.11"
 dependencies = [
     "mne",
     "polars",
@@ -12,6 +12,7 @@ dependencies = [
     "pyrasa",
     "pesco",
     "seaborn",
+    "great-docs"
     
 
     
