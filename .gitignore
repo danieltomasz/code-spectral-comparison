@@ -74,3 +74,5 @@ _drafts/
 nencki/
 code/
 data/
+# Great Docs build directory (ephemeral, do not commit)
+great-docs/
