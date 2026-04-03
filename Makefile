@@ -30,3 +30,6 @@ context-py:
 
 ch2:
 	quarto render manuscript/chapter_2.qmd --to pdf
+
+docs:
+	 uv run great-docs build && great-docs preview 

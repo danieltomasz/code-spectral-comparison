@@ -13,9 +13,6 @@ dependencies = [
     "pesco",
     "seaborn",
     "great-docs"
-    
-
-    
 ]
 
 [project.optional-dependencies]
