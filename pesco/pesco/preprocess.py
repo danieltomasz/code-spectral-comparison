@@ -230,7 +230,7 @@ def get_psd_mat(data, Fs, ch_names, name="power_ieeg.csv", save_psd=False):
 
 
 def prepare_psd(matfile, region_dict_file):
-    """Load matlab file  provided with Frauscher, B. et all (2018). Atlas of the normal intracranial electroencephalogram:neurophysiological awake activity in different cortical areas. Brain, 141(4), 1130–1144. https://doi.org/10/gc5ct7
+    """Load matlab file  provided with Frauscher, B. et all (2018). Atlas of the normal intracranial electroencephalogram:neurophysiological awake activity in different cortical areas. Brain, 141(4), 1130-1144. https://doi.org/10/gc5ct7
     A pandas dataframe with psd returned
     """
 
