@@ -92,14 +92,14 @@ def load_sources(
 
     # folders = sorted(os.listdir(DATA_PATH))
     # A is temporaty df with names of regions
-    A = pd.read_csv(hd_dataset_path + "/RegionInformation.csv")
+    A = pd.read_csv(currentDirectory / "RegionInformation.csv")
     A = pd.DataFrame(A.values.repeat(2, axis=0), columns=A.columns)
     matlab_df = pd.DataFrame()
     result = pd.DataFrame()
     # iter over folders to read the data or load single
     if specific:
         for currentfold in sorted(currentDirectory.iterdir()):
-            if str(currentfold) == hd_dataset_path + str(specific):
+            if currentfold == currentDirectory / str(specific):
                 A, matlab_df, result = concat_mat(currentfold, A, matlab_df, result)
     else:
         for currentfold in sorted(currentDirectory.iterdir()):

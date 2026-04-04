@@ -28,7 +28,8 @@ dev = [
     "ipympl",
    "nbstripout",
    "pre-commit",
-   "watermark"
+   "watermark",
+   "mlxtend"
     
 ]
 

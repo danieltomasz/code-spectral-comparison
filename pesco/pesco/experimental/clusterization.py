@@ -4,17 +4,14 @@
 # # Frequency peaks in intracranial and  reconstructed sources data
 #
 # %%
+from __future__ import annotations
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib
 import matplotlib.ticker
-from matplotlib import collections as mc
-import sklearn
-import mpltex
-
-# import pesco.utils as utils
-import pesco.preprocess as preprocess
+import sklearn.metrics.pairwise
 
 from scipy import stats
 
@@ -24,7 +21,7 @@ seed = 3
 
 # %%
 
-def _elbow_scores(df, n):
+def _elbow_scores(df: pd.DataFrame, n: int) -> np.ndarray:
     from sklearn.cluster import KMeans
     from scipy.spatial.distance import cdist, pdist
 
@@ -32,19 +29,19 @@ def _elbow_scores(df, n):
     centroids = [X.cluster_centers_ for X in kMeansVar]
     k_euclid = [cdist(df.values, cent) for cent in centroids]
     dist = [np.min(ke, axis=1) for ke in k_euclid]
-    wcss = [sum(d**2) for d in dist]
+    wcss = np.array([sum(d**2) for d in dist])
     tss = sum(pdist(df.values) ** 2) / df.values.shape[0]
     bss = tss - wcss
     return bss
 
 
-def eblow(df, n):
+def eblow(df: pd.DataFrame, n: int) -> None:
     bss = _elbow_scores(df, n)
     plt.plot(bss)
     plt.show()
 
 
-def _elbow_scores_psd(psd_df, n):
+def _elbow_scores_psd(psd_df: pd.DataFrame, n: int) -> dict[int, float]:
     from sklearn.cluster import KMeans
 
     psd_df = psd_df[0:160]
@@ -55,7 +52,7 @@ def _elbow_scores_psd(psd_df, n):
     return sse
 
 
-def eblow_psd(psd_df, n):
+def eblow_psd(psd_df: pd.DataFrame, n: int) -> None:
     sse = _elbow_scores_psd(psd_df, n)
     plt.figure()
     plt.plot(list(sse.keys()), list(sse.values()))
@@ -64,7 +61,7 @@ def eblow_psd(psd_df, n):
     plt.show()
 
 
-def compute_clusters(psd_df, HowManyClusters, random_seed=2):
+def compute_clusters(psd_df: pd.DataFrame, HowManyClusters: int, random_seed: int = 2) -> pd.DataFrame:
     power = psd_df.values
 
     from sklearn.preprocessing import Normalizer
@@ -89,7 +86,7 @@ def compute_clusters(psd_df, HowManyClusters, random_seed=2):
 
 
 
-def identify_small_clusters(psd_medianas):
+def identify_small_clusters(psd_medianas: pd.DataFrame) -> list[int]:
     """Return indices of clusters whose median is below all other clusters' max at every frequency."""
     smal = []
     for index, row in psd_medianas.iterrows():
@@ -100,7 +97,7 @@ def identify_small_clusters(psd_medianas):
 
 
 
-def get_no_peak(psd_clust, smal):
+def get_no_peak(psd_clust: pd.DataFrame, smal: list[int]) -> tuple[pd.DataFrame, np.ndarray]:
     no_peak = psd_clust[psd_clust["clusters"] == smal[0]]
     no_peak = no_peak[no_peak.columns[:-1]]
     median = np.median(no_peak, 0)
@@ -118,7 +115,7 @@ def get_no_peak(psd_clust, smal):
 
 
 # plot by lobe
-def cutintervals(x):
+def cutintervals(x: np.ndarray) -> tuple[pd.Categorical, np.ndarray]:
     intervals = (
         0.5,
         0.75,
@@ -148,14 +145,14 @@ def cutintervals(x):
     return colBin, y
 
 
-def get_intervals(psd, colbin):
+def get_intervals(psd: pd.DataFrame, colbin: pd.Categorical) -> pd.DataFrame:
     dictionary = dict(zip(psd.columns, colbin))
     psd_intervals = psd.T.groupby(dictionary).sum().T
     psd_intervals.columns = psd_intervals.columns.astype(str, copy=False)
     return psd_intervals
 
 
-def plot_intervals(psd_intervals, i, dataset):
+def plot_intervals(psd_intervals: pd.DataFrame, i: int, dataset: str) -> None:
 
     #
     fig, ax = plt.subplots(1, 2, sharex=False, figsize=(30, 15))
@@ -224,7 +221,7 @@ def plot_intervals(psd_intervals, i, dataset):
     plt.show()
 
 
-def plot_ecdf(v1, v2, lobe, idxCol, l):
+def plot_ecdf(v1: np.ndarray, v2: np.ndarray, lobe: str, idxCol: str, interval: list[float]) -> None:
     from mlxtend.plotting import ecdf
 
     fig, ax = plt.subplots()
@@ -237,12 +234,12 @@ def plot_ecdf(v1, v2, lobe, idxCol, l):
     ax.set_title(lobe + idxCol)
     ax.legend(["lobe", "no peak"], loc="upper left")
     plt.savefig(
-        "images/" + lobe + "_" + str(l[0]) + "_" + str(l[1]) + "_interval.svg",
+        "images/" + lobe + "_" + str(interval[0]) + "_" + str(interval[1]) + "_interval.svg",
         format="svg",
     )
 
 
-def is_number(s):
+def is_number(s: str) -> bool:
     try:
         float(s)
         return True
@@ -250,10 +247,10 @@ def is_number(s):
         return False
 
 
-def return_signifcant(temp, df_intervals, print_debug=False):
+def return_signifcant(temp: pd.DataFrame, df_intervals: pd.DataFrame, print_debug: bool = False) -> list[list[tuple[float, float]]]:
     import re
-    import rpy2
     from rpy2.robjects.packages import importr
+    from rpy2.robjects.vectors import FloatVector
 
     rstats = importr("stats")
     list_of_intervals = []
@@ -264,8 +261,8 @@ def return_signifcant(temp, df_intervals, print_debug=False):
         t, pval = stats.ks_2samp(v1, v2)
         # details of r function https://rdrr.io/cran/dgof/man/ks.test.html
         # ther is no computation of True value only assymptotic aproximation
-        v1 = rpy2.robjects.vectors.FloatVector(v1)
-        v2 = rpy2.robjects.vectors.FloatVector(v2)
+        v1 = FloatVector(v1)
+        v2 = FloatVector(v2)
         htest = rstats.ks_test(v1, v2, alternative="less", exact=False)
         htestlist = list(htest)
         t = htestlist[0][0]
@@ -274,10 +271,9 @@ def return_signifcant(temp, df_intervals, print_debug=False):
         p = 0.05
         y = 0.08
         if pval < p:
-            p = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")
-            l = p.findall(idxCol)
-            l = [float(i) for i in l]
-            list_of_intervals.append([(l[0], y), (l[1], y)])
+            pattern = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")
+            bounds = [float(v) for v in pattern.findall(idxCol)]
+            list_of_intervals.append([(bounds[0], y), (bounds[1], y)])
             # print('list of intervals', *list_of_intervals, sep = ", ")
             print(idxCol, t, format(pval, ".5f")) if print_debug else True
             # plot_ecdf(v1, v2, lobe, idxCol, l)
@@ -285,7 +281,7 @@ def return_signifcant(temp, df_intervals, print_debug=False):
     return list_of_intervals
 
 
-def return_signifcant_lobes(df, psd, colbin, print_debug=False):
+def return_signifcant_lobes(df: pd.DataFrame, psd: pd.DataFrame, colbin: pd.Categorical, print_debug: bool = False) -> dict[str, list[list[tuple[float, float]]]]:
 
     # psd_intervals = psd_intervals.astype(float)
     psd_intervals = get_intervals(psd, colbin)
@@ -305,7 +301,7 @@ def return_signifcant_lobes(df, psd, colbin, print_debug=False):
     return dictate
 
 
-def convertsvg():
+def convertsvg() -> None:
     import cairosvg
     import glob
 
@@ -314,7 +310,7 @@ def convertsvg():
         cairosvg.svg2png(url=name + ".svg", write_to=name + ".png")
 
 
-def check_intervals(psd, colbin, dataset, cols_to_drop=None):
+def check_intervals(psd: pd.DataFrame, colbin: pd.Categorical, dataset: str, cols_to_drop: list[str] | None = None) -> None:
     # Drop non-numeric columns if specified
     if cols_to_drop is None:
         cols_to_drop = ["Region name", "Lobe"]
@@ -328,80 +324,10 @@ def check_intervals(psd, colbin, dataset, cols_to_drop=None):
     plot_intervals(psd_intervals_mean, 0, dataset)
 
 
-def ceildiv(a, b):
+def ceildiv(a: int, b: int) -> int:
     return -(-a // b)
 
 
-def pipeline_lobe(dataset, f, psd, psd_clust, smal):
-    df, median = get_no_peak(psd_clust, smal)
-    colbin, _ = cutintervals(f)
-
-    dictate = return_signifcant_lobes(df, psd, colbin)
-    plot_lobes(psd_clust, psd, f, smal, dataset, dictate, show=True)
-
-
-mpltex.presentation_decorator
-
-
-def pipeline_regions(dataset, f, psd, psd_clust, smal):
-    matplotlib.rcParams.update({"font.size": 8})
-    df, median = get_no_peak(psd_clust, smal)
-    colbin, y = cutintervals(f)
-    df_intervals = get_intervals(df, colbin)
-    for iterate_lobe in psd["Lobe"].unique():
-        regions = psd[psd.Lobe == iterate_lobe]["Region name"].unique()
-        dictate = dict()
-        how_long = ceildiv(
-            len(psd[psd.Lobe == iterate_lobe]["Region name"].unique()), 2
-        )
-        fig, axes = plt.subplots(how_long, 2, figsize=(10, 8 * ceildiv(how_long, 2)))
-        # fig.suptitle('Regional differences in '+ iterate_lobe  + 'in' +  dataset )
-        fig.subplots_adjust(hspace=0.25)
-        fig.subplots_adjust(wspace=0.25)
-        for ax, iterate_region in zip(axes.flatten(), regions):
-            temp_region = psd[
-                (psd.Lobe == iterate_lobe) & (psd["Region name"] == iterate_region)
-            ]
-            temp_intervals = get_intervals(
-                temp_region.drop(["Region name", "Lobe"], axis=1), colbin
-            )
-            dictate[iterate_region] = return_signifcant(
-                temp_intervals, df_intervals, print_debug=False
-            )
-            plot_subplot(
-                temp_region.drop(["Region name", "Lobe"], axis=1),
-                median,
-                f,
-                dictate,
-                iterate_region,
-                ax,
-                print_debug=False,
-            )
-
-        # fig.tight_layout()
-        fig.get_axes()[0].annotate(
-            "Regional differences in "
-            + iterate_lobe.lower()
-            + " lobe ("
-            + dataset
-            + ")",
-            (0.5, 0.95),
-            xycoords="figure fraction",
-            ha="center",
-            fontsize=24,
-        )
-        plt.savefig(
-            "images/"
-            + dataset
-            + "_"
-            + iterate_lobe
-            + "_"
-            + "_regional_differences.svg",
-            format="svg",
-            bbox_inches="tight",
-            pad_inches=0,
-        )
-        plt.show()
 
 
 # Unsupervised classification of channels and no-peak set.
@@ -416,56 +342,3 @@ def pipeline_regions(dataset, f, psd, psd_clust, smal):
 #    if not os.path.exists(images):
 #       os.makedirs(images)
 
-# %%
-# importing dataset and finding cluserisation
-if __name__ == "__main__":
-    dataset = "intracranial data"
-    f, psd = preprocess.prepare_psd()
-    psd_clust, smal = preprocess.plot_specific_clusterisation(
-        psd.drop(["Region name", "Lobe"], axis=1),
-        f,
-        8,
-        seed,
-        dataset=dataset,
-        ifall=False,
-        nopeak=1,
-    )
-    # %%
-    colbin, _ = cutintervals(f)
-    check_intervals(psd, colbin, dataset)
-    pipeline_lobe(dataset, f, psd, psd_clust, smal)
-    pipeline_regions(dataset, f, psd, psd_clust, smal)
-
-    # %%
-    dataset = "reconstructed sources"
-    DATA_PATH = "/home/daniel/PhD/data/Mantini2018"
-    datafolder = "/home/daniel/PhD/notebooks/pesco-pipeline/data/preproc/"
-    raw_src, result = preprocess.load_sources(DATA_PATH)
-    f, psd_source_clust = preprocess.get_psd_mat(
-        raw_src._data,
-        raw_src.info["sfreq"],
-        raw_src.info["ch_names"],
-        name="power_ieeg.csv",
-        save_psd=False,
-    )
-    Y = psd_source_clust.join(result)
-    psd_clust, smal = preprocess.plot_specific_clusterisation(
-        Y.drop(["Region name", "Lobe", "region_number", "dataset"], axis=1),
-        f,
-        6,
-        seed,
-        dataset=dataset,
-        ifall=False,
-        nopeak=4,
-    )
-    psd = Y.drop(["region_number", "dataset"], axis=1)
-
-    # %%
-    check_intervals(psd, colbin, dataset)
-    pipeline_lobe(dataset, f, psd, psd_clust, smal)
-    pipeline_regions(dataset, f, psd, psd_clust, smal)
-#    pipeline(dataset, f, psd, psd_clust, smal)
-# %% % plot per regions significant areas per regions
-
-# Subplots are organized in a Rows x Cols Grid
-# Tot and Cols are known
