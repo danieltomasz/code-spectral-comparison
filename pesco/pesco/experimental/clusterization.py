@@ -87,38 +87,9 @@ def compute_clusters(psd_df, HowManyClusters, random_seed=2):
     return psd_df
 
 
-def plot_psd_clusters(psd_df, f, dataset, smal=[], nopeak=[]):
-    psd_medianas = psd_df.groupby("clusters").median()
-    matplotlib.rcParams.update({"font.size": 16})
-    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-    for k in range(0, len(psd_medianas.index)):
-        mediana = psd_medianas.loc[k]
-        temp_label = (
-            "cl. " + str(k) + " (" + str(psd_df["clusters"].value_counts().loc[k]) + " el.)"
-        )
-        if k in smal and k == nopeak:
-            ax.semilogx(f, mediana, linewidth=4.0, color="black", label=temp_label)
-        elif k == nopeak:
-            ax.semilogx(f, mediana, linestyle=":", linewidth=5.0, label=temp_label)
-        else:
-            ax.semilogx(f, mediana, alpha=0.5, label=temp_label)
-    ax.legend()
-    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax.grid()
-    coordinates = [2, 6, 10, 16, 36]
-    textes = [r"""$\delta$""", r"""$\theta$""", r"""$\alpha$""", r"""$\beta$""", r"""$\gamma$"""]
-    for t, text in zip(coordinates, textes):
-        ax.text(t, 0.05, text, fontsize=14)
-    ax.set_xlabel("Frequency")
-    ax.set_ylabel("Normalized spectral density")
-    plt.title("Median power of different  PSDs clusters of " + dataset)
-    plt.savefig("images/" + dataset + "_clusters.svg", format="svg")
-    plt.show()
-    return (fig, ax)
 
 
-def _identify_small_clusters(psd_medianas):
+def identify_small_clusters(psd_medianas):
     """Return indices of clusters whose median is below all other clusters' max at every frequency."""
     smal = []
     for index, row in psd_medianas.iterrows():
@@ -127,26 +98,6 @@ def _identify_small_clusters(psd_medianas):
             smal.append(index)
     return smal
 
-
-def plot_specific_clusterisation(
-    psd, f, HowManyClusters, seed, dataset, ifall=False, nopeak=[], print_debug=False
-):
-    psd_df = compute_clusters(psd, HowManyClusters, seed)
-    psd_medianas = psd_df.groupby("clusters").median()
-    smal = _identify_small_clusters(psd_medianas)
-    if print_debug:
-        print()
-        for index in smal:
-            print()
-            print("cluster", index, "when we have", HowManyClusters, "clusters")
-    if ifall:
-        for nopeak in range(0, HowManyClusters):
-            fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak)
-    else:
-        fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak)
-        print(nopeak) if print_debug else True
-    print(psd_df["clusters"].value_counts()) if print_debug else True
-    return psd_df, smal
 
 
 def get_no_peak(psd_clust, smal):

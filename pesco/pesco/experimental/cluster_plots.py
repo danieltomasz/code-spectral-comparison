@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib
 from matplotlib import collections as mc
 
-from pesco.experimental.clusterization import get_no_peak
+from pesco.experimental.clusterization import get_no_peak, identify_small_clusters, compute_clusters
 
 def plot_single_psd(psd_df, f, i):
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
@@ -20,93 +20,27 @@ def plot_single_psd(psd_df, f, i):
 
 
 
-def plot_max(psd_df, print_debug=False):
-    # maxy = np.zeros([HowManyClusters,160]) #HowManyClusters = numbers of clusters
-    HowManyClusters = len(psd_df["clusters"].unique())
-    for l in range(0, HowManyClusters):
-        MeanClusterSpectrum = np.mean(psd_df["clusters" == l])
-        MeanClusterSpectrum = MeanClusterSpectrum[:-1]
-        logicalmax = np.zeros([1, HowManyClusters])
-        for k in range(0, HowManyClusters):
-            # Maxima along the spectrum axis
-            maxi = np.amax(psd_df["clusters" == k], 0)
-            # last column is for  remembering label, we dont need it temporarily
-            maxi = maxi[:-1]
-            logicalsum = sum(np.less(MeanClusterSpectrum, maxi))
-            if logicalsum == 160:
-                logicalmax[0, k] = 1
-        if np.sum(logicalmax) == HowManyClusters:
-            print(l) if print_debug else True
-        # print cluster number, if  averege of it is smaller in every bin than maximal values in other clusters
-
 def plot_psd_clusters(psd_df, f, dataset, smal=[], nopeak=[]):
-    #    import os
-    #    dir = os.path.dirname(__file__)
-    #    images = os.path.join(dir, '/images/')
-    #    if not os.path.exists(images):
-    #       os.makedirs(images)
-
     psd_medianas = psd_df.groupby("clusters").median()
-    # HowManyClusters = len(psd_df["clusters"].unique())
-    # plt.close()
     matplotlib.rcParams.update({"font.size": 16})
-
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-    # plot means of the clusters
     for k in range(0, len(psd_medianas.index)):
-        # srednia = np.mean(psd_df[cluster_labels==k])
-        # srednia = srednia[:-1]
         mediana = psd_medianas.loc[k]
-
+        temp_label = (
+            "cl. " + str(k) + " (" + str(psd_df["clusters"].value_counts().loc[k]) + " el.)"
+        )
         if k in smal and k == nopeak:
-            temp_label = (
-                "cl. "
-                + str(k)
-                + " ("
-                + str(psd_df["clusters"].value_counts().loc[k])
-                + " el.)"
-            )
             ax.semilogx(f, mediana, linewidth=4.0, color="black", label=temp_label)
         elif k == nopeak:
-            temp_label = (
-                "cl. "
-                + str(k)
-                + " ("
-                + str(psd_df["clusters"].value_counts().loc[k])
-                + " el.)"
-            )
             ax.semilogx(f, mediana, linestyle=":", linewidth=5.0, label=temp_label)
-
         else:
-            temp_label = (
-                "cl. "
-                + str(k)
-                + " ("
-                + str(psd_df["clusters"].value_counts().loc[k])
-                + " el.)"
-            )
-
             ax.semilogx(f, mediana, alpha=0.5, label=temp_label)
-
-        # plt.xscale('log')
-        # plt.xlim(0.5, 80)
-        # xticks = [1, 2, 4, 8, 16, 32, 64]
-        # ticklabels = ['1', '2', '4', '8', '16', '32', '64']
-        # plt.xticks(xticks, ticklabels)
-
-    # ax.legend(range(0,len(psd_medianas.index))  )
     ax.legend()
     ax.set_xticks([0.5, 4, 8, 13, 30, 80])
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax.grid()
     coordinates = [2, 6, 10, 16, 36]
-    textes = [
-        r"""$\delta$""",
-        r"""$\theta$""",
-        r"""$\alpha$""",
-        r"""$\beta$""",
-        r"""$\gamma$""",
-    ]
+    textes = [r"""$\delta$""", r"""$\theta$""", r"""$\alpha$""", r"""$\beta$""", r"""$\gamma$"""]
     for t, text in zip(coordinates, textes):
         ax.text(t, 0.05, text, fontsize=14)
     ax.set_xlabel("Frequency")
@@ -115,6 +49,28 @@ def plot_psd_clusters(psd_df, f, dataset, smal=[], nopeak=[]):
     plt.savefig("images/" + dataset + "_clusters.svg", format="svg")
     plt.show()
     return (fig, ax)
+
+
+def plot_specific_clusterisation(
+    psd, f, HowManyClusters, seed, dataset, ifall=False, nopeak=[], print_debug=False
+):
+    psd_df = compute_clusters(psd, HowManyClusters, seed)
+    psd_medianas = psd_df.groupby("clusters").median()
+    smal = identify_small_clusters(psd_medianas)
+    if print_debug:
+        print()
+        for index in smal:
+            print()
+            print("cluster", index, "when we have", HowManyClusters, "clusters")
+    if ifall:
+        for nopeak in range(0, HowManyClusters):
+            fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak)
+    else:
+        fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak)
+        print(nopeak) if print_debug else True
+    print(psd_df["clusters"].value_counts()) if print_debug else True
+    return psd_df, smal
+
 
 
 def plot_subplot(temp, median, f, dictate, lobe, ax=None, print_debug=False):
