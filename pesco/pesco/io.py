@@ -99,7 +99,7 @@ def load_sources(
     # iter over folders to read the data or load single
     if specific:
         for currentfold in sorted(currentDirectory.iterdir()):
-            if currentfold == currentDirectory / str(specific):
+            if currentfold.is_dir() and int(currentfold.name[7:]) == specific:
                 A, matlab_df, result = concat_mat(currentfold, A, matlab_df, result)
     else:
         for currentfold in sorted(currentDirectory.iterdir()):
