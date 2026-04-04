@@ -64,10 +64,6 @@ def eblow_psd(psd_df, n):
     plt.show()
 
 
-
-
-
-
 def compute_clusters(psd_df, HowManyClusters, random_seed=2):
     power = psd_df.values
 

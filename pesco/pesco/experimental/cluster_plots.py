@@ -1,5 +1,10 @@
 import matplotlib.pyplot as plt
+import matplotlib.ticker
+import numpy as np
+import matplotlib
+from matplotlib import collections as mc
 
+from pesco.experimental.clusterization import get_no_peak
 
 def plot_single_psd(psd_df, f, i):
     fig, ax = plt.subplots(1, 1, figsize=(8, 4))
@@ -95,35 +100,21 @@ def plot_psd_clusters(psd_df, f, dataset, smal=[], nopeak=[]):
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax.grid()
     coordinates = [2, 6, 10, 16, 36]
-
-
-def plot_specific_clusterisation(
-    psd, f, HowManyClusters, seed, dataset, ifall=False, nopeak=[], print_debug=False
-):
-    psd_df = compute_clusters(psd, HowManyClusters, seed)
-    psd_medianas = psd_df.groupby("clusters").median()
-    smal = []
-    print() if print_debug else True
-    for index, row in psd_medianas.iterrows():
-        #            temp = psd_medianas.copy.drop(psd_medianas.index[index])
-
-        max_completion = psd_medianas.iloc[psd_medianas.index != index, :].max()
-        smaller = np.sum(np.less(row, max_completion))
-        # print( "cluster ", index , " is smaller on  ", smaller , "frequencies")
-        if smaller == 160:
-            print() if print_debug else True
-            print(
-                "cluster", index, "when we have", HowManyClusters, "clusters"
-            ) if print_debug else True
-            smal.append(index)
-    if ifall:
-        for nopeak in range(0, HowManyClusters):
-            fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak)
-    else:
-        fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak)
-        print(nopeak) if print_debug else True
-    print(psd_df["clusters"].value_counts()) if print_debug else True
-    return psd_df, smal
+    textes = [
+        r"""$\delta$""",
+        r"""$\theta$""",
+        r"""$\alpha$""",
+        r"""$\beta$""",
+        r"""$\gamma$""",
+    ]
+    for t, text in zip(coordinates, textes):
+        ax.text(t, 0.05, text, fontsize=14)
+    ax.set_xlabel("Frequency")
+    ax.set_ylabel("Normalized spectral density")
+    plt.title("Median power of different  PSDs clusters of " + dataset)
+    plt.savefig("images/" + dataset + "_clusters.svg", format="svg")
+    plt.show()
+    return (fig, ax)
 
 
 def plot_subplot(temp, median, f, dictate, lobe, ax=None, print_debug=False):
