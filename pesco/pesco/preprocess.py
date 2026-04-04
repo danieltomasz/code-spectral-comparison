@@ -16,7 +16,7 @@ import scipy
 
 
 # %% filters
-def butter_bandpass(lowcut, highcut, fs, order=5):
+def butter_bandpass(lowcut: float, highcut: float, fs: float, order: int = 5) -> tuple[np.ndarray, np.ndarray]:
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
@@ -24,13 +24,13 @@ def butter_bandpass(lowcut, highcut, fs, order=5):
     return b, a
 
 
-def butter_bandpass_filtfilt(data, lowcut, highcut, fs, order=5):
+def butter_bandpass_filtfilt(data: np.ndarray, lowcut: float, highcut: float, fs: float, order: int = 5) -> np.ndarray:
     b, a = butter_bandpass(lowcut, highcut, fs, order=order)
     y = scipy.signal.filtfilt(b, a, data)
     return y
 
 
-def notch_default(x, cf, bw, Fs, order=3):
+def notch_default(x: np.ndarray, cf: float, bw: float, Fs: float, order: int = 3) -> tuple[np.ndarray, list[np.ndarray]]:
     nyq_rate = Fs / 2.0
     f_range = [cf - bw / 2.0, cf + bw / 2.0]
     Wn = (f_range[0] / nyq_rate, f_range[1] / nyq_rate)
@@ -38,7 +38,7 @@ def notch_default(x, cf, bw, Fs, order=3):
     return scipy.signal.filtfilt(b, a, x), [b, a]
 
 
-def filter_network(raw, yes=True):
+def filter_network(raw: mne.io.BaseRaw, yes: bool = True) -> mne.io.BaseRaw:
     """filter raw data using mne filter, raw in mne object"""
     if yes:
         notches = (50, 60)
@@ -49,7 +49,7 @@ def filter_network(raw, yes=True):
 
 
 
-def get_psd_interval(raw, name="power_ieeg.csv", tmin=0.0, tmax=67.0, save_psd=False):
+def get_psd_interval(raw: mne.io.BaseRaw, name: str = "power_ieeg.csv", tmin: float = 0.0, tmax: float = 67.0, save_psd: bool = False) -> tuple[pd.DataFrame, np.ndarray]:
     """return psd for some time period"""
     Fs = raw.info["sfreq"]
     copy = raw.copy().crop(tmin=tmin, tmax=tmax)
@@ -57,7 +57,7 @@ def get_psd_interval(raw, name="power_ieeg.csv", tmin=0.0, tmax=67.0, save_psd=F
 
     #
     f, psd = scipy.signal.welch(
-        data, Fs, nperseg=2 * Fs, noverlap=Fs, detrend=False, scaling="spectrum"
+        data, Fs, nperseg=int(2 * Fs), noverlap=int(Fs), detrend=False, scaling="spectrum"
     )
 
     psd_sum = np.sum(psd, 1)
@@ -75,7 +75,7 @@ def get_psd_interval(raw, name="power_ieeg.csv", tmin=0.0, tmax=67.0, save_psd=F
 
 
 
-def get_psd_mat(data, Fs, ch_names, name="power_ieeg.csv", save_psd=False):
+def get_psd_mat(data: np.ndarray, Fs: float, ch_names: list[str], name: str = "power_ieeg.csv", save_psd: bool = False) -> tuple[np.ndarray, pd.DataFrame]:
     """return psd for some time period"""
 
     # data, times = raw[:,:]
@@ -93,7 +93,7 @@ def get_psd_mat(data, Fs, ch_names, name="power_ieeg.csv", save_psd=False):
     #
     #    f, psd = scipy.signal.welch(data, Fs, nperseg=2*Fs,noverlap=Fs)
     f, psd = scipy.signal.welch(
-        data, Fs, nperseg=2 * Fs, noverlap=Fs, detrend=False, scaling="spectrum"
+        data, Fs, nperseg=int(2 * Fs), noverlap=int(Fs), detrend=False, scaling="spectrum"
     )
     # psd_norm=psd
 
@@ -114,7 +114,7 @@ def get_psd_mat(data, Fs, ch_names, name="power_ieeg.csv", save_psd=False):
     return (f, psd_norm)
 
 
-def prepare_psd(matfile, region_dict_file):
+def prepare_psd(matfile: str, region_dict_file: str) -> tuple[np.ndarray, pd.DataFrame]:
     """Load matlab file  provided with Frauscher, B. et all (2018). Atlas of the normal intracranial electroencephalogram:neurophysiological awake activity in different cortical areas. Brain, 141(4), 1130-1144. https://doi.org/10/gc5ct7
     A pandas dataframe with psd returned
     """

@@ -12,7 +12,8 @@ dependencies = [
     "pyrasa",
     "pesco",
     "seaborn",
-    "great-docs"
+    "great-docs",
+    "autoreject"
 ]
 
 [project.optional-dependencies]
