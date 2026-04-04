@@ -29,7 +29,7 @@ import pandas as pd
 import mne as mne
 import scipy
 import numpy as np
-from pesco.pesco import foofexplore
+from pesco.pesco.experimental import foofexplore
 from pesco.pesco import spectral
 
 

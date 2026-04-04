@@ -56,7 +56,7 @@ def run_irasa(
     """Run IRASA on multi-channel time series data.
 
     Thin wrapper around :func:`pyrasa.irasa` that enforces the project-standard
-    settings (2–100 Hz, 2 s segments, 1 s overlap).
+    settings (2-100 Hz, 2 s segments, 1 s overlap).
 
     Parameters
     ----------

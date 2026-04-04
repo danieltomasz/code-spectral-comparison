@@ -8,6 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib
+import matplotlib.ticker
 from matplotlib import collections as mc
 import sklearn
 import mpltex
@@ -22,6 +23,134 @@ seed = 3
 # for importing r
 
 # %%
+
+def _elbow_scores(df, n):
+    from sklearn.cluster import KMeans
+    from scipy.spatial.distance import cdist, pdist
+
+    kMeansVar = [KMeans(n_clusters=k).fit(df.values) for k in range(1, n)]
+    centroids = [X.cluster_centers_ for X in kMeansVar]
+    k_euclid = [cdist(df.values, cent) for cent in centroids]
+    dist = [np.min(ke, axis=1) for ke in k_euclid]
+    wcss = [sum(d**2) for d in dist]
+    tss = sum(pdist(df.values) ** 2) / df.values.shape[0]
+    bss = tss - wcss
+    return bss
+
+
+def eblow(df, n):
+    bss = _elbow_scores(df, n)
+    plt.plot(bss)
+    plt.show()
+
+
+def _elbow_scores_psd(psd_df, n):
+    from sklearn.cluster import KMeans
+
+    psd_df = psd_df[0:160]
+    sse = {}
+    for k in range(1, n):
+        kmeans = KMeans(n_clusters=k, max_iter=100).fit(psd_df)
+        sse[k] = kmeans.inertia_  # Sum of distances of samples to their closest cluster center
+    return sse
+
+
+def eblow_psd(psd_df, n):
+    sse = _elbow_scores_psd(psd_df, n)
+    plt.figure()
+    plt.plot(list(sse.keys()), list(sse.values()))
+    plt.xlabel("Number of cluster")
+    plt.ylabel("SSE")
+    plt.show()
+
+
+
+
+
+
+def compute_clusters(psd_df, HowManyClusters, random_seed=2):
+    power = psd_df.values
+
+    from sklearn.preprocessing import Normalizer
+    from sklearn.cluster import KMeans
+    from sklearn.pipeline import make_pipeline
+
+    normalizer = Normalizer()
+    np.random.seed(42)
+    np.random.RandomState(3)
+
+    np.random.seed(3)
+    kmeans = KMeans(
+        n_clusters=HowManyClusters, max_iter=300, n_init=100, random_state=random_seed
+    )
+    pipeline = make_pipeline(normalizer, kmeans)
+    pipeline.fit(power)
+    # cluster labels
+    cluster_labels = kmeans.labels_
+    psd_df = psd_df.assign(clusters=cluster_labels)
+    return psd_df
+
+
+def plot_psd_clusters(psd_df, f, dataset, smal=[], nopeak=[]):
+    psd_medianas = psd_df.groupby("clusters").median()
+    matplotlib.rcParams.update({"font.size": 16})
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    for k in range(0, len(psd_medianas.index)):
+        mediana = psd_medianas.loc[k]
+        temp_label = (
+            "cl. " + str(k) + " (" + str(psd_df["clusters"].value_counts().loc[k]) + " el.)"
+        )
+        if k in smal and k == nopeak:
+            ax.semilogx(f, mediana, linewidth=4.0, color="black", label=temp_label)
+        elif k == nopeak:
+            ax.semilogx(f, mediana, linestyle=":", linewidth=5.0, label=temp_label)
+        else:
+            ax.semilogx(f, mediana, alpha=0.5, label=temp_label)
+    ax.legend()
+    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
+    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax.grid()
+    coordinates = [2, 6, 10, 16, 36]
+    textes = [r"""$\delta$""", r"""$\theta$""", r"""$\alpha$""", r"""$\beta$""", r"""$\gamma$"""]
+    for t, text in zip(coordinates, textes):
+        ax.text(t, 0.05, text, fontsize=14)
+    ax.set_xlabel("Frequency")
+    ax.set_ylabel("Normalized spectral density")
+    plt.title("Median power of different  PSDs clusters of " + dataset)
+    plt.savefig("images/" + dataset + "_clusters.svg", format="svg")
+    plt.show()
+    return (fig, ax)
+
+
+def _identify_small_clusters(psd_medianas):
+    """Return indices of clusters whose median is below all other clusters' max at every frequency."""
+    smal = []
+    for index, row in psd_medianas.iterrows():
+        max_completion = psd_medianas.iloc[psd_medianas.index != index, :].max()
+        if np.sum(np.less(row, max_completion)) == 160:
+            smal.append(index)
+    return smal
+
+
+def plot_specific_clusterisation(
+    psd, f, HowManyClusters, seed, dataset, ifall=False, nopeak=[], print_debug=False
+):
+    psd_df = compute_clusters(psd, HowManyClusters, seed)
+    psd_medianas = psd_df.groupby("clusters").median()
+    smal = _identify_small_clusters(psd_medianas)
+    if print_debug:
+        print()
+        for index in smal:
+            print()
+            print("cluster", index, "when we have", HowManyClusters, "clusters")
+    if ifall:
+        for nopeak in range(0, HowManyClusters):
+            fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak)
+    else:
+        fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak)
+        print(nopeak) if print_debug else True
+    print(psd_df["clusters"].value_counts()) if print_debug else True
+    return psd_df, smal
 
 
 def get_no_peak(psd_clust, smal):
@@ -38,75 +167,7 @@ def get_no_peak(psd_clust, smal):
     return df, median
 
 
-def plot_subplot(temp, median, f, dictate, lobe, ax=None, print_debug=False):
-    if ax is None:
-        ax = plt.gca()
-    q75 = temp.quantile(0.75, axis=0)
-    q25 = temp.quantile(0.25, axis=0)
-    ax.semilogx(f, median, color="black")
-    ax.semilogx(f, q75, color="pink")
-    ax.semilogx(f, q25, color="pink")
-    ax.semilogx(f, temp.median(0), color="red")
 
-    ax.semilogx(f, temp.max(axis=0), color="r", linestyle=":")
-    ax.semilogx(f, temp.min(axis=0), color="r", linestyle=":")
-    ax.fill_between(f, q25, q75, facecolor="pink", interpolate=True)
-    # ax.legend();
-
-    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax.grid()
-
-    # textes greek letters
-
-    if dictate:
-        lines = dictate[lobe]
-        print(lines) if print_debug else True
-        lc = mc.LineCollection(lines, linewidths=2)
-        ax.add_collection(lc)
-        ax.autoscale()
-        ax.margins(0.1)
-    ax.set_xlabel("Frequency [Hz]")
-    ax.set_ylabel("Normalized spectral density")
-    ax.set_title(lobe + " lobe - " + str(len(temp)) + " channels")
-    coordinates = [2, 6, 10, 16, 36]
-    textes = [
-        r"""$\delta$""",
-        r"""$\theta$""",
-        r"""$\alpha$""",
-        r"""$\beta$""",
-        r"""$\gamma$""",
-    ]
-    for t, text in zip(coordinates, textes):
-        ax.text(t, 0.085, text, fontsize=14)
-    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax.set_ylim(0, 0.10)
-    ax.set_xlim(0.5, 80)
-    return ax
-
-
-def plot_lobes(
-    psd_clust, psd, f, smal, dataset, dictate=False, show=False, print_debug=False
-):
-
-    # plt.semilogx(f,median)
-    # plt.show()
-    _, median = get_no_peak(psd_clust, smal)
-    matplotlib.rcParams.update({"font.size": 22})
-    lobes = ["Occipital", "Parietal", "Frontal", "Temporal"]
-    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
-    fig.suptitle("Lobar differences in EEG frequences: " + dataset)
-    fig.subplots_adjust(hspace=0.25)
-    fig.subplots_adjust(wspace=0.25)
-
-    for ax, lobe in zip(axes.flatten(), lobes):
-        temp = psd[psd.Lobe == lobe].drop(["Region name", "Lobe"], axis=1)
-        plot_subplot(temp, median, f, dictate, lobe, ax=ax, print_debug=False)
-
-    plt.savefig("images/" + dataset + "_lobar_differences.svg", format="svg")
-    if show:
-        plt.show()
-    else:
-        plt.close()
 
 
 # plot by lobe
