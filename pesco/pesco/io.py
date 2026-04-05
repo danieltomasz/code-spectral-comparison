@@ -102,13 +102,10 @@ def load_sources(
     matlab_df = pd.DataFrame()
     result = pd.DataFrame()
     # iter over folders to read the data or load single
-    if specific:
-        for currentfold in sorted(currentDirectory.iterdir()):
-            if currentfold.is_dir() and int(currentfold.name[7:]) == specific:
-                A, matlab_df, result = concat_mat(currentfold, A, matlab_df, result)
-    else:
-        for currentfold in sorted(currentDirectory.iterdir()):
-            A, matlab_df, result = concat_mat(currentfold, A, matlab_df, result)
+    for currentfold in sorted(currentDirectory.iterdir()):
+        if specific and int(currentfold.name[7:]) != specific:
+            continue
+        A, matlab_df, result = concat_mat(currentfold, A, matlab_df, result)
     ch_names = list(matlab_df.columns)
     ch_types = ["eeg"] * len(ch_names)
     sfreq = 200.0
