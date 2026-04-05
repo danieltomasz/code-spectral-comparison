@@ -12,15 +12,15 @@ import h5py
 import pathlib
 import numpy as np
 
-def load_ieeg(DATA_PATH: str, OUT_PATH: str, print_debug: bool = False) -> tuple[mne.io.RawArray, pd.DataFrame]:
+def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool = False) -> tuple[mne.io.RawArray, pd.DataFrame]:
     """
     Load intracranial data from file and return time series as an mne object and pandas dataset
     DATA_PATH is the location of the  folder containing the data
     OUT_PATH is the path, where to write mne file
 
     """
-    matlabfile = DATA_PATH + "WakefulnessMatlabFile.mat"
-    region_dict_name = DATA_PATH + "RegionInformation.csv"
+    matlabfile = DATA_PATH / "WakefulnessMatlabFile.mat"
+    region_dict_name = DATA_PATH / "RegionInformation.csv"
 
     matdata = sio.loadmat(matlabfile)
     print(matdata.keys()) if print_debug else True
@@ -51,8 +51,8 @@ def load_ieeg(DATA_PATH: str, OUT_PATH: str, print_debug: bool = False) -> tuple
     result = df.set_index("region").join(region_dict.set_index("Region"))
     dataset = ["ieeg"] * len(result)
     result["dataset"] = dataset
-    raw.save(OUT_PATH + "ieeg_raw.fif", overwrite=True)
-    result.to_csv(OUT_PATH + "ieeg_raw.csv")
+    raw.save(OUT_PATH / "ieeg_raw.fif", overwrite=True)
+    result.to_csv(OUT_PATH / "ieeg_raw.csv")
 
     return raw, result
 
@@ -83,8 +83,8 @@ def concat_mat(
 
 
 def load_sources(
-    hd_dataset_path: str,
-    OUT_PATH: str = "",
+    hd_dataset_path: pathlib.Path,
+    OUT_PATH: pathlib.Path | str = "",
     specific: int = 0,
 ) -> tuple[mne.io.RawArray, pd.DataFrame]:
     """
@@ -121,8 +121,8 @@ def load_sources(
     # change to set index proper way
     result = result.set_index("ch_name")
     if OUT_PATH:
-        raw.save(OUT_PATH + "sources_raw.fif", overwrite=True)
-        result.to_csv(OUT_PATH + "sources_raw.csv")
+        raw.save(pathlib.Path(OUT_PATH) / "sources_raw.fif", overwrite=True)
+        result.to_csv(pathlib.Path(OUT_PATH) / "sources_raw.csv")
 
     return raw, result
 
