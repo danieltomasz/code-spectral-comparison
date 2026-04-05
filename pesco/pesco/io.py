@@ -12,7 +12,7 @@ import h5py
 import pathlib
 import numpy as np
 
-def load_ieeg(DATA_PATH, OUT_PATH, print_debug=False):
+def load_ieeg(DATA_PATH: str, OUT_PATH: str, print_debug: bool = False) -> tuple[mne.io.RawArray, pd.DataFrame]:
     """
     Load intracranial data from file and return time series as an mne object and pandas dataset
     DATA_PATH is the location of the  folder containing the data
@@ -57,7 +57,12 @@ def load_ieeg(DATA_PATH, OUT_PATH, print_debug=False):
     return raw, result
 
 
-def concat_mat(currentfold, A, matlab_df, result):
+def concat_mat(
+    currentfold: pathlib.Path,
+    A: pd.DataFrame,
+    matlab_df: pd.DataFrame,
+    result: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if currentfold.is_dir():
         filename = str(currentfold.resolve()) + "/roi_data.mat"
         with h5py.File(filename, "r") as f:
@@ -78,10 +83,10 @@ def concat_mat(currentfold, A, matlab_df, result):
 
 
 def load_sources(
-    hd_dataset_path,
-    OUT_PATH=[],
-    specific=0,
-):
+    hd_dataset_path: str,
+    OUT_PATH: str = "",
+    specific: int = 0,
+) -> tuple[mne.io.RawArray, pd.DataFrame]:
     """
     Load intracranial data from file and return time series as an mne object and pandas dataset
     DATA_PATH is the location of the  folder containing the data
