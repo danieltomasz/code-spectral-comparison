@@ -31,3 +31,4 @@ def print_mat_nested(d, indent=0, nkeys=0):
         for n in d.dtype.names:  # This means it's a struct, it's bit of a kludge test.
             print("\t" * indent + "Field: " + str(n))
             print_mat_nested(d[n], indent + 1)
+

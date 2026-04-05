@@ -13,7 +13,8 @@ dependencies = [
     "pesco",
     "seaborn",
     "great-docs",
-    "autoreject"
+    "autoreject",
+    "neurodsp"
 ]
 
 [project.optional-dependencies]
