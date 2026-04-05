@@ -59,7 +59,7 @@ def plot_psd_clusters(psd_df: pd.DataFrame, f: np.ndarray, dataset: str, smal: l
     coordinates = [2, 6, 10, 16, 36]
     textes = [r"""$\delta$""", r"""$\theta$""", r"""$\alpha$""", r"""$\beta$""", r"""$\gamma$"""]
     for t, text in zip(coordinates, textes):
-        ax.text(t, 0.05, text, fontsize=14)
+        ax.text(t, 0.97, text, fontsize=14, transform=ax.get_xaxis_transform(), ha="center", va="top")
     ax.set_xlabel("Frequency")
     ax.set_ylabel("Normalized spectral density")
     plt.title("Median power of different  PSDs clusters of " + dataset)
@@ -132,7 +132,7 @@ def plot_subplot(temp: pd.DataFrame, median: np.ndarray, f: np.ndarray, dictate:
         r"""$\gamma$""",
     ]
     for t, text in zip(coordinates, textes):
-        ax.text(t, 0.085, text, fontsize=14)
+        ax.text(t, 0.97, text, fontsize=14, transform=ax.get_xaxis_transform(), ha="center", va="top")
     ax.set_xticks([0.5, 4, 8, 13, 30, 80])
     ax.set_ylim(0, 0.10)
     ax.set_xlim(0.5, 80)
