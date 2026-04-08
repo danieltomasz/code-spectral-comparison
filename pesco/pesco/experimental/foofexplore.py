@@ -6,49 +6,59 @@ Created on Thu Sep  6 14:56:46 2018
 @author: daniel
 """
 
-from fooof import FOOOFGroup
+from specparam import SpectralGroupModel
+
+
+def _extract_results(fg):
+    """Extract results from SpectralGroupModel (specparam v2 API)."""
+    import pandas as pd
+    import numpy as np
+
+    temp_df = pd.DataFrame()
+    temp_df["sls"] = [r.aperiodic_fit[-1] for r in fg.results]
+    temp_df["errors"] = [r.metrics["error_mae"] for r in fg.results]
+    temp_df["r2s"] = [r.metrics["gof_rsquared"] for r in fg.results]
+    temp_df["ch_number"] = np.arange(len(fg.results))
+
+    rows = []
+    for ch_idx, r in enumerate(fg.results):
+        for peak in r.peak_fit.reshape(-1, 3):
+            rows.append([*peak, ch_idx])
+    peaks_df = pd.DataFrame(rows, columns=["CF", "Amp", "BW", "ch_number"])
+
+    return temp_df, peaks_df
 
 
 # Getting the peaks - Voytek method
 def get_peaks(psd, f):
-    """return peaks using Voytek foof method"""
+    """return peaks using specparam method"""
     freq_range = [2, 40]
-    fg = FOOOFGroup(
+    fg = SpectralGroupModel(
         peak_width_limits=[1, 12],
-        min_peak_amplitude=0.2,
+        min_peak_height=0.2,
         max_n_peaks=6,
-        background_mode="knee",
+        aperiodic_mode="knee",
         peak_threshold=3.0,
     )
     fg.fit(f, psd, freq_range)
-    return fg.get_all_data("peak_params")
+    _, peaks_df = _extract_results(fg)
+    return peaks_df
 
 
 def comp_foof(raw, chan_details, outputfile):
     import pandas as pd
     import numpy as np
     from neurodsp.spectral import compute_spectrum
-    from fooof import FOOOFGroup
 
     data, times = raw[:]
     Fs = raw.info["sfreq"]
-    freqs, spectrum = compute_spectrum(data, Fs, method="median", nperseg=2 * Fs)
+    freqs, spectrum = compute_spectrum(data, Fs, method="welch", nperseg=int(2 * Fs))
     psd_df = pd.DataFrame(spectrum, index=chan_details["region_number"])
-    fg = FOOOFGroup(peak_width_limits=[1, 8], min_peak_amplitude=0.05, max_n_peaks=6)
+    fg = SpectralGroupModel(peak_width_limits=[1, 8], min_peak_height=0.05, max_n_peaks=6)
     fg.fit(freqs, psd_df.values, freq_range=[3, 40], n_jobs=-1)
 
-    # extracting data from  fg
-    temp_df = pd.DataFrame()  # prepare error and slope dataframe
-    temp_df["sls"] = fg.get_all_data("background_params", "slope")
-    temp_df["errors"] = fg.get_all_data("error")
-    temp_df["r2s"] = fg.get_all_data("r_squared")
-    temp_df["ch_number"] = np.arange(len(chan_details))
-
-    peaks = fg.get_all_data("peak_params")  # prepare peaks dataframe
-    peaks_df = pd.DataFrame(peaks)
-    peaks_df.columns = ["CF", "Amp", "BW", "ch_number"]
-
-    chan_details["ch_number"] = np.arange(len(chan_details))  # prepare ch_details
+    temp_df, peaks_df = _extract_results(fg)
+    chan_details["ch_number"] = np.arange(len(chan_details))
     peaks_all = (
         chan_details
         .set_index("ch_number")
@@ -61,22 +71,14 @@ def comp_foof(raw, chan_details, outputfile):
 
 
 def comp_foof_seg(raw, chan_details, tmin, tmax):
-
     import pandas as pd
     import numpy as np
-    from neurodsp.spectral import compute_spectrum
-    from fooof import FOOOFGroup
-
     import mne
 
     fmin, fmax = 3, 80
-    # PSD settings
     srate = raw.info["sfreq"]
     n_fft, n_overlap, n_per_seg = int(2 * srate), int(srate), int(2 * srate)
-    data, times = raw[:]
-    Fs = raw.info["sfreq"]
-    # freqs, spectrum = compute_spectrum(data, Fs,  method='median', nperseg=2*Fs)
-    spectrum, freqs = mne.time_frequency.psd_welch(
+    spectrum, freqs = mne.time_frequency.compute_raw_psd(
         raw,
         fmin=fmin,
         fmax=fmax,
@@ -88,21 +90,11 @@ def comp_foof_seg(raw, chan_details, tmin, tmax):
         verbose=False,
     )
     psd_df = pd.DataFrame(spectrum, index=chan_details["region_number"])
-    fg = FOOOFGroup(peak_width_limits=[1, 8], min_peak_amplitude=0.05, max_n_peaks=6)
+    fg = SpectralGroupModel(peak_width_limits=[1, 8], min_peak_height=0.05, max_n_peaks=6)
     fg.fit(freqs, psd_df.values, freq_range=[3, 40], n_jobs=-1)
 
-    # extracting data from  fg
-    temp_df = pd.DataFrame()  # prepare error and slope dataframe
-    temp_df["sls"] = fg.get_all_data("background_params", "slope")
-    temp_df["errors"] = fg.get_all_data("error")
-    temp_df["r2s"] = fg.get_all_data("r_squared")
-    temp_df["ch_number"] = np.arange(len(chan_details))
-
-    peaks = fg.get_all_data("peak_params")  # prepare peaks dataframe
-    peaks_df = pd.DataFrame(peaks)
-    peaks_df.columns = ["CF", "Amp", "BW", "ch_number"]
-
-    chan_details["ch_number"] = np.arange(len(chan_details))  # prepare ch_details
+    temp_df, peaks_df = _extract_results(fg)
+    chan_details["ch_number"] = np.arange(len(chan_details))
     peaks_all = (
         chan_details
         .set_index("ch_number")
