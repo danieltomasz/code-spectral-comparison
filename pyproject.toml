@@ -5,7 +5,7 @@ description = "Analysis of intractranial and reconstructed spectral features"
 readme = "README.md"
 requires-python = ">=3.13.11"
 dependencies = [
-    "mne",
+    "mne>=1.12",
     "polars",
     "plotnine",
     "specparam>=2.0.0rc6",

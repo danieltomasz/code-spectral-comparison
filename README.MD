@@ -6,7 +6,7 @@ This repository supports analyses for Chapter 2 on mapping oscillatory and aperi
 
 - Frauscher 2018 intracranial EEG atlas
 - Mantini 2018 source-reconstructed HD-EEG
-- Nencki-Symfonia HD-EEG replication pipeline in progress
+- replace by other dataset with closed eyes
 
 ## Project goals
 
