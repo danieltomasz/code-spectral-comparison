@@ -2,6 +2,7 @@
 
 Start planning tasks
 
+- add refit for sources in the range 100 hz
 - fix notebooks
 - remove not needed stuff
 - refactor functions
