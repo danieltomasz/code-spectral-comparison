@@ -66,12 +66,12 @@ def get_psd_interval(raw: mne.io.BaseRaw, name: str = "power_ieeg.csv", tmin: fl
     psd_norm = pd.DataFrame(psd_norm, index=raw.info["ch_names"])
 
     psd_norm.columns = f
-    psd_norm = psd_norm[:, 1:161]
+    psd_norm = psd_norm.iloc[:, 1:161]
 
     if save_psd:
         psd_norm.to_csv("../data/interim/" + name)
         np.savetxt("../data/interim/frequency_bins.csv", f, delimiter=",")
-    return (psd_norm, f)
+    return (psd_norm, f[1:161])
 
 
 

@@ -32,7 +32,7 @@ def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool
     # region =  list(matdata['ChannelRegion'])
     # region = [x[0] for x in  region]
 
-    sfreq = matdata["SamplingFrequency"]
+    sfreq = matdata["SamplingFrequency"].item()
     data = matdata["Data"].T
 
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
