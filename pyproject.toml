@@ -14,7 +14,8 @@ dependencies = [
     "seaborn",
     "great-docs",
     "autoreject",
-    "neurodsp"
+    "neurodsp",
+    "patchworklib",
 ]
 
 [project.optional-dependencies]

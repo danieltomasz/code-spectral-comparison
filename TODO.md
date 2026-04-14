@@ -3,6 +3,7 @@
 Start planning tasks
 
 - add refit for sources in the range 100 hz
+- [ ] fix possible wrong noise 50 hz removal for intracranial
 - fix notebooks
 - remove not needed stuff
 - refactor functions
