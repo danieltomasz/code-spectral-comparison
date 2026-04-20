@@ -2,7 +2,9 @@ Here's a concrete 12-hour plan built around what works for you (short blocks, fi
 
 # Evening 1 (~6 hours) — Figures + Results skeleton
 
-- Hours 1-2: Get the quick-win figures done. Combine Fig 2 panels. Aggregate specparam output for Fig 3 (regional bar/dot plots). Generate Fig S2 (R² distributions). These are visualization tasks on existing data — no new computation.
+- [x] Hours 1-2: Get the quick-win figures done. Combine Fig 2 panels.
+- [ ] Aggregate specparam output for Fig 3 (regional bar/dot plots).
+- [ ] Generate Fig S2 (R² distributions). These are visualization tasks on existing data — no new computation.
 
 - Hours 3-4: Run the Frauscher peak detection (KS tests) for Fig 4. This is the core analysis you need. Once you have Fig 4 for both iEEG and Mantini, you can compute Fig 5 (cross-modal scatter) and Fig 6 (peak agreement) directly from those outputs.
 

@@ -27,6 +27,8 @@ kernel:
 context-py:
 	files-to-prompt . -e py -e md  -e toml  --ignore  ./_archive/  ./.venv/ --cxml -o py-context.txt 
 
+context-pesco:
+	files-to-prompt ./pesco -e py -e md -e toml --ignore ./_archive/ ./.venv/ --cxml -o pesco-context.txt
 
 ch2:
 	quarto render manuscript/chapter_2.qmd --to pdf

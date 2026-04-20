@@ -1,0 +1,434 @@
+# Mapping Oscillatory and 1/f Broadband Spectral Features Across Cortical Regions and Recording Modalities {#sec-chapter2}
+
+<!-- ## Abstract {.unnumbered .unlisted}
+
+
+Neural signal analyses have traditionally emphasized rhythmic oscillations, but growing work suggests that the 1/f broadband component of the power spectrum also carries meaningful neurophysiological information and can shape the interpretation of apparent oscillatory effects. Understanding how oscillatory and 1/f broadband spectral features vary across cortical regions, and whether these patterns are preserved across recording modalities, is important for interpreting human brain activity. This ongoing study combines a normative intracranial EEG (iEEG) atlas with high-density EEG (HD-EEG) source-reconstructed recordings. Power spectral densities were estimated using Welch's method and parameterized to derive regional 1/f broadband features, including exponent and offset. Regional correspondence was assessed at the atlas level across modalities. In addition, oscillatory analyses were repeated after modeling and removing 1/f broadband structure to evaluate whether previously identified spectral peaks remain stable once broadband spectral contributions are taken into account. Because such estimates can depend on modeling choices, results are interpreted with methodological caution.
+Initial analyses indicate region-specific spectral profiles in both datasets, suggesting partial preservation of large-scale spatial organization across modalities. At the same time, cross-modal agreement appears constrained by differences in sample characteristics, recording conditions, and source-model assumptions. Preliminary re-analyses further suggest that some oscillatory findings become less stable after accounting for 1/f broadband structure, indicating that part of the original regional patterning may reflect broadband spectral variation rather than narrowband oscillations alone. Final analyses will be completed before the conference.
+This study highlights the value of jointly examining oscillatory and 1/f broadband spectral features in regional brain mapping, while also emphasizing the need for cautious interpretation of parameterized spectral measures. The final results will clarify which regional features are robust across modalities and how accounting for broadband structure alters the interpretation of oscillatory findings. -->
+
+## Introduction
+
+<!--  TODO "Need to expand this section" author="db"  -->
+
+
+<!-- §1.1 — BROAD FIELD: Regional electrophysiological signatures -->
+
+Much of what we know about cortical organisation comes from cytoarchitecture and connectivity. But cortical regions also differ in their electrophysiological dynamics. Intracranial recordings show that different brain areas have distinct spectral profiles — characteristic patterns of oscillatory peaks and broadband spectral shape that amount to regional electrophysiological signatures [@frauscher2018AtlasNormalIntracranial; @kalamangalam2020NeurophysiologicalBrainMap]. This raises two questions. First, can we recover these signatures from non-invasive recordings, given the spatial blurring from volume conduction and source reconstruction? @afnan2023ValidatingMEGSource showed that MEG source imaging can partially recover the regional oscillatory patterns documented in iEEG, and that recovery improves when broadband spectral structure is modelled and removed. Second, do the broadband features themselves — spectral slope and offset — show meaningful regional organisation, or is their variation mainly driven by recording artefacts and methodological choices? Here I ask the same questions for HD-EEG with source reconstruction.
+
+Given certain assumptions, the power spectrum may be operationally decomposed into two component types: narrowband rhythmic oscillations and a broadband (1/f-like) background. Classical analyses focused predominantly on oscillations, but the broadband component also carries meaningful neurophysiological information [@donoghue2020ParameterizingNeuralPower]. As I discussed in Chapter 1, this separation is operationally useful but rests on modelling assumptions that do not guarantee the two component types reflect independent physiological processes. Still, failing to model the broadband background can produce apparent  difference in oscillatory peaks that actually reflect spectral variation in the background rather than true  difference to narrowband rhythms. Conversely, temporally varying oscillatory activity can contribute to what looks like broadband structure.
+
+Both invasive and non-invasive recordings document systematic regional variation in spectral features. 
+@frauscher2018AtlasNormalIntracranial published a normative atlas of intracranial EEG from 106 epilepsy patients: 1785 channels across 38 cortical regions during resting wakefulness with eyes closed.  Using k-means clustering and a statistical comparison against a no-peak reference set, they identified region-specific patterns of oscillatory peaks across canonical frequency bands. This atlas remains one of the most comprehensive open-access resources for normative iEEG spectral features. @kalamangalam2020NeurophysiologicalBrainMap subsequently applied spectral parameterisation to the same atlas, modelling the iEEG power spectra as mixtures of log-normal distributions around canonical frequencies and producing a compact neurophysiological brain map.
+
+<!--  TODO {{< todo "check exact number of electrodes in frauscher paper" author="db" >}} -->
+
+
+These patterns are also visible in non-invasive recordings. In source-reconstructed MEG from 187 healthy participants, @mahjoory2020FrequencyGradientHuman showed that the dominant oscillatory frequency decreases along the posterior-to-anterior axis, tracking cortical hierarchies defined by cortical thickness and myelin content. Intracranial electrocorticography tells a compatible story at finer resolution: @groppe2013DominantFrequenciesResting identified region-specific spectral clusters, with theta dominant in frontal and temporal areas, alpha confined to parietal and occipital cortex, and beta prominent peri-Rolandically.
+
+<!-- CUT by Claude: Mellem 2017 sentence removed. The intrinsic multi-frequency-biases claim was introduced but never returned to in the aims or analyses. Original text:
+"That said, the organisation is not purely hierarchical. @mellem2017IntrinsicFrequencyBiases found that many regions show intrinsic biases toward multiple frequency bands simultaneously, suggesting that regional spectral identity cannot be reduced to a single gradient."
+-->
+
+
+<!-- CUT by Claude: timescales paragraph removed. You flagged the cortical-timescales reference as misplaced (line 30 comment); the wider paragraph also goes beyond what this chapter tests. Armonaite 2026 and Gao 2020 / Shafiei 2020 do not feature in the aims or analyses. The Frauscher broadband-exponent finding survives and has been folded into §1.2 (the "Broadband component also shows regional structure" sentence is now in the Frauscher paragraph above, ...). Original text:
+"The broadband component also shows regional structure. @frauscher2018AtlasNormalIntracranial found that the 1/f exponent varied across cortical regions, with steeper slopes in posterior visual areas and flatter slopes in frontal cortex. @armonaite2026ScaleFreeNeurodynamicsFunctional extended this by showing that scale-free spectral properties across 37 brain regions can serve as regional functional fingerprints, with the high-frequency exponent distinguishing cortical from subcortical areas. These spatial patterns have been linked to cortical hierarchies of intrinsic timescales [@gao2020NeuronalTimescalesAre; @shafiei2020TopographicGradientsIntrinsic], though the relationship between spectral slope and autocorrelation timescale is indirect (see Chapter 1). I therefore treat the exponent as a descriptive feature to be mapped rather than as a direct readout of a single physiological quantity."
+-->
+
+<!-- TODO by Claude: the Frauscher broadband-exponent observation (steeper posterior, flatter frontal) is a direct precedent for your broadband analysis. Consider adding one sentence to the Frauscher paragraph above. I have NOT added it — you didn't ask me to rewrite that paragraph. -->
+
+<!-- Original comment retained: -->
+{{< comment "rerence to cortical timescales doesnt make sense here" author="db" >}}
+
+
+Directly relevant to the present work, @afnan2023ValidatingMEGSource validated MEG source imaging of resting-state oscillatory patterns against the Frauscher iEEG atlas. Using 45 healthy participants and the same 38 regions of interest, they found that MEG-estimated spectra were more comparable to iEEG after aperiodic components were removed, and that lateral regions were recovered more accurately than deep or medial structures. This finding directly motivates the aperiodic correction analysis we carry out here.
+
+<!-- Structural change by Claude: the "Cross modal comparison" section header has been commented out because these paragraphs are introductory motivation, not a peer of Methods/Results. The prose continues as part of the Introduction. -->
+<!-- ## Cross modal comparison -->
+
+If cortical regions differ in their local dynamics, those differences should show up in both oscillatory and broadband spectral parameters. And if the patterns reflect genuine neurobiological organisation rather than recording artefacts, they should be preserved across recording modalities. Testing this motivates a direct comparison between iEEG, which provides high signal-to-noise recordings with direct neural access, and HD-EEG with source reconstruction, which offers a non-invasive window onto the same cortical terrain.
+
+Comparing spectral features across modalities is not straightforward. iEEG provides local field potentials with little volume conduction but requires clinical implantation, yielding opportunistic sampling biased toward epileptogenic tissue. HD-EEG source reconstruction involves forward modelling assumptions that introduce spatial blurring and depend on head model accuracy. Cross-modal agreement is therefore expected to be partial, constrained by these differences.
+
+iEEG provides a near-ground-truth reference: the signal is recorded directly from cortical tissue with minimal volume conduction, so the oscillatory patterns it captures are more likely to reflect local dynamics than filtered projections of distant sources [@afnan2023ValidatingMEGSource].
+The signal quality advantage of invasive recordings is substantial, it offers a reliable target for validation, @ball2009SignalQualitySimultaneously reported that the signal-to-noise ratio of invasive EEG is 20 to over 100 times better than simultaneously obtained scalp EEG. Source reconstruction methods can partially recover cortical activity from non-invasive recordings, but the choice of inverse method, electrode density, and head model all affect spatial resolution and spectral properties [@liu2018DetectingLargeScaleBrain; @lai2018ComparisonScalpSourcereconstructed; @piastra2020ComprehensiveStudyElectroencephalography]. @tait2021SystematicEvaluationSource provide a systematic evaluation showing that source reconstruction introduces method-specific biases that propagate into spectral parameterisation.
+
+<!-- CUT by Claude: Janiukstyte/Kozma paragraph removed. These are scalp-level EEG and epilepsy-context mapping studies; neither directly bears on the cross-modal iEEG-vs-source-reconstructed-HD-EEG comparison you run here, and they were not returned to in Discussion. Original text:
+"@janiukstyte2023NormativeBrainMapping presented a normative brain map using scalp EEG, showing that even without source reconstruction, systematic regional variation in spectral features is detectable at the scalp level — though with reduced spatial specificity. @kozma2024IdentifyingEpileptogenicAbnormality decomposed both iEEG and MEG power spectra for normative mapping in an epilepsy context, further showing that aperiodic and periodic features can be meaningfully compared across modalities."
+-->
+
+<!-- EDIT by Claude: removed the phrase "To strengthen the comparison, I include a second independent HD-EEG dataset for replication." — inconsistent with the Mantini-only decision. Original sentence preserved below for your reference:
+"Since simultaneous iEEG and scalp EEG resting-state datasets are not currently available as open-access resources, I follow the strategy of comparing separate datasets recorded in different subjects, as in @afnan2023ValidatingMEGSource. To strengthen the comparison, I include a second independent HD-EEG dataset for replication."
+-->
+Since simultaneous iEEG and scalp EEG resting-state datasets are not currently available as open-access resources, I follow the strategy of comparing separate datasets recorded in different subjects, as in @afnan2023ValidatingMEGSource.
+
+<!-- CUT by Claude: Jensen 2026 travelling-waves paragraph removed. Spurious travelling waves from volume conduction are not a phenomenon you test in this chapter — your cross-modal comparison is on regional spectral features, not on wave propagation. The Jensen 2026 reference survives in the next paragraph (alpha's spatial stability), which is directly relevant. Original text:
+"A related concern is that scalp EEG can show spatially broad distributions even from focal cortical generators, because volume conduction and field spread smear the signal across electrodes. @jensen2026AlphaRhythmPhysiology explicitly warn that scalp-level travelling waves can be spurious for this reason — out-of-phase sources can transform into apparent propagation patterns. They also note that MEG offers more focal field patterns and better source-modelling prospects, and that the visibility of alpha at the scalp depends on generator depth, with deep-layer generators shaping what is recoverable non-invasively. These asymmetries between modalities are relevant when interpreting cross-modal agreement in regional spectral profiles."
+-->
+
+The expectation that regional spectral organisation should be at least partly preserved across modalities is supported by evidence that some oscillatory features — notably alpha — show stable large-scale spatial organisation across tasks and methods [@jensen2026AlphaRhythmPhysiology]. It is not clear whether the same holds for parameterised broadband features or for oscillatory peaks after broadband adjustment.
+
+<!-- The physiological rationale for cross-modal comparison of broadband features
+is not merely that the exponent is a convenient descriptive statistic, but that
+there is a plausible physiological reason to care about its spatial variation:
+regional differences in excitation-inhibition dynamics and synaptic timescales
+are expected to shape broadband spectral structure, even if that physiology is
+only indirectly measured at larger scales [@gao2017InferringSynapticExcitation].
+TODO: integrate this point into prose above -->
+
+
+<!-- §1.4 — GAP AND AIMS -->
+
+<!-- ADDED by Claude: EO/EC paragraph flagging the main structural constraint on the cross-modal comparison. Placed here so the Aims that follow are read in light of this constraint. Verify that `geller2014EyeClosureCauses` exists in your Zotero / Better BibTeX bibliography; if not, either add it or remove the citation — the claim (eye state affects posterior alpha strongly and exponent/offset more modestly) is broadly supported and a different reference would work equally well. -->
+
+One constraint on this comparison needs stating up front. The Frauscher iEEG atlas was recorded with eyes closed, while the Mantini HD-EEG dataset was recorded with eyes open. Eye state affects oscillatory activity — most strongly posterior alpha power — and more modestly the aperiodic exponent and offset [@geller2014EyeClosureCauses]. Where cross-modal agreement is observed, it is observed despite this difference, not controlling for it. Where cross-modal agreement is weak, condition and modality cannot be fully separated with the data used here. I return to this in the Discussion.
+
+### Aims
+
+We address three inter-related questions in this chapter:
+
+1. How do oscillatory and broadband slope spectral features vary across cortical regions within each modality?
+2. To what extent is the regional organization of these features preserved across iEEG and HD-EEG source-reconstructed recordings?
+3. How does removing the broadband slope component change the interpretation of regional oscillatory patterns?
+
+To check robustness against methodological choices, I use  in parallel two complementary decomposition methods, specparam and IRASA. As discussed in Chapter 1 (@sec-specparam-geometry), the parameters these methods produce are model- and range-dependent descriptors of spectral shape; the exponent may depends on the frequency range over which it is estimated [@gerster2022SeparatingNeuralOscillations;@boncompte2026AperiodicExponentBrain], and the offset and exponent are structurally coupled by the geometry of the fit. These caveats apply throughout
+
+
+## Methods
+
+### Datasets
+
+#### iEEG atlas
+
+The intracranial EEG data were obtained from the MNI Open iEEG Atlas [@frauscher2018AtlasNormalIntracranial], a normative resource compiled from 106 patients with refractory epilepsy  recorded at three centres. Only channels implanted in brain regions that were determined to be non-epileptogenic throughout the monitoring period were retained, yielding 1785 channels distributed across 38 cortical regions defined by the MICCAI atlas. For each channel, 60 seconds of resting wakefulness data with eyes closed were available. Signals were band-pass filtered at 0.5-80 Hz and resampled to 200 Hz. Spectral densities were normalised to unit total power, making them independent of signal amplitude. Full preprocessing details are given in @frauscher2018AtlasNormalIntracranial.
+
+
+<!-- TODO {{< comment "add comment that the latter version offers more chan" author="db" >}} -->
+
+
+#### HD-EEG — Mantini dataset
+
+High-density EEG data were obtained from the dataset described in @liu2018DetectingLargeScaleBrain. Nineteen healthy right-handed participants (age: 28 ± 5.9 years, 5 male, 14 female) underwent continuous resting-state recording with eyes open for 5 minutes. EEG was acquired using a 256-channel system (EGI). Source reconstruction was performed using standardised low-resolution brain electromagnetic tomography (sLORETA) on individual anatomy derived from structural MRI. Source time courses were parcellated to the same MICCAI atlas used in the iEEG comparison. The key difference from the iEEG atlas is that this dataset was recorded with eyes open, which is noted as a limitation.
+
+<!-- #### HD-EEG — Nencki-Symfonia dataset -->
+
+<!-- As an independent replication of the HD-EEG source-reconstruction arm, resting-state EEG data were obtained from the Nencki-Symfonia dataset [@dzianok2022NenckiSymfoniaElectroencephalographyEventrelated], an open-access resource (OpenNeuro ds004621). Forty-two healthy young adults (age range: 19-35) completed a resting-state protocol including both eyes-open and eyes-closed blocks. Data were acquired at 512 Hz using a 128-channel BioSemi ActiveTwo system with Ag/AgCl active electrodes. This dataset provides three advantages over the Mantini dataset alone: a larger sample (N = 42 vs. N = 19), the availability of both eyes-open and eyes-closed conditions — enabling a within-dataset assessment of how this variable affects regional spectral profiles — and independence of recording equipment and laboratory. -->
+
+<!-- As an independent replication of the HD-EEG source-reconstruction arm, resting-state EEG data were obtained from the dataset described in @shou2020WholebrainElectrophysiologicalFunctional, available as an open-access resource (OpenNeuro ds006525). Thirty-four healthy participants (10 female, age range 18-35, mean 24) completed a 10-minute eyes-closed resting-state recording. Data were acquired at 1000 Hz using a 128-channel Amps 300 amplifier (Electrical Geodesics Inc.). Individual structural MRI was collected for each participant on a GE MR750 scanner using the BRAVO sequence (FOV = 240 mm, 180 axial slices, 1 mm thickness). This dataset provides three advantages over the Mantini dataset alone: a larger sample (N = 34 vs. N = 19), matching eyes-closed condition with the iEEG atlas — removing the EO/EC confound present in the Mantini comparison — and availability of individual structural MRI enabling subject-specific source models. -->
+
+### Source reconstruction
+
+<!-- EDIT by Claude: removed the two-dataset comparison prose about sLORETA vs. eLORETA / individual vs. template. Consistent with the Mantini-only decision. Original paragraph commented out below for reference.
+
+"For the Mantini dataset, source reconstruction had already been performed using sLORETA on individual anatomy as described in @liu2018DetectingLargeScaleBrain. For the Nencki-Symfonia dataset, source reconstruction was performed from raw channel data using the pipeline described above. Both approaches project scalp-level activity onto a cortical surface and parcellate into atlas regions, but they differ in the inverse method (sLORETA vs. eLORETA) and head model (individual vs. template). This methodological difference is acknowledged as a limitation and is relevant when interpreting any discrepancies between the two HD-EEG datasets." -->
+
+<!-- For both HD-EEG datasets, source reconstruction was performed on the `fsaverage` template brain using exact low-resolution brain electromagnetic tomography (eLORETA), implemented in MNE-Python. A boundary element model was constructed from the `fsaverage` anatomy. The inverse solution was computed with regularisation parameter $\lambda^2 = 1/\text{SNR}^2$, with SNR set to 3.0, loose orientation constraint 0.2, and depth weighting 0.8. Source time courses were extracted for each label of the Desikan-Killiany atlas, using mean-flip aggregation to maintain sign consistency within each label. The Desikan-Killiany labels were subsequently mapped to the MICCAI atlas regions used in the iEEG comparison, enabling region-level cross-modal correspondence. -->
+
+Source reconstruction for the Mantini HD-EEG dataset was performed in the original study using sLORETA on individual anatomy derived from each participant's structural MRI, as described in @liu2018DetectingLargeScaleBrain. Pre-computed source time courses were used directly; no re-reconstruction was performed. Source labels from the Desikan-Killiany parcellation were mapped to the MICCAI atlas used for iEEG via anatomical correspondence (see §Regional aggregation and cross-modal correspondence).
+
+
+### Preprocessing
+
+#### iEEG
+
+Preprocessing followed the pipeline described in @frauscher2018AtlasNormalIntracranial. Signals were band-pass filtered at 0.5-80 Hz and downsampled to 200 Hz. Spectral densities were estimated on 60-second segments of artefact-free resting wakefulness.
+
+#### HD-EEG
+
+For the Mantini dataset, preprocessing was as described in @liu2018DetectingLargeScaleBrain.
+
+
+
+<!-- For the Shou dataset, preprocessing was performed in EEGLAB using the FASTER plugin [@nolan2010FASTERFullyAutomated]. A notch filter at 58-62 Hz and a band-pass filter at 0.5-100 Hz were applied. Noisy channels were interpolated and artefactual independent components related to ocular, muscular, and cardiac activity were removed via the fully automated statistical thresholding method in FASTER (z-score threshold > 3), followed by visual inspection to identify residual artefactual components. Data were downsampled to 250 Hz and re-referenced to the common average. No recording segments were rejected, preserving temporal continuity. For subsequent spectral analyses, data were further resampled to 200 Hz to match the iEEG frequency resolution. -->
+
+<!-- For the Nencki-Symfonia dataset, the preprocessing pipeline consisted of the following steps: (1) selection of EEG channels only, excluding auxiliary and trigger channels; (2) band-pass filtering at 0.5-80 Hz using a finite impulse response filter; (3) resampling to 200 Hz to match the iEEG frequency resolution; (4) re-referencing to the common average; (5) independent component analysis (ICA) with 20 components, using the FastICA algorithm, followed by automatic identification and removal of ocular artefact components (at most two components per subject).  -->
+
+### Power spectral density estimation
+
+Power spectral densities (PSDs) were estimated using Welch's method with the following parameters, matched across all three datasets:
+
+- Window length: 2 seconds (400 samples at 200 Hz)
+- Overlap: 1 second (50%)
+- Frequency range: 0.5-80 Hz
+- Frequency resolution: 0.5 Hz
+
+For the iEEG atlas, spectral densities were normalised to unit total power, following the original Frauscher procedure. For the HD-EEG datasets, PSDs were computed on source-reconstructed label time courses in units of current density (nAm²/Hz).
+
+
+### Oscillatory peak detection: Frauscher approach
+
+To enable direct comparison with the original atlas results, the peak detection procedure of @frauscher2018AtlasNormalIntracranial was reproduced. The normalised power spectra were classified into $k$ groups using the k-means algorithm, with 160 features corresponding to the frequency steps from 0.5 to 80 Hz in 0.5 Hz increments, using Euclidean distance and 100 repetitions. The classification was repeated with increasing $k$ until a group without peaks was identified, defined as the group whose mean normalised spectrum was lower than the maximum among the other groups. The 50% of channels closest to the group mean were retained as the no-peak set.
+
+The 160 frequency bins were grouped into 22 frequency intervals based on the condition that each bin contains at least 4% of total mean power, yielding boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25, 31.75, and 80 Hz. The presence of a peak in a given frequency interval for a particular brain region was determined by comparing the distribution of spectral densities of all channels in that region against the distribution of the no-peak set at the same interval, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% significance level with Dunnett's correction for multiple comparisons across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals.
+
+For the HD-EEG source-reconstructed data, the same procedure was applied. However, as documented in preliminary analyses, the 22 frequency intervals proposed by @frauscher2018AtlasNormalIntracranial did not satisfy the 4% power condition for the reconstructed source spectra. New frequency bins satisfying this condition were therefore defined separately for each HD-EEG dataset. This deviation from the original procedure is noted as a methodological caveat.
+
+<!-- ADDED by Claude: graded peak-prevalence measure, per 2019 implementation. Promotes the existing 2019 computation to Methods. -->
+
+**Graded peak prevalence.** In addition to the binary peak presence produced by the KS-Dunnett test, a graded prevalence measure is computed for each region × frequency interval. For intervals passing the KS-Dunnett test, the graded prevalence is the proportion of channels in that region whose spectral density at that interval exceeds the 95th percentile of the no-peak set at the same interval. Intervals not passing the KS-Dunnett test are assigned a prevalence of zero. The graded measure preserves the binary result (intervals with zero prevalence are exactly those without a significant regional peak) and adds magnitude information (prevalence values between zero and one indicate the proportion of channels driving the regional peak). This graded output is used as the primary peak-prevalence statistic in downstream regional aggregation and cross-modal comparison; the binary output is retained as a sensitivity check.
+
+
+### Spectral parameterisation: specparam
+
+PSDs were parameterised using the specparam algorithm (formerly FOOOF; @donoghue2020ParameterizingNeuralPower) in fixed aperiodic mode. The algorithm fits an aperiodic component of the form
+
+$$\log_{10} P(f) = b - \chi \cdot \log_{10}(f)$$
+
+where $b$ is the offset and $\chi$ is the exponent, and then identifies periodic peaks above this background as Gaussian functions. The following settings were used:
+
+- Fitting frequency range: 1-40 Hz
+- Peak width limits: 1.0-8.0 Hz
+- Maximum number of peaks: 6
+- Minimum peak height: 0.1 (log power)
+- Peak threshold: 2.0 standard deviations
+
+For each region in each dataset, the primary aperiodic parameters of interest were the exponent ($\chi$) and offset ($b$). Oscillatory peaks were characterised by their centre frequency, power, and bandwidth. Model fits were evaluated using $R^2$ and mean absolute error; fits with $R^2$ below 0.90 were flagged for inspection.
+
+
+### Aperiodic estimation: IRASA
+
+As a complementary approach to specparam, the aperiodic component of each regional time course was estimated using Irregular Resampling Auto-Spectral Analysis (IRASA; @wen2016SeparatingFractalOscillatory). IRASA exploits the self-similar properties of fractal processes: the power spectrum is computed at multiple resampling factors ($h$ = 1.1 to 1.9 in steps of 0.05), and for each factor, the geometric mean of the up-sampled and down-sampled spectra is taken. The median across resampling factors yields the fractal (aperiodic) component, and the oscillatory residual is obtained by subtraction from the original spectrum.
+
+The fractal exponent was estimated by fitting a line in log-log space to the IRASA-derived aperiodic spectrum over the 1-40 Hz range, matching the specparam fitting range. The slope (with sign reversed) provides an IRASA-based estimate of the aperiodic exponent.
+
+
+### Regional aggregation and cross-modal correspondence
+
+<!-- RENAMED by Claude: was "Regional aggregation and atlas-level correspondence". The new content below replaces the original three paragraphs; the three original paragraphs are preserved verbatim as the first three paragraphs after the renaming comment, so no existing prose has been reworded. New content (P-A gradient, parameter definitions, offset handling) is added as new paragraphs after. -->
+
+For each modality, spectral parameters were aggregated within atlas regions. For the iEEG atlas, parameters were averaged (mean) across all channels assigned to each of the 38 MICCAI regions. For the HD-EEG datasets, parameters were first computed per subject per label and then averaged across subjects to produce group-level regional estimates.
+
+Cross-modal correspondence was quantified using Spearman rank correlations across regions. For each parameter (exponent, offset, peak prevalence per frequency band, dominant peak frequency), the vector of regional values from one modality was correlated with the corresponding vector from another modality, yielding a cross-modal correlation coefficient. Significance was assessed using permutation testing (10,000 permutations, shuffling region labels) to account for the small number of spatial units.
+
+The Desikan-Killiany labels from the HD-EEG source reconstruction were mapped to the MICCAI atlas used in the iEEG comparison. The mapping was based on anatomical correspondence; where multiple Desikan-Killiany labels mapped to a single MICCAI region, their parameter values were averaged.
+
+<!-- ADDED by Claude: parameter definitions (clarifying what is correlated in the cross-modal Spearman). Previously undefined in Methods but used in Results stubs. -->
+
+**Parameters compared across modalities.** The cross-modal Spearman correlations listed above were computed on four parameters derived from each region:
+
+1. *Aperiodic exponent* $\chi$ (from specparam; reported in parallel with IRASA-derived exponent as a robustness check).
+2. *Aperiodic offset* $b$ (from specparam). Treated with caution: iEEG PSDs are normalised to unit total power while HD-EEG PSDs are in source-current units (nAm²/Hz), and under the specparam fixed model the offset is structurally coupled to the exponent through the intercept of the log-log fit. Rank correlation partly mitigates the normalisation mismatch but does not resolve the coupling. The offset correlation should therefore be interpreted as descriptive, not as an independent finding from the exponent correlation.
+3. *Peak prevalence per frequency band.* Computed from the graded peak-prevalence output defined in §Oscillatory peak detection: Frauscher approach. For each of the canonical bands δ (0.5–4 Hz), θ (4–8 Hz), α (8–13 Hz), β (13–30 Hz), γ (30–80 Hz), the graded prevalence values across all Frauscher-procedure intervals falling within that band are averaged, yielding one value per region × band. Regions with zero prevalence across all intervals in a band contribute zero. This bandwise mean preserves the intensity information of the graded measure while collapsing to canonical bands for cross-modal comparison.
+4. *Dominant peak frequency.* Defined per region as the centre frequency of the highest-power peak identified by specparam in the aggregated regional spectrum. Where no peak is detected in a region, the region is excluded from the dominant-peak correlation rather than imputed.
+
+Correction across the set of cross-modal tests: because the exponent, offset, band-wise prevalence (five bands), and dominant peak frequency together constitute eight correlations, Benjamini-Hochberg FDR correction is applied across the set of permutation p-values within each correction state (raw PSDs; specparam-corrected PSDs; IRASA-corrected PSDs). Uncorrected permutation p-values are also reported.
+
+<!-- ADDED by Claude: within-modality tests of regional organisation (aim 1). The exponent gets a P-A gradient test; the offset is descriptive only for the reasons stated above. Peak prevalence and dominant peak frequency are already framed descriptively by the Frauscher procedure. -->
+
+**Within-modality test of regional organisation.** For the aperiodic exponent, posterior-to-anterior variation is tested by linear regression of regional χ on the mean MNI y-coordinate of each MICCAI region. This is run separately for iEEG and HD-EEG, and separately for specparam- and IRASA-derived exponents. Significance of the slope is assessed by permutation (10,000 permutations, shuffling region labels). This tests the prediction that exponents are steeper posteriorly and flatter frontally, consistent with the descriptive observation of @frauscher2018AtlasNormalIntracranial on the same iEEG atlas.
+
+For the aperiodic offset, no gradient test is run. Regional offset values are reported descriptively only, with the normalisation and coupling caveats noted above.
+
+For oscillatory features (peak prevalence per band, dominant peak frequency), regional variation is already characterised by the Frauscher procedure within each modality; no separate gradient test is applied.
+
+<!-- NOTES by Claude on what needs running:
+- regression of χ on mean MNI y-coordinate per MICCAI region, for iEEG specparam, iEEG IRASA, HD-EEG specparam, HD-EEG IRASA (4 tests per aim-1 gradient analysis)
+- BH-FDR on the 8 cross-modal Spearman permutation p-values, within each correction state
+- confirm that frequency-interval pooling into δ/θ/α/β/γ uses the boundaries above, not alternative definitions
+- "Dominant peak frequency" excludes regions with no detected peak; alternative is to impute lowest-power threshold — document whichever is done
+-->
+
+
+
+### Oscillatory re-analysis after aperiodic correction
+
+To evaluate whether regional oscillatory patterns are robust to the presence of aperiodic structure, the oscillatory analyses were repeated on aperiodic-corrected spectra using two approaches:
+
+1. **specparam correction.** The fitted aperiodic component was subtracted from each PSD, producing a flattened spectrum. The Frauscher peak detection procedure (k-means clustering, no-peak set, KS test) was then re-applied to these flattened spectra.
+
+2. **IRASA correction.** The IRASA-derived fractal component was subtracted from each PSD, yielding the oscillatory residual. The same peak detection procedure was applied to this residual.
+
+Stability of oscillatory findings was operationalised as follows: for each region × frequency bin combination, the presence of a significant peak before correction was compared with the presence of a significant peak after correction. Peaks that survived both corrections were considered robust; peaks that disappeared after correction were considered potentially confounded by aperiodic variation. This comparison was performed separately for the specparam and IRASA corrections, and the agreement between the two methods was assessed.
+
+<!-- ADDED by Claude: cross-modal rank correlation on corrected peak prevalence. Previously mentioned only in Results stub §3.5 without a corresponding Methods entry. -->
+
+**Cross-modal correspondence on corrected spectra.** After each correction (specparam and IRASA), the cross-modal Spearman rank correlation described in §Regional aggregation and cross-modal correspondence is re-computed on peak prevalence per band and dominant peak frequency derived from the corrected spectra. This yields one set of correlations per correction method, matched to the pre-correction set. The paired change — cross-modal ρ before vs after aperiodic removal — is the test of whether accounting for broadband spectral variation alters apparent cross-modal agreement on oscillatory features, following the logic of @afnan2023ValidatingMEGSource.
+
+<!-- NOTES by Claude on what needs running:
+- re-compute cross-modal Spearman on post-specparam-correction peak prevalence per band and dominant peak frequency
+- re-compute cross-modal Spearman on post-IRASA-correction equivalents
+- the paired comparison is the pre-vs-post ρ for each parameter; no further statistical test is required beyond reporting ρ and its permutation p in each state
+-->
+
+<!-- NOTE: preliminary results suggest low correlation — to be investigated further -->
+
+
+### Secondary analysis: Afnan-style spectral overlap (time permitting)
+
+<!-- ADDED by Claude: as requested, included as a secondary analysis only if time permits. Not a core analysis. Written here so methods text is complete if the user decides to run it; otherwise this whole subsection can be deleted before final submission. -->
+
+As a secondary, non-core analysis, the Afnan-style spectral overlap metric [@afnan2023ValidatingMEGSource, eq. 3] can be computed to make the cross-modal comparison directly comparable to their MEG-vs-iEEG finding. For each MICCAI region and each frequency bin, overlap is defined as 1 minus the absolute normalised difference between the median HD-EEG PSD and the median iEEG PSD at that bin, set to 0 outside one standard deviation of the HD-EEG distribution. Bin-wise overlaps are averaged within each canonical band (δ, θ, α, β, γ) per region. The analysis is run twice per modality pair: on raw PSDs and on aperiodic-corrected PSDs (specparam and IRASA in parallel). The paired before-vs-after comparison tests whether aperiodic removal improves spectral agreement — the central finding of @afnan2023ValidatingMEGSource for MEG. If run, results are reported in a supplementary section; if not run, this subsection is removed before submission.
+
+<!-- NOTE on feasibility: the iEEG/HD-EEG PSDs in this chapter are in different units (unit total power vs nAm²/Hz). Afnan applied normalisation before overlap (relative power per channel). You would need to apply the same relative-power normalisation to HD-EEG here, since Mantini PSDs are in current-density units rather than already relative. This is a small preprocessing step, not a blocker. -->
+
+
+
+<!-- ### Eyes-open vs. eyes-closed comparison
+
+The Nencki-Symfonia dataset includes both eyes-open and eyes-closed resting-state blocks. This within-dataset comparison addresses a confound in the cross-modal analysis: the iEEG atlas was recorded with eyes closed, while the Mantini HD-EEG dataset was recorded with eyes open. By computing all spectral parameters separately for each condition in the Nencki dataset, it is possible to estimate the magnitude of condition-related differences in regional spectral profiles and to assess whether these differences are large enough to account for discrepancies between the iEEG and HD-EEG results. -->
+
+<!-- TODO Verify if EEG symfonia has both types of data - closed and open -->
+
+
+<!-- ## Aditional dataset 
+
+Unlike the Mantini dataset, which was recorded with eyes open, the Shou dataset was recorded with eyes closed — matching the condition of the iEEG atlas. This removes a confound present in the original cross-modal comparison: any discrepancy between iEEG and Mantini HD-EEG spectral profiles could reflect either genuine modality differences or the well-documented effect of eye state on posterior alpha power and broadband spectral shape. With the Shou dataset, condition-related differences no longer contribute to cross-modal disagreement, making the comparison more interpretable. The Mantini dataset is retained as a secondary comparison to assess whether the eyes-open condition systematically shifts regional spectral profiles relative to the eyes-closed recordings. -->
+
+
+## Results
+
+<!-- Results will be added once analyses are complete. The following sections
+indicate the planned structure. -->
+
+### Reproducing the Frauscher oscillatory atlas
+
+The k-means clustering procedure applied to the iEEG atlas yielded eight spectral groups, closely matching the original classification reported by @frauscher2018AtlasNormalIntracranial. Seven groups were characterised by prominent peaks in one or more canonical frequency bands (delta, theta, alpha, low beta, high beta, gamma, and mixed), while one group - the no-peak set - exhibited a smooth, monotonically decreasing spectrum with no visible narrowband peaks. The overall structure of these clusters was highly similar to the published result, although the absolute scaling of normalised spectral density differed slightly. The no-peak set served as the reference distribution for all subsequent peak detection tests.
+
+<!-- Clustering results (8 clusters for iEEG, 6 for Mantini),
+lobar and regional peak detection results, comparison with published findings,
+frequency binning issue for HD-EEG sources -->
+
+Applying the same procedure to the HD-EEG source-reconstructed data (Mantini dataset) yielded six spectral groups. The reduced number of clusters indicates a narrower range of spectral shapes than in iEEG, consistent with the spatial smoothing introduced by source reconstruction. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart, with stronger concentration of power in the alpha range across most clusters, likely reflecting both the eyes-open recording condition and the dominance of posterior sources in the source model. Figure @fig-cluster-comparison presents these clustering results side by side.
+
+![Figure 2. Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the eight iEEG clusters and Panel B shows the six HD-EEG clusters. In both modalities, one no-peak cluster is visible, while HD-EEG shows fewer distinct spectral classes, consistent with stronger spatial smoothing.](figures/chapter2/fig2_cluster_panels.png){#fig-cluster-comparison width=95%}
+
+A methodological issue arose when applying the frequency binning procedure to the HD-EEG data. The 22 frequency intervals proposed by @frauscher2018AtlasNormalIntracranial were defined so that each bin contained at least 4% of total mean power in the iEEG data. This condition was not satisfied for the source-reconstructed spectra, where power was more concentrated in the alpha range and the higher-frequency bins fell below the 4% threshold. Dataset-specific frequency bins were therefore computed for the HD-EEG analyses, as described in the Methods. This deviation is noted as a caveat when comparing peak detection results across modalities.
+
+### Regional broadband profiles
+
+Regional broadband parameters were estimated using both specparam (fixed mode, 1-40 Hz) and IRASA, and aggregated at the atlas-region level for each dataset.
+
+<!-- ALIGNED by Claude to new Methods. To be reported here:
+- Regional exponent (χ) maps for iEEG and HD-EEG, specparam and IRASA versions
+- Within-modality P-A gradient: regression of χ on mean MNI y-coordinate per region, with permutation p; reported for iEEG-specparam, iEEG-IRASA, HD-EEG-specparam, HD-EEG-IRASA (4 slopes)
+- Is the iEEG exponent gradient consistent with Frauscher 2018's descriptive "steeper posterior, flatter frontal" observation? (reproducibility check)
+- Regional offset (b) descriptively only — values per region, no gradient test (see Methods for reason)
+- specparam vs IRASA agreement within each dataset: Spearman ρ across regions, exponent only
+- Range of exponent values per modality; R² distribution for specparam fits (flags low-quality fits for sensitivity check) -->
+
+<!-- REMOVED by Claude: reference to "Nencki" in the original stub. Consistent with Mantini-only decision. Original stub: "specparam and IRASA exponent/offset maps for each dataset (iEEG, Mantini, Nencki). Posterior-anterior gradients. Lobar-level comparisons. specparam vs IRASA agreement within each dataset." -->
+
+### Regional oscillatory profiles
+
+Peak detection was performed per region and frequency bin using the Frauscher procedure, separately for each dataset.
+
+<!-- ALIGNED by Claude. To be reported here:
+- Peak prevalence heatmap (region × frequency interval), iEEG and HD-EEG as paired panels
+- Collapsed into canonical bands (δ/θ/α/β/γ): peak prevalence per band per region
+- Dominant peak frequency per region (centre frequency of highest-power specparam peak)
+- Regions where peak detection failed in HD-EEG (reported alongside; excluded from dominant-peak cross-modal correlation)
+- Frequency binning deviation between datasets annotated on the figure -->
+
+### Cross-modal correspondence
+
+<!-- ALIGNED by Claude. To be reported here:
+- Spearman rank correlation across 38 MICCAI regions for four parameters:
+  (1) aperiodic exponent (specparam, reported alongside IRASA as robustness)
+  (2) aperiodic offset (descriptive, with caveat)
+  (3) peak prevalence per canonical band (5 bands)
+  (4) dominant peak frequency
+- Permutation p-values (10,000 region-label shuffles) for each
+- BH-FDR correction across the set of correlations
+- Effect-size statement: "ρ = X corresponds to ~X² of shared variance across regions"
+- Cross-modal comparison of P-A gradient slopes for χ (iEEG slope vs HD-EEG slope) —
+  addresses whether the spatial pattern (not just the rank ordering) is preserved -->
+
+<!-- REMOVED by Claude: reference to Nencki in original stub. -->
+
+### Effect of aperiodic correction on oscillatory findings
+
+<!-- ALIGNED by Claude. To be reported here:
+- Within-modality peak stability (pre → post correction): counts of retained, lost, newly-detected peaks per region × band, for specparam correction and IRASA correction separately
+- Agreement between specparam and IRASA corrections: e.g., % of region × band cells concordant
+- Cross-modal rank correlation RECOMPUTED on corrected spectra: peak prevalence per band and dominant peak frequency, for each correction method
+- Paired pre-vs-post comparison of cross-modal ρ for each parameter — direction and magnitude of change
+- Honest framing: this is analogous to (but not identical to) Afnan's overlap-metric improvement finding; differences discussed in §4.3 -->
+
+<!-- OPTIONAL subsection if Afnan overlap is computed:
+
+### Secondary: Afnan-style spectral overlap
+
+- Per-region, per-band average overlap between iEEG and HD-EEG PSDs, before and after aperiodic removal
+- Paired change in overlap pre vs post correction, by band and by region
+- Direct qualitative comparison with Afnan 2023 MEG-vs-iEEG finding
+
+-->
+
+<!-- ### Eyes-open vs. eyes-closed comparison (Nencki) -->
+
+<!-- Within-dataset comparison of aperiodic and oscillatory parameters
+across conditions. Magnitude of EO/EC effect relative to cross-modal differences. -->
+
+## Discussion
+
+### Regional spectral organisation reflects cortical hierarchy
+
+<!-- Contextualise aperiodic and oscillatory gradients within the cortical hierarchy
+literature (Mahjoory et al. 2020, Royer et al. 2025, Shafiei et al. 2020).
+Link to microstructural features (myelination, cortical thickness).
+Brief connection to the timescale hierarchy concept (refer to Chapter 1). -->
+
+The finding that oscillatory profiles are regionally organised is consistent with alpha being tied to laminar and feedback/feedforward circuit architecture [@jensen2026AlphaRhythmPhysiology], implying that at least some of the regional oscillatory structure recovered here reflects broader circuit organisation rather than isolated narrowband generators.
+
+### Partial cross-modal preservation and its limits
+
+<!-- What drives agreement (large-scale gradients, dominant oscillations like alpha).
+What drives disagreement (sampling bias, EO/EC, source model blurring, SNR).
+How the Nencki replication strengthens or qualifies conclusions.
+Comparison with Afnan et al. 2023 MEG validation findings. -->
+
+### Aperiodic correction changes the interpretation of oscillatory findings
+
+<!-- Which findings are robust across both correction methods.
+Which bands / regions are most affected — and why.
+Implications for the oscillation literature that does not account for aperiodic activity.
+Convergence with Afnan et al. 2023 finding that MEG-iEEG agreement improves
+after aperiodic removal. -->
+
+### Methodological caveats and limitations
+
+Spectral parameterisation depends on several modelling choices, including the
+assumed aperiodic functional form, the fitting frequency range, and peak
+detection thresholds. Results should therefore be interpreted with caution
+[@donoghue2021MethodologicalConsiderationsStudying].
+
+<!-- Additional caveats:
+- Frequency binning issue (4% condition not met for HD-EEG sources)
+- Different subjects, different conditions (EO vs EC)
+- specparam fitting range dependence (link to Chapter 1 geometry argument)
+- Source reconstruction differences (sLORETA vs eLORETA, individual vs template anatomy)
+- No simultaneous recording dataset available
+- Nonsinusoidal waveform harmonics as a possible confound in peak detection
+- iEEG sampling bias: electrodes in epileptogenic regions excluded, but patient
+  population may still differ from healthy controls -->
+
+A subset of source-reconstructed spectra exhibited near-flat spectral slopes with exponents close to zero and low model fit quality (R² < 0.70). These spectra typically showed no clear 1/f structure and, where peaks were present, these were confined to the beta range. Such profiles are unlikely to reflect genuine neural dynamics with an unusually flat broadband component. More plausibly, they arise from source labels that receive little coherent neural signal after inverse modelling, so that the reconstructed time course is dominated by spatially smoothed noise or leakage from neighbouring regions [@tait2021SystematicEvaluationSource]. Recent biophysical modelling suggests that high-frequency broadband power in scalp EEG may not be neural in origin [@brake2025ContributionsActionPotentials; @brake2024NeurophysiologicalBasisAperiodic], and this concern extends to source-reconstructed data, where the inverse solution cannot recover signal that was not present at the sensor level. Fitting specparam's fixed aperiodic model to such spectra produces nominally valid parameter estimates, but these should not be interpreted as reflecting cortical broadband dynamics [@wilson2024ModelSelectionSpectral; @gerster2022SeparatingNeuralOscillations]. In the present analyses, sources with R² below 0.90 were flagged, and the sensitivity of regional results to the inclusion or exclusion of these low-quality fits was assessed. <!-- TODO state the outcome of this sensitivity check -->
+
+
+## Conclusion
+
+This chapter demonstrates <!-- TODO finalise once results are complete --> the
+value of jointly examining oscillatory and aperiodic spectral features when
+mapping regional brain activity. Regional spectral profiles show partial
+preservation across iEEG and HD-EEG source-reconstructed recordings, suggesting
+that large-scale spatial organisation is partly recoverable across modalities.
+At the same time, accounting for the aperiodic background alters the
+interpretation of oscillatory findings, highlighting the risk of conflating
+broadband spectral variation with narrowband oscillations. These results
+underscore the need for cautious, model-aware interpretation of parameterised
+spectral measures in human EEG research.
+
+
+<!-- MOVED by Claude: the "Ideas" section has been commented out. It made an empirical claim ("recovered here") before Results were written. With the P-A gradient test now formalised in Methods (see Regional aggregation and cross-modal correspondence), this paragraph should be placed in Discussion §4.1 (Regional spectral organisation reflects cortical hierarchy) AFTER the regression results are available. Original paragraph preserved below.
+
+## Ideas 
+
+The posterior-to-anterior frequency gradient recovered here is consistent with reports from MEG using both parameterised (Mahjoory et al. 2020) and non-parametric data-driven (Capilla et al. 2022) approaches, and from iEEG using spectral parameterisation (Kalamangalam et al. 2020). Our finding that this gradient is partially preserved in HD-EEG extends the pattern across an additional modality and a coarser spatial resolution regime.
+
+-->
+
+
+## References
+
+::: {#refs}
+:::
