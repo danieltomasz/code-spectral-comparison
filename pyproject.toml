@@ -16,6 +16,10 @@ dependencies = [
     "autoreject",
     "neurodsp",
     "patchworklib",
+    "nibabel",
+    "nilearn",
+    "pyvistaqt",
+    "ipywidgets"
 ]
 
 [project.optional-dependencies]
