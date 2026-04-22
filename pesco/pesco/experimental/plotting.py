@@ -12,7 +12,7 @@ import pandas as pd
 from matplotlib import collections as mc
 from matplotlib.axes import Axes
 
-from pesco.experimental.clustering import get_no_peak
+from pesco.experimental.clustering import Summary, get_no_peak
 from pesco.experimental.peak_testing import get_intervals
 
 
@@ -26,23 +26,28 @@ def _ceildiv(a: int, b: int) -> int:
 
 def _plot_subplot(
     channel_data: pd.DataFrame,
-    no_peak_median: np.ndarray,
+    no_peak_center: np.ndarray | None,
     f: np.ndarray,
     sig_intervals: list | None,
     title: str,
     ax: Axes | None = None,
+    summary: Summary = "mean",
 ) -> Axes:
-    """Plot one PSD subplot: median + IQR + min/max + significance overlay."""
+    """Plot one PSD subplot: summary + IQR + min/max + significance overlay.
+
+    If no_peak_center is None, the no-peak reference line is omitted.
+    """
     if ax is None:
         ax = plt.gca()
 
     q75 = channel_data.quantile(0.75, axis=0)
     q25 = channel_data.quantile(0.25, axis=0)
 
-    ax.semilogx(f, no_peak_median, color="black")
+    if no_peak_center is not None:
+        ax.semilogx(f, no_peak_center, color="black")
     ax.semilogx(f, q75, color="pink")
     ax.semilogx(f, q25, color="pink")
-    ax.semilogx(f, channel_data.median(0), color="red")
+    ax.semilogx(f, channel_data.agg(summary, axis=0), color="red")
     ax.semilogx(f, channel_data.max(axis=0), color="r", linestyle=":")
     ax.semilogx(f, channel_data.min(axis=0), color="r", linestyle=":")
     ax.fill_between(f, q25, q75, facecolor="pink", interpolate=True)
@@ -94,22 +99,23 @@ def plot_clusters(
     smal: list[int] | None = None,
     nopeak: int | None = None,
     output_dir: Path = Path("images"),
+    summary: Summary = "mean",
 ):
-    """Plot median PSD of each cluster, highlighting the no-peak cluster."""
+    """Plot per-cluster summary PSD, highlighting the no-peak cluster."""
     smal = smal or []
-    cluster_medians = psd_clust.groupby("clusters").median()
+    cluster_summary = psd_clust.groupby("clusters").agg(summary)
     matplotlib.rcParams.update({"font.size": 16})
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
     counts = psd_clust["clusters"].value_counts()
-    for k in range(len(cluster_medians.index)):
-        median = cluster_medians.loc[k]
+    for k in range(len(cluster_summary.index)):
+        row = cluster_summary.loc[k]
         label = f"cl. {k} ({counts.loc[k]} el.)"
         if k in smal and k == nopeak:
-            ax.semilogx(f, median, linewidth=4.0, color="black", label=label)
+            ax.semilogx(f, row, linewidth=4.0, color="black", label=label)
         elif k == nopeak:
-            ax.semilogx(f, median, linestyle=":", linewidth=5.0, label=label)
+            ax.semilogx(f, row, linestyle=":", linewidth=5.0, label=label)
         else:
-            ax.semilogx(f, median, alpha=0.5, label=label)
+            ax.semilogx(f, row, alpha=0.5, label=label)
     ax.legend()
     ax.set_xticks([0.5, 4, 8, 13, 30, 80])
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
@@ -122,7 +128,7 @@ def plot_clusters(
                 transform=ax.get_xaxis_transform(), ha="center", va="top")
     ax.set_xlabel("Frequency")
     ax.set_ylabel("Normalized spectral density")
-    plt.title(f"Median power of different PSDs clusters of {dataset}")
+    plt.title(f"{summary.capitalize()} power of different PSDs clusters of {dataset}")
     output_dir.mkdir(exist_ok=True)
     plt.savefig(output_dir / f"{dataset}_clusters.svg", format="svg")
     plt.show()
@@ -135,8 +141,9 @@ def plot_histogram(
     dataset: str,
     cols_to_drop: list[str] | None = None,
     output_dir: Path = Path("images"),
+    summary: Summary = "mean",
 ) -> None:
-    """Histogram of median power per frequency interval (Fig. 4 inset style).
+    """Histogram of summary power per frequency interval (Fig. 4 inset style).
 
     Two panels: absolute share, and share normalized by interval width.
     """
@@ -146,8 +153,8 @@ def plot_histogram(
     if cols_present:
         psd = psd.drop(cols_present, axis=1)
 
-    psd_median = pd.DataFrame(psd.median(axis=0)).T
-    psd_intervals = get_intervals(psd_median, colbin)
+    psd_summary = pd.DataFrame(psd.agg(summary, axis=0)).T
+    psd_intervals = get_intervals(psd_summary, colbin)
 
     fig, ax = plt.subplots(1, 2, sharex=False, figsize=(30, 15))
     ax = ax.flatten()
@@ -203,9 +210,10 @@ def plot_lobes(
     sig_lobes: dict[str, list] | None = None,
     show: bool = False,
     output_dir: Path = Path("images"),
+    summary: Summary = "mean",
 ) -> None:
     """4-panel plot: PSD per lobe with significant-interval overlays."""
-    _, median = get_no_peak(psd_clust, smal)
+    _, center = get_no_peak(psd_clust, smal, summary=summary)
     matplotlib.rcParams.update({"font.size": 22})
 
     lobes = ["Occipital", "Parietal", "Frontal", "Temporal"]
@@ -217,7 +225,7 @@ def plot_lobes(
         lobe_psd = psd[psd.Lobe == lobe].drop(["Region name", "Lobe"], axis=1)
         intervals = sig_lobes[lobe] if sig_lobes else None
         title = f"{lobe} lobe - {len(lobe_psd)} channels"
-        _plot_subplot(lobe_psd, median, f, intervals, title, ax=ax)
+        _plot_subplot(lobe_psd, center, f, intervals, title, ax=ax, summary=summary)
 
     output_dir.mkdir(exist_ok=True)
     plt.savefig(output_dir / f"{dataset}_lobar_differences.svg", format="svg")
@@ -235,10 +243,11 @@ def plot_regions(
     dataset: str,
     sig_regions: dict[str, dict[str, list]] | None = None,
     output_dir: Path = Path("images"),
+    summary: Summary = "mean",
 ) -> None:
     """One figure per lobe, with one subplot per region."""
     matplotlib.rcParams.update({"font.size": 8})
-    _, median = get_no_peak(psd_clust, smal)
+    _, center = get_no_peak(psd_clust, smal, summary=summary)
     output_dir.mkdir(exist_ok=True)
 
     for lobe in psd["Lobe"].unique():
@@ -255,7 +264,7 @@ def plot_regions(
                 sig_regions[lobe].get(region) if sig_regions else None
             )
             title = f"{region} - {len(region_psd)} channels"
-            _plot_subplot(region_psd, median, f, intervals, title, ax=ax)
+            _plot_subplot(region_psd, center, f, intervals, title, ax=ax, summary=summary)
 
         fig.get_axes()[0].annotate(
             f"Regional differences in {lobe.lower()} lobe ({dataset})",

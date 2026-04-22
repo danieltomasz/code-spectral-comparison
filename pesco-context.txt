@@ -130,6 +130,9 @@ import pandas as pd
 import h5py
 import pathlib
 import numpy as np
+import scipy.io
+
+from pesco.preprocess import compute_psd, normalize_psd
 
 def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool = False) -> tuple[mne.io.RawArray, pd.DataFrame]:
     """
@@ -147,9 +150,6 @@ def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool
     ch_names = list(matdata["ChannelName"])
     ch_names = [str(x[0][0]) for x in ch_names]
     ch_types = ["ecog"] * len(ch_names)
-
-    # region =  list(matdata['ChannelRegion'])
-    # region = [x[0] for x in  region]
 
     sfreq = matdata["SamplingFrequency"].item()
     data = matdata["Data"].T
@@ -174,6 +174,52 @@ def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool
     result.to_csv(OUT_PATH / "ieeg_raw.csv")
 
     return raw, result
+
+
+
+def prepare_psd(
+    matfile: pathlib.Path | str,
+    region_dict_file: pathlib.Path | str,
+    normalize: bool = True,
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """Load the Frauscher 2018 .mat file and compute per-channel PSD.
+
+    Frauscher, B. et al. (2018). Atlas of the normal intracranial EEG.
+    Brain, 141(4), 1130-1144. https://doi.org/10/gc5ct7
+
+    Parameters
+    ----------
+    matfile, region_dict_file : path
+        Paths to WakefulnessMatlabFile.mat and RegionInformation.csv.
+    normalize : bool, default True
+        If True, L1-normalize each channel's PSD so its total in-band
+        power sums to 1 (paper convention; required for the Frauscher
+        clustering pipeline). Set False to keep raw V**2/Hz density,
+        e.g. for specparam fitting.
+
+    Returns
+    -------
+    f : ndarray
+        Frequency bins (Hz).
+    psd_df : DataFrame
+        Indexed by ChannelRegion (joined to region info). Frequency
+        columns followed by 'Region name' and 'Lobe' from
+        region_dict_file.
+    """
+    mat = scipy.io.loadmat(matfile)
+    channel_names = [l.flatten()[0] for l in mat["ChannelName"].flatten()]
+    data = mat["Data"].T  # (n_channels, n_samples)
+    fs = 200.0  # Frauscher data is downsampled to 200 Hz
+
+    f, psd = compute_psd(data, fs)
+    if normalize:
+        psd = normalize_psd(psd)
+
+    psd_df = pd.DataFrame(psd, index=channel_names, columns=f)
+    psd_df["ChannelRegion"] = mat["ChannelRegion"]
+    region_dict = pd.read_csv(region_dict_file)
+    psd_df = psd_df.set_index("ChannelRegion").join(region_dict.set_index("Region"))
+    return f, psd_df
 
 
 def concat_mat(
@@ -244,8 +290,6 @@ def load_sources(
         result.to_csv(pathlib.Path(OUT_PATH) / "sources_raw.csv")
 
     return raw, result
-
-
 </document_content>
 </document>
 <document index="5">
@@ -766,10 +810,11 @@ import pandas as pd
 import scipy.signal
 
 import matplotlib.pyplot as plt
-import scipy.io
 import matplotlib
 import scipy
 
+import numpy as np
+import scipy.signal
 
 # %% filters
 def butter_bandpass(lowcut: float, highcut: float, fs: float, order: int = 5) -> tuple[np.ndarray, np.ndarray]:
@@ -797,111 +842,60 @@ def notch_default(x: np.ndarray, cf: float, bw: float, Fs: float, order: int = 3
 def filter_network(raw: mne.io.BaseRaw, yes: bool = True) -> mne.io.BaseRaw:
     """filter raw data using mne filter, raw in mne object"""
     if yes:
-        notches = (50, 60)
+        notches = (50)
         raw.filter(0.5, 80.0, fir_design="firwin")
         raw.notch_filter(notches, phase="zero-double", fir_design="firwin2")
     return raw
 
 
 
+def compute_psd(
+    data: np.ndarray,
+    fs: float,
+    fmin: float = 0.5,
+    fmax: float = 80.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Welch PSD following Frauscher et al. 2018.
 
-def get_psd_interval(raw: mne.io.BaseRaw, name: str = "power_ieeg.csv", tmin: float = 0.0, tmax: float = 67.0, save_psd: bool = False) -> tuple[pd.DataFrame, np.ndarray]:
-    """return psd for some time period"""
-    Fs = raw.info["sfreq"]
-    copy = raw.copy().crop(tmin=tmin, tmax=tmax)
-    data, times = copy[:, :]
+    Hamming window, 2 s segments, 1 s step (50% overlap), density scaling.
+    Returns unnormalized PSD in V**2/Hz, suitable for specparam.
+    For Frauscher-style clustering, apply normalize_psd to the result.
 
-    #
-    f, psd = scipy.signal.welch(
-        data, Fs, nperseg=int(2 * Fs), noverlap=int(Fs), detrend=False, scaling="spectrum"
-    )
+    Parameters
+    ----------
+    data : array, shape (..., n_samples)
+        Time series. PSD is computed along the last axis.
+    fs : float
+        Sampling frequency in Hz.
+    fmin, fmax : float
+        Frequency band to return (inclusive).
 
-    psd_sum = np.sum(psd, 1)
-    psd_norm = psd / psd_sum[:, np.newaxis]
-    psd_norm = psd_norm
-    psd_norm = pd.DataFrame(psd_norm, index=raw.info["ch_names"])
-
-    psd_norm.columns = f
-    psd_norm = psd_norm.iloc[:, 1:161]
-
-    if save_psd:
-        psd_norm.to_csv("../data/interim/" + name)
-        np.savetxt("../data/interim/frequency_bins.csv", f, delimiter=",")
-    return (psd_norm, f[1:161])
-
-
-
-def get_psd_mat(data: np.ndarray, Fs: float, ch_names: list[str], name: str = "power_ieeg.csv", save_psd: bool = False) -> tuple[np.ndarray, pd.DataFrame]:
-    """return psd for some time period"""
-
-    # data, times = raw[:,:]
-    # data_filt, notch_filtba = notch_default(data, 50, 2, Fs, 3)
-    # data_filt, notch_filtba = notch_default(data_filt, 60, 2, Fs, 3)
-
-    #    The spectral density in each channel was estimated with
-    #    Welch's method, i.e. averaging the magnitude of the discrete
-    #    time Fourier transform of 59 overlapping blocks of 2 s dur-
-    #    ation and 1 s step, weighted by a Hamming window. In each
-    #    channel the resulting spectral density was normalized to a total
-    #    power equal to one, making it independent of the EEG signal
-    #    amplitude.
-    #
-    #
-    #    f, psd = scipy.signal.welch(data, Fs, nperseg=2*Fs,noverlap=Fs)
-    f, psd = scipy.signal.welch(
-        data, Fs, nperseg=int(2 * Fs), noverlap=int(Fs), detrend=False, scaling="spectrum"
-    )
-    # psd_norm=psd
-
-    # get samples from 0.5 to 80 Hz
-    f = f[1:161]
-    psd = psd[:, 1:161]
-    # get total energy
-    total_energy = np.sum(np.sqrt(psd), 1)
-
-    psd_norm = np.sqrt(psd) / total_energy[:, np.newaxis]
-
-    psd_norm = pd.DataFrame(psd_norm, ch_names)
-    psd_norm.columns = f
-
-    if save_psd:
-        psd_norm.to_csv("../data/interim/" + name)
-        np.savetxt("../data/interim/frequency_bins.csv", f, delimiter=",")
-    return (f, psd_norm)
-
-
-def prepare_psd(matfile: str, region_dict_file: str) -> tuple[np.ndarray, pd.DataFrame]:
-    """Load matlab file  provided with Frauscher, B. et all (2018). Atlas of the normal intracranial electroencephalogram:neurophysiological awake activity in different cortical areas. Brain, 141(4), 1130-1144. https://doi.org/10/gc5ct7
-    A pandas dataframe with psd returned
+    Returns
+    -------
+    f : array, shape (n_freqs,)
+    psd : array, shape (..., n_freqs)
     """
-
-    # df_ieeg = pd.read_csv(datafolder + "ieeg_raw.csv")
-    # raw_ieeg = mne.io.read_raw_fif(datafolder +"ieeg_raw.fif",preload=True)
-
-    mat = scipy.io.loadmat(matfile)
-
-    # utils.print_mat_nested(mat, indent=1, nkeys=30)
-    patient = mat["Patient"]
-    ChannelName = [l.flatten()[0] for l in mat["ChannelName"].flatten()]
-    # filtered_list = [ChannelName[i] for i in range(len(ChannelName)) if (patient==1)[i]]
-    # specific_chans = raw_ieeg.copy().pick_channels(filtered_list)
-
-    df = pd.DataFrame(patient, columns=["Patient"])
-    df["ChannelName"] = ChannelName
-    data = mat["Data"].T
-    Fs = 200.0
-
-    f, psd_df = get_psd_mat(
-        data, Fs, ChannelName, name="power_ieeg.csv", save_psd=False
+    nperseg = int(2 * fs)
+    noverlap = int(fs)
+    f, psd = scipy.signal.welch(
+        data,
+        fs=fs,
+        window="hamming",
+        nperseg=nperseg,
+        noverlap=noverlap,
+        scaling="density",
     )
-    psd_df["ChannelRegion"] = mat["ChannelRegion"]
-    region_dict = pd.read_csv(region_dict_file)
-    psd_df = psd_df.set_index("ChannelRegion").join(region_dict.set_index("Region"))
-    return (f, psd_df)
+    band = (f >= fmin) & (f <= fmax)
+    return f[band], psd[..., band]
 
 
+def normalize_psd(psd: np.ndarray) -> np.ndarray:
+    """L1 normalize each channel's PSD so total power in band sums to 1.
 
-
+    Paper convention for the clustering / KS-test pipeline.
+    Do NOT apply before specparam.
+    """
+    return psd / psd.sum(axis=-1, keepdims=True)
 </document_content>
 </document>
 <document index="8">
@@ -1572,6 +1566,17 @@ def print_mat_nested(d, indent=0, nkeys=0):
             print_mat_nested(d[n], indent + 1)
 
 
+def lobes_long(raw, result):
+    """transform channel info  from wide to long format"""
+
+    psd_df = get_psd(raw)
+    psd_df["id"] = psd_df.index
+    psd_long = pd.melt(psd_df, id_vars=["id"])
+    psd_long.columns = ["id", "frequency", "spectral_density"]
+    # psd_long[['frequency','spectral_density']] = psd_long[['frequency','spectral_density']].astype(float)
+    result_long = psd_long.set_index("id").join(result.set_index("ch_name"))
+    return result_long
+
 </document_content>
 </document>
 <document index="11">
@@ -1672,376 +1677,57 @@ sns.timeseries._plot_range_bars = _plot_range_bars
 </document_content>
 </document>
 <document index="13">
-<source>./pesco/pesco/experimental/analysis.py</source>
+<source>./pesco/pesco/experimental/clustering.py</source>
 <document_content>
-# -*- coding: utf-8 -*-
-# ---
-# jupyter:
-#   jupytext:
-#     text_representation:
-#       extension: .py
-#       format_name: percent
-#       format_version: '1.1'
-#       jupytext_version: 0.8.2
-#   kernelspec:
-#     display_name: Python 3
-#     language: python
-#     name: python3
-#   language_info:
-#     codemirror_mode:
-#       name: ipython
-#       version: 3
-#     file_extension: .py
-#     mimetype: text/x-python
-#     name: python
-#     nbconvert_exporter: python
-#     pygments_lexer: ipython3
-#     version: 3.6.6
-# ---
+"""Stage 2 of the Frauscher 2018 pipeline: cluster channels and identify the no-peak set."""
 
-# %%
-"""
-Basic data analysis functions: pandas manipulation
-
-"""
-
-
-def lobes_long(raw, result):
-    """transform channel info  from wide to long format"""
-
-    psd_df = get_psd(raw)
-    psd_df["id"] = psd_df.index
-    psd_long = pd.melt(psd_df, id_vars=["id"])
-    psd_long.columns = ["id", "frequency", "spectral_density"]
-    # psd_long[['frequency','spectral_density']] = psd_long[['frequency','spectral_density']].astype(float)
-    result_long = psd_long.set_index("id").join(result.set_index("ch_name"))
-    return result_long
-
-
-# %%
-
-</document_content>
-</document>
-<document index="14">
-<source>./pesco/pesco/experimental/cluster_plots.py</source>
-<document_content>
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Literal
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.ticker
 import numpy as np
-import matplotlib
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
-from matplotlib import collections as mc
-
-from pesco.experimental.clusterization import (
-    get_no_peak,
-    identify_small_clusters,
-    compute_clusters,
-    cutintervals,
-    get_intervals,
-    return_signifcant,
-    return_signifcant_lobes,
-    ceildiv,
-)
-
-def plot_single_psd(psd_df: pd.DataFrame, f: np.ndarray, i: int) -> None:
-    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
-    ax.semilogx(f, psd_df.iloc[i])
-    ax.grid()
-    # ax.plot(f, psd_df.iloc[1])
-    ax.set_xlim(0.5, 80)
-    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    # plt.yscale('log')
-    ax.set_xlabel("Frequency")
-    ax.set_ylabel("PSD ")
-
-
-
-def plot_psd_clusters(psd_df: pd.DataFrame, f: np.ndarray, dataset: str, smal: list[int] = [], nopeak: int | list[int] = [], output_dir: Path = Path("images")) -> tuple[Figure, Axes]:
-    psd_medianas = psd_df.groupby("clusters").median()
-    matplotlib.rcParams.update({"font.size": 16})
-    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-    for k in range(0, len(psd_medianas.index)):
-        mediana = psd_medianas.loc[k]
-        temp_label = (
-            "cl. " + str(k) + " (" + str(psd_df["clusters"].value_counts().loc[k]) + " el.)"
-        )
-        if k in smal and k == nopeak:
-            ax.semilogx(f, mediana, linewidth=4.0, color="black", label=temp_label)
-        elif k == nopeak:
-            ax.semilogx(f, mediana, linestyle=":", linewidth=5.0, label=temp_label)
-        else:
-            ax.semilogx(f, mediana, alpha=0.5, label=temp_label)
-    ax.legend()
-    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax.grid()
-    coordinates = [2, 6, 10, 16, 36]
-    textes = [r"""$\delta$""", r"""$\theta$""", r"""$\alpha$""", r"""$\beta$""", r"""$\gamma$"""]
-    for t, text in zip(coordinates, textes):
-        ax.text(t, 0.97, text, fontsize=14, transform=ax.get_xaxis_transform(), ha="center", va="top")
-    ax.set_xlabel("Frequency")
-    ax.set_ylabel("Normalized spectral density")
-    plt.title("Median power of different  PSDs clusters of " + dataset)
-    output_dir.mkdir(exist_ok=True)
-    plt.savefig(output_dir / f"{dataset}_clusters.svg", format="svg")
-    plt.show()
-    return (fig, ax)
-
-
-def plot_specific_clusterisation(
-    psd: pd.DataFrame, f: np.ndarray, HowManyClusters: int, seed: int, dataset: str,
-    ifall: bool = False, nopeak: int | list[int] = [], print_debug: bool = False,
-    output_dir: Path = Path("images"),
-) -> tuple[pd.DataFrame, list[int]]:
-    psd_df = compute_clusters(psd, HowManyClusters, seed)
-    psd_medianas = psd_df.groupby("clusters").median()
-    smal = identify_small_clusters(psd_medianas)
-    if print_debug:
-        print()
-        for index in smal:
-            print()
-            print("cluster", index, "when we have", HowManyClusters, "clusters")
-    if ifall:
-        for nopeak in range(0, HowManyClusters):
-            fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak, output_dir=output_dir)
-    else:
-        fig, ax = plot_psd_clusters(psd_df, f, dataset, smal, nopeak, output_dir=output_dir)
-        print(nopeak) if print_debug else True
-    print(psd_df["clusters"].value_counts()) if print_debug else True
-    return psd_df, smal
-
-
-
-def plot_subplot(temp: pd.DataFrame, median: np.ndarray, f: np.ndarray, dictate: dict[str, list] | Literal[False], lobe: str, ax: Axes | None = None, print_debug: bool = False) -> Axes:
-    if ax is None:
-        ax = plt.gca()
-    q75 = temp.quantile(0.75, axis=0)
-    q25 = temp.quantile(0.25, axis=0)
-    ax.semilogx(f, median, color="black")
-    ax.semilogx(f, q75, color="pink")
-    ax.semilogx(f, q25, color="pink")
-    ax.semilogx(f, temp.median(0), color="red")
-
-    ax.semilogx(f, temp.max(axis=0), color="r", linestyle=":")
-    ax.semilogx(f, temp.min(axis=0), color="r", linestyle=":")
-    ax.fill_between(f, q25, q75, facecolor="pink", interpolate=True)
-    # ax.legend();
-
-    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax.grid()
-
-    # textes greek letters
-
-    if dictate:
-        lines = dictate[lobe]
-        print(lines) if print_debug else True
-        lc = mc.LineCollection(lines, linewidths=2)
-        ax.add_collection(lc)
-        ax.autoscale()
-        ax.margins(0.1)
-    ax.set_xlabel("Frequency [Hz]")
-    ax.set_ylabel("Normalized spectral density")
-    ax.set_title(lobe + " lobe - " + str(len(temp)) + " channels")
-    coordinates = [2, 6, 10, 16, 36]
-    textes = [
-        r"""$\delta$""",
-        r"""$\theta$""",
-        r"""$\alpha$""",
-        r"""$\beta$""",
-        r"""$\gamma$""",
-    ]
-    for t, text in zip(coordinates, textes):
-        ax.text(t, 0.97, text, fontsize=14, transform=ax.get_xaxis_transform(), ha="center", va="top")
-    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax.set_ylim(0, 0.10)
-    ax.set_xlim(0.5, 80)
-    return ax
-
-
-
-def plot_lobes(
-    psd_clust: pd.DataFrame, psd: pd.DataFrame, f: np.ndarray, smal: list[int],
-    dataset: str, dictate: dict[str, list] | Literal[False] = False,
-    show: bool = False, print_debug: bool = False,
-    output_dir: Path = Path("images"),
-) -> None:
-    _, median = get_no_peak(psd_clust, smal)
-    matplotlib.rcParams.update({"font.size": 22})
-    lobes = ["Occipital", "Parietal", "Frontal", "Temporal"]
-    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
-    fig.suptitle("Lobar differences in EEG frequences: " + dataset)
-    fig.subplots_adjust(hspace=0.25)
-    fig.subplots_adjust(wspace=0.25)
-
-    for ax, lobe in zip(axes.flatten(), lobes):
-        temp = psd[psd.Lobe == lobe].drop(["Region name", "Lobe"], axis=1)
-        plot_subplot(temp, median, f, dictate, lobe, ax=ax, print_debug=False)
-
-    output_dir.mkdir(exist_ok=True)
-    plt.savefig(output_dir / f"{dataset}_lobar_differences.svg", format="svg")
-    if show:
-        plt.show()
-    else:
-        plt.close()
-
-
-def pipeline_lobe(dataset: str, f: np.ndarray, psd: pd.DataFrame, psd_clust: pd.DataFrame, smal: list[int], output_dir: Path = Path("images")) -> None:
-    df, _ = get_no_peak(psd_clust, smal)
-    colbin, _ = cutintervals(f)
-    dictate = return_signifcant_lobes(df, psd, colbin)
-    plot_lobes(psd_clust, psd, f, smal, dataset, dictate, show=True, output_dir=output_dir)
-
-
-def pipeline_regions(dataset: str, f: np.ndarray, psd: pd.DataFrame, psd_clust: pd.DataFrame, smal: list[int], output_dir: Path = Path("images")) -> None:
-    matplotlib.rcParams.update({"font.size": 8})
-    df, median = get_no_peak(psd_clust, smal)
-    colbin, _ = cutintervals(f)
-    df_intervals = get_intervals(df, colbin)
-    output_dir.mkdir(exist_ok=True)
-    for iterate_lobe in psd["Lobe"].unique():
-        regions = psd[psd.Lobe == iterate_lobe]["Region name"].unique()
-        dictate = dict()
-        how_long = ceildiv(len(psd[psd.Lobe == iterate_lobe]["Region name"].unique()), 2)
-        fig, axes = plt.subplots(how_long, 2, figsize=(10, 8 * ceildiv(how_long, 2)))
-        fig.subplots_adjust(hspace=0.25)
-        fig.subplots_adjust(wspace=0.25)
-        for ax, iterate_region in zip(axes.flatten(), regions):
-            temp_region = psd[
-                (psd.Lobe == iterate_lobe) & (psd["Region name"] == iterate_region)
-            ]
-            temp_intervals = get_intervals(
-                temp_region.drop(["Region name", "Lobe"], axis=1), colbin
-            )
-            dictate[iterate_region] = return_signifcant(
-                temp_intervals, df_intervals, print_debug=False
-            )
-            plot_subplot(
-                temp_region.drop(["Region name", "Lobe"], axis=1),
-                median, f, dictate, iterate_region, ax, print_debug=False,
-            )
-        fig.get_axes()[0].annotate(
-            "Regional differences in " + iterate_lobe.lower() + " lobe (" + dataset + ")",
-            (0.5, 0.95), xycoords="figure fraction", ha="center", fontsize=24,
-        )
-        plt.savefig(
-            output_dir / f"{dataset}_{iterate_lobe}_regional_differences.svg",
-            format="svg", bbox_inches="tight", pad_inches=0,
-        )
-        plt.show()
-
-</document_content>
-</document>
-<document index="15">
-<source>./pesco/pesco/experimental/clusterization.py</source>
-<document_content>
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-# %% [markdown]
-# # Frequency peaks in intracranial and  reconstructed sources data
-#
-# %%
-from __future__ import annotations
-
 import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import matplotlib
-import matplotlib.ticker
 import sklearn.metrics.pairwise
 
-from scipy import stats
 
-seed = 3
+def compute_clusters(
+    psd_df: pd.DataFrame, n_clusters: int, random_seed: int = 2
+) -> pd.DataFrame:
+    """Cluster channels by their spectral profile using k-means.
 
-# for importing r
-
-# %%
-
-def _elbow_scores(df: pd.DataFrame, n: int) -> np.ndarray:
-    from sklearn.cluster import KMeans
-    from scipy.spatial.distance import cdist, pdist
-
-    kMeansVar = [KMeans(n_clusters=k).fit(df.values) for k in range(1, n)]
-    centroids = [X.cluster_centers_ for X in kMeansVar]
-    k_euclid = [cdist(df.values, cent) for cent in centroids]
-    dist = [np.min(ke, axis=1) for ke in k_euclid]
-    wcss = np.array([sum(d**2) for d in dist])
-    tss = sum(pdist(df.values) ** 2) / df.values.shape[0]
-    bss = tss - wcss
-    return bss
-
-
-def eblow(df: pd.DataFrame, n: int) -> None:
-    bss = _elbow_scores(df, n)
-    plt.plot(bss)
-    plt.show()
-
-
-def _elbow_scores_psd(psd_df: pd.DataFrame, n: int) -> dict[int, float]:
+    Returns the input DataFrame with a 'clusters' column appended.
+    """
     from sklearn.cluster import KMeans
 
-    psd_df = psd_df[0:160]
-    sse = {}
-    for k in range(1, n):
-        kmeans = KMeans(n_clusters=k, max_iter=100).fit(psd_df)
-        sse[k] = kmeans.inertia_  # Sum of distances of samples to their closest cluster center
-    return sse
-
-
-def eblow_psd(psd_df: pd.DataFrame, n: int) -> None:
-    sse = _elbow_scores_psd(psd_df, n)
-    plt.figure()
-    plt.plot(list(sse.keys()), list(sse.values()))
-    plt.xlabel("Number of cluster")
-    plt.ylabel("SSE")
-    plt.show()
-
-
-def compute_clusters(psd_df: pd.DataFrame, HowManyClusters: int, random_seed: int = 2) -> pd.DataFrame:
-    power = psd_df.values
-
-    from sklearn.preprocessing import Normalizer
-    from sklearn.cluster import KMeans
-    from sklearn.pipeline import make_pipeline
-
-    normalizer = Normalizer()
-    np.random.seed(42)
-    np.random.RandomState(3)
-
-    np.random.seed(3)
     kmeans = KMeans(
-        n_clusters=HowManyClusters, max_iter=300, n_init=100, random_state=random_seed
+        n_clusters=n_clusters, max_iter=300, n_init=100, random_state=random_seed
     )
-    pipeline = make_pipeline(normalizer, kmeans)
-    pipeline.fit(power)
-    # cluster labels
-    cluster_labels = kmeans.labels_
-    psd_df = psd_df.assign(clusters=cluster_labels)
-    return psd_df
+    kmeans.fit(psd_df.values)
+    return psd_df.assign(clusters=kmeans.labels_)
 
 
+def identify_small_clusters(cluster_medians: pd.DataFrame) -> list[int]:
+    """Return cluster indices whose median spectrum is below all others' max at every frequency.
 
-
-def identify_small_clusters(psd_medianas: pd.DataFrame) -> list[int]:
-    """Return indices of clusters whose median is below all other clusters' max at every frequency."""
+    Paper criterion for the no-peak group: its mean normalized spectrum must be
+    lower than the maximum among the other groups at every frequency.
+    (This implementation uses median, not mean — to be revisited.)
+    """
     smal = []
-    for index, row in psd_medianas.iterrows():
-        max_completion = psd_medianas.iloc[psd_medianas.index != index, :].max()
-        if np.sum(np.less(row, max_completion)) == 160:
+    n_freqs = cluster_medians.shape[1]
+    for index, row in cluster_medians.iterrows():
+        max_completion = cluster_medians.iloc[cluster_medians.index != index, :].max()
+        if np.sum(np.less(row, max_completion)) == n_freqs:
             smal.append(index)
     return smal
 
 
+def get_no_peak(
+    psd_clust: pd.DataFrame, smal: list[int]
+) -> tuple[pd.DataFrame, np.ndarray]:
+    """Take the 50% of channels in the no-peak cluster closest to its median.
 
-def get_no_peak(psd_clust: pd.DataFrame, smal: list[int]) -> tuple[pd.DataFrame, np.ndarray]:
+    Paper takes the 50% closest to the mean — this uses median. To be revisited.
+    Picks smal[0] when smal has multiple entries — to be revisited.
+    """
     no_peak = psd_clust[psd_clust["clusters"] == smal[0]]
     no_peak = no_peak[no_peak.columns[:-1]]
     median = np.median(no_peak, 0)
@@ -2055,241 +1741,30 @@ def get_no_peak(psd_clust: pd.DataFrame, smal: list[int]) -> tuple[pd.DataFrame,
     return df, median
 
 
+def _elbow_scores_psd(psd_df: pd.DataFrame, n: int) -> dict[int, float]:
+    from sklearn.cluster import KMeans
+
+    psd_df = psd_df[0:160]
+    sse = {}
+    for k in range(1, n):
+        kmeans = KMeans(n_clusters=k, max_iter=100).fit(psd_df)
+        sse[k] = kmeans.inertia_
+    return sse
 
 
+def eblow_psd(psd_df: pd.DataFrame, n: int) -> None:
+    import matplotlib.pyplot as plt
 
-# plot by lobe
-def cutintervals(x: np.ndarray) -> tuple[pd.Categorical, np.ndarray]:
-    intervals = (
-        0.5,
-        0.75,
-        1.25,
-        1.75,
-        2.25,
-        3.25,
-        3.75,
-        4.25,
-        5.25,
-        6.25,
-        6.75,
-        7.75,
-        8.25,
-        9.25,
-        10.25,
-        11.75,
-        13.25,
-        15.25,
-        17.25,
-        20.25,
-        24.25,
-        31.75,
-        80,
-    )
-    colBin, y = pd.cut(x, intervals, retbins=True, include_lowest=True)
-    return colBin, y
-
-
-def get_intervals(psd: pd.DataFrame, colbin: pd.Categorical) -> pd.DataFrame:
-    dictionary = dict(zip(psd.columns, colbin))
-    psd_intervals = psd.T.groupby(dictionary).sum().T
-    psd_intervals.columns = psd_intervals.columns.astype(str, copy=False)
-    return psd_intervals
-
-
-def plot_intervals(psd_intervals: pd.DataFrame, i: int, dataset: str) -> None:
-
-    #
-    fig, ax = plt.subplots(1, 2, sharex=False, figsize=(30, 15))
-    ax = ax.flatten()
-    matplotlib.rcParams.update({"font.size": 22})
-    bins = np.array([
-        0.25,
-        0.75,
-        1.25,
-        1.75,
-        2.25,
-        3.25,
-        3.75,
-        4.25,
-        5.25,
-        6.25,
-        6.75,
-        7.75,
-        8.25,
-        9.25,
-        10.25,
-        11.75,
-        13.25,
-        15.25,
-        17.25,
-        20.25,
-        24.25,
-        31.75,
-        80,
-    ])
-    if "Lobe" in psd_intervals.columns:
-        freqs = psd_intervals.iloc[i].drop(["Lobe"]).values
-    else:
-        freqs = psd_intervals.iloc[i].values
-    # freqs = psd_intervals_mean.values
-    fig.suptitle(dataset)
-
-    ax[0].fill_between(
-        bins.repeat(2)[1:-1], freqs.astype(float).repeat(2), facecolor="steelblue"
-    )
-    ax[0].hlines(y=0.04, xmin=0.5, xmax=80, linewidth=2, color="r")
-    ax[0].set_title(" absolute share of power in a given bin")
-    ax[0].set_xscale("log")
-    ax[0].set_xlim([0.5, 80])
-    ax[0].set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax[0].get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax[0].grid()
-    ax[0].set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax[0].get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    # ax[0].set_ylim(0,max(freqs.astype(np.float)))
-    ax[0].set_ylim(0, 0.40)
-    # normalized plot
-    widths = bins[1:] - bins[:-1]
-    heights = freqs.astype(float) / widths
-    ax[1].fill_between(bins.repeat(2)[1:-1], heights.repeat(2), facecolor="steelblue")
-    ax[1].set_title("share of power in a given bin normalized by width of the bin ")
-    ax[1].set_xscale("log")
-    #    ax = plt.gca(); cur_ylim = ax.get_ylim(); ax[1].set_ylim(0,cur_ylim[1])
-    ax[1].set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax[1].get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
-    ax[1].grid()
-    ax[1].set_xlim([0.5, 80])
-    ax[1].set_ylim(0, 0.07)
-    # ax[1].set_ylim(0,max(heights.astype(np.float)))
-    plt.savefig("images/mean_power_share_in_intervals.png", format="png")
+    sse = _elbow_scores_psd(psd_df, n)
+    plt.figure()
+    plt.plot(list(sse.keys()), list(sse.values()))
+    plt.xlabel("Number of cluster")
+    plt.ylabel("SSE")
     plt.show()
-
-
-def plot_ecdf(v1: np.ndarray, v2: np.ndarray, lobe: str, idxCol: str, interval: list[float]) -> None:
-    from mlxtend.plotting import ecdf
-
-    fig, ax = plt.subplots()
-    ax, _, _ = ecdf(v1)
-    # second ecdf
-    # x2 = X[:, 1]
-    ax, _, _ = ecdf(v2, ax=ax)
-    ax.set_xlabel("Normalized spectral density in bin")
-    ax.set_ylabel("ECDF")
-    ax.set_title(lobe + idxCol)
-    ax.legend(["lobe", "no peak"], loc="upper left")
-    plt.savefig(
-        "images/" + lobe + "_" + str(interval[0]) + "_" + str(interval[1]) + "_interval.svg",
-        format="svg",
-    )
-
-
-def is_number(s: str) -> bool:
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
-
-
-def return_signifcant(temp: pd.DataFrame, df_intervals: pd.DataFrame, print_debug: bool = False) -> list[list[tuple[float, float]]]:
-    import re
-    from rpy2.robjects.packages import importr
-    from rpy2.robjects.vectors import FloatVector
-
-    rstats = importr("stats")
-    list_of_intervals = []
-    for (idxCol, v1), (_, v2) in zip(temp.items(), df_intervals.items()):
-        print(v1, v2, idxCol) if print_debug else True
-        # v1 is a column from lobes
-        # v2 is  a column from no peak set
-        t, pval = stats.ks_2samp(v1, v2)
-        # details of r function https://rdrr.io/cran/dgof/man/ks.test.html
-        # ther is no computation of True value only assymptotic aproximation
-        v1 = FloatVector(v1)
-        v2 = FloatVector(v2)
-        htest = rstats.ks_test(v1, v2, alternative="less", exact=False)
-        htestlist = list(htest)
-        t = htestlist[0][0]
-        pval = htestlist[1][0]
-        pval = pval * 22 * 42
-        p = 0.05
-        y = 0.08
-        if pval < p:
-            pattern = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")
-            bounds = [float(v) for v in pattern.findall(idxCol)]
-            list_of_intervals.append([(bounds[0], y), (bounds[1], y)])
-            # print('list of intervals', *list_of_intervals, sep = ", ")
-            print(idxCol, t, format(pval, ".5f")) if print_debug else True
-            # plot_ecdf(v1, v2, lobe, idxCol, l)
-            # i = i + 1
-    return list_of_intervals
-
-
-def return_signifcant_lobes(df: pd.DataFrame, psd: pd.DataFrame, colbin: pd.Categorical, print_debug: bool = False) -> dict[str, list[list[tuple[float, float]]]]:
-
-    # psd_intervals = psd_intervals.astype(float)
-    psd_intervals = get_intervals(psd, colbin)
-    psd_intervals = psd_intervals.assign(Lobe=psd["Lobe"])
-    df_intervals = get_intervals(df, colbin)
-
-    stat = pd.DataFrame(index=["stat_value", "pvalue"], columns=psd_intervals.columns)
-    pd.set_option("future.no_silent_downcasting", True)
-    stat = stat.fillna(0).infer_objects(copy=False)
-
-    dictate = dict()
-    lobes = ["Occipital", "Parietal", "Frontal", "Temporal"]
-    for lobe in lobes:
-        temp = psd_intervals[psd_intervals.Lobe == lobe].drop(["Lobe"], axis=1)
-        dictate[lobe] = return_signifcant(temp, df_intervals, print_debug=False)
-        # print('dictate', dictate)
-    return dictate
-
-
-def convertsvg() -> None:
-    import cairosvg
-    import glob
-
-    for file in glob.glob("*.svg"):
-        name = file.split(".svg")[0]
-        cairosvg.svg2png(url=name + ".svg", write_to=name + ".png")
-
-
-def check_intervals(psd: pd.DataFrame, colbin: pd.Categorical, dataset: str, cols_to_drop: list[str] | None = None) -> None:
-    # Drop non-numeric columns if specified
-    if cols_to_drop is None:
-        cols_to_drop = ["Region name", "Lobe"]
-
-    cols_present = [col for col in cols_to_drop if col in psd.columns]
-    if cols_present:
-        psd = psd.drop(cols_present, axis=1)
-
-    psd_mean = pd.DataFrame(psd.median(axis=0)).transpose()
-    psd_intervals_mean = get_intervals(psd_mean, colbin)
-    plot_intervals(psd_intervals_mean, 0, dataset)
-
-
-def ceildiv(a: int, b: int) -> int:
-    return -(-a // b)
-
-
-
-
-# Unsupervised classification of channels and no-peak set.
-# %% [markdown]
-# After reading the data output
-
-
-# %% #for intracranial datata
-#    import os
-#    dir = os.path.dirname(__file__)
-#    images = os.path.join(dir, '/images/')
-#    if not os.path.exists(images):
-#       os.makedirs(images)
-
 
 </document_content>
 </document>
-<document index="16">
+<document index="14">
 <source>./pesco/pesco/experimental/foofexplore.py</source>
 <document_content>
 #!/usr/bin/env python3
@@ -2396,6 +1871,393 @@ def comp_foof_seg(raw, chan_details, tmin, tmax):
         .join(temp_df.set_index("ch_number"))
     )
     return peaks_all
+
+</document_content>
+</document>
+<document index="15">
+<source>./pesco/pesco/experimental/peak_testing.py</source>
+<document_content>
+"""Stage 3 of the Frauscher 2018 pipeline: bin into frequency intervals and KS-test against no-peak."""
+
+from __future__ import annotations
+
+import re
+
+import numpy as np
+import pandas as pd
+
+
+# Paper Table: 22 frequency intervals (Hz boundaries)
+_PAPER_INTERVALS = (
+    0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75,
+    7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25,
+    31.75, 80,
+)
+
+
+def cutintervals(x: np.ndarray) -> tuple[pd.Categorical, np.ndarray]:
+    """Bin frequencies into the paper's 22 intervals."""
+    colBin, y = pd.cut(x, _PAPER_INTERVALS, retbins=True, include_lowest=True)
+    return colBin, y
+
+
+def get_intervals(psd: pd.DataFrame, colbin: pd.Categorical) -> pd.DataFrame:
+    """Sum PSD power within each frequency interval."""
+    dictionary = dict(zip(psd.columns, colbin))
+    psd_intervals = psd.T.groupby(dictionary).sum().T
+    psd_intervals.columns = psd_intervals.columns.astype(str, copy=False)
+    return psd_intervals
+
+
+def test_intervals(
+    region_intervals: pd.DataFrame,
+    no_peak_intervals: pd.DataFrame,
+    print_debug: bool = False,
+) -> list[list[tuple[float, float]]]:
+    """One-sided KS test (less) per interval vs the no-peak set.
+
+    Returns a list of [(x1, y), (x2, y)] line segments for each significant
+    interval, ready to feed to a LineCollection. p-values are Bonferroni
+    corrected by 22*42 — to be replaced with Dunnett.
+    """
+    from rpy2.robjects.packages import importr
+    from rpy2.robjects.vectors import FloatVector
+
+    rstats = importr("stats")
+    list_of_intervals = []
+    for (idxCol, v1), (_, v2) in zip(region_intervals.items(), no_peak_intervals.items()):
+        if print_debug:
+            print(v1, v2, idxCol)
+        v1 = FloatVector(v1)
+        v2 = FloatVector(v2)
+        htest = rstats.ks_test(v1, v2, alternative="less", exact=False)
+        htestlist = list(htest)
+        t = htestlist[0][0]
+        pval = htestlist[1][0]
+        pval = pval * 22 * 42
+        if pval < 0.05:
+            y = 0.08
+            pattern = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")
+            bounds = [float(v) for v in pattern.findall(idxCol)]
+            list_of_intervals.append([(bounds[0], y), (bounds[1], y)])
+            if print_debug:
+                print(idxCol, t, format(pval, ".5f"))
+    return list_of_intervals
+
+
+def test_lobes(
+    no_peak_df: pd.DataFrame,
+    psd: pd.DataFrame,
+    colbin: pd.Categorical,
+) -> dict[str, list[list[tuple[float, float]]]]:
+    """Run test_intervals for each lobe vs the no-peak set."""
+    psd_intervals = get_intervals(psd, colbin)
+    psd_intervals = psd_intervals.assign(Lobe=psd["Lobe"])
+    no_peak_intervals = get_intervals(no_peak_df, colbin)
+
+    result = {}
+    for lobe in ["Occipital", "Parietal", "Frontal", "Temporal"]:
+        lobe_intervals = psd_intervals[psd_intervals.Lobe == lobe].drop(["Lobe"], axis=1)
+        result[lobe] = test_intervals(lobe_intervals, no_peak_intervals)
+    return result
+
+
+def test_regions(
+    no_peak_df: pd.DataFrame,
+    psd: pd.DataFrame,
+    colbin: pd.Categorical,
+) -> dict[str, dict[str, list[list[tuple[float, float]]]]]:
+    """Run test_intervals for each region within each lobe vs the no-peak set.
+
+    Returns nested dict: {lobe: {region: significant_intervals}}.
+    """
+    no_peak_intervals = get_intervals(no_peak_df, colbin)
+
+    result = {}
+    for lobe in psd["Lobe"].unique():
+        result[lobe] = {}
+        regions = psd[psd.Lobe == lobe]["Region name"].unique()
+        for region in regions:
+            region_psd = psd[(psd.Lobe == lobe) & (psd["Region name"] == region)]
+            region_intervals = get_intervals(
+                region_psd.drop(["Region name", "Lobe"], axis=1), colbin
+            )
+            result[lobe][region] = test_intervals(region_intervals, no_peak_intervals)
+    return result
+
+</document_content>
+</document>
+<document index="16">
+<source>./pesco/pesco/experimental/plotting.py</source>
+<document_content>
+"""Stage 4 of the Frauscher 2018 pipeline: plots, each independently callable."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.ticker
+import numpy as np
+import pandas as pd
+from matplotlib import collections as mc
+from matplotlib.axes import Axes
+
+from pesco.experimental.clustering import get_no_peak
+from pesco.experimental.peak_testing import get_intervals
+
+
+# ---------------------------------------------------------------------------
+# private helpers
+# ---------------------------------------------------------------------------
+
+def _ceildiv(a: int, b: int) -> int:
+    return -(-a // b)
+
+
+def _plot_subplot(
+    channel_data: pd.DataFrame,
+    no_peak_median: np.ndarray,
+    f: np.ndarray,
+    sig_intervals: list | None,
+    title: str,
+    ax: Axes | None = None,
+) -> Axes:
+    """Plot one PSD subplot: median + IQR + min/max + significance overlay."""
+    if ax is None:
+        ax = plt.gca()
+
+    q75 = channel_data.quantile(0.75, axis=0)
+    q25 = channel_data.quantile(0.25, axis=0)
+
+    ax.semilogx(f, no_peak_median, color="black")
+    ax.semilogx(f, q75, color="pink")
+    ax.semilogx(f, q25, color="pink")
+    ax.semilogx(f, channel_data.median(0), color="red")
+    ax.semilogx(f, channel_data.max(axis=0), color="r", linestyle=":")
+    ax.semilogx(f, channel_data.min(axis=0), color="r", linestyle=":")
+    ax.fill_between(f, q25, q75, facecolor="pink", interpolate=True)
+
+    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax.grid()
+
+    if sig_intervals:
+        lc = mc.LineCollection(sig_intervals, linewidths=2)
+        ax.add_collection(lc)
+        ax.autoscale()
+        ax.margins(0.1)
+
+    ax.set_xlabel("Frequency [Hz]")
+    ax.set_ylabel("Normalized spectral density")
+    ax.set_title(title)
+    for t, text in zip(
+        [2, 6, 10, 16, 36],
+        [r"$\delta$", r"$\theta$", r"$\alpha$", r"$\beta$", r"$\gamma$"],
+    ):
+        ax.text(t, 0.97, text, fontsize=14,
+                transform=ax.get_xaxis_transform(), ha="center", va="top")
+    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
+    ax.set_ylim(0, 0.10)
+    ax.set_xlim(0.5, 80)
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# public plotting functions
+# ---------------------------------------------------------------------------
+
+def plot_single_psd(psd_df: pd.DataFrame, f: np.ndarray, i: int) -> None:
+    """Plot the PSD of a single channel (row i)."""
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+    ax.semilogx(f, psd_df.iloc[i])
+    ax.grid()
+    ax.set_xlim(0.5, 80)
+    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
+    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax.set_xlabel("Frequency")
+    ax.set_ylabel("PSD")
+
+
+def plot_clusters(
+    psd_clust: pd.DataFrame,
+    f: np.ndarray,
+    dataset: str,
+    smal: list[int] | None = None,
+    nopeak: int | None = None,
+    output_dir: Path = Path("images"),
+):
+    """Plot median PSD of each cluster, highlighting the no-peak cluster."""
+    smal = smal or []
+    cluster_medians = psd_clust.groupby("clusters").median()
+    matplotlib.rcParams.update({"font.size": 16})
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    counts = psd_clust["clusters"].value_counts()
+    for k in range(len(cluster_medians.index)):
+        median = cluster_medians.loc[k]
+        label = f"cl. {k} ({counts.loc[k]} el.)"
+        if k in smal and k == nopeak:
+            ax.semilogx(f, median, linewidth=4.0, color="black", label=label)
+        elif k == nopeak:
+            ax.semilogx(f, median, linestyle=":", linewidth=5.0, label=label)
+        else:
+            ax.semilogx(f, median, alpha=0.5, label=label)
+    ax.legend()
+    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
+    ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax.grid()
+    for t, text in zip(
+        [2, 6, 10, 16, 36],
+        [r"$\delta$", r"$\theta$", r"$\alpha$", r"$\beta$", r"$\gamma$"],
+    ):
+        ax.text(t, 0.97, text, fontsize=14,
+                transform=ax.get_xaxis_transform(), ha="center", va="top")
+    ax.set_xlabel("Frequency")
+    ax.set_ylabel("Normalized spectral density")
+    plt.title(f"Median power of different PSDs clusters of {dataset}")
+    output_dir.mkdir(exist_ok=True)
+    plt.savefig(output_dir / f"{dataset}_clusters.svg", format="svg")
+    plt.show()
+    return fig, ax
+
+
+def plot_histogram(
+    psd: pd.DataFrame,
+    colbin: pd.Categorical,
+    dataset: str,
+    cols_to_drop: list[str] | None = None,
+    output_dir: Path = Path("images"),
+) -> None:
+    """Histogram of median power per frequency interval (Fig. 4 inset style).
+
+    Two panels: absolute share, and share normalized by interval width.
+    """
+    if cols_to_drop is None:
+        cols_to_drop = ["Region name", "Lobe"]
+    cols_present = [c for c in cols_to_drop if c in psd.columns]
+    if cols_present:
+        psd = psd.drop(cols_present, axis=1)
+
+    psd_median = pd.DataFrame(psd.median(axis=0)).T
+    psd_intervals = get_intervals(psd_median, colbin)
+
+    fig, ax = plt.subplots(1, 2, sharex=False, figsize=(30, 15))
+    ax = ax.flatten()
+    matplotlib.rcParams.update({"font.size": 22})
+
+    bins = np.array([
+        0.25, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75,
+        7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25,
+        31.75, 80,
+    ])
+
+    if "Lobe" in psd_intervals.columns:
+        freqs = psd_intervals.iloc[0].drop(["Lobe"]).values
+    else:
+        freqs = psd_intervals.iloc[0].values
+
+    fig.suptitle(dataset)
+
+    ax[0].fill_between(
+        bins.repeat(2)[1:-1], freqs.astype(float).repeat(2), facecolor="steelblue"
+    )
+    ax[0].hlines(y=0.04, xmin=0.5, xmax=80, linewidth=2, color="r")
+    ax[0].set_title("absolute share of power in a given bin")
+    ax[0].set_xscale("log")
+    ax[0].set_xlim([0.5, 80])
+    ax[0].set_xticks([0.5, 4, 8, 13, 30, 80])
+    ax[0].get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax[0].grid()
+    ax[0].set_ylim(0, 0.40)
+
+    widths = bins[1:] - bins[:-1]
+    heights = freqs.astype(float) / widths
+    ax[1].fill_between(bins.repeat(2)[1:-1], heights.repeat(2), facecolor="steelblue")
+    ax[1].set_title("share of power in a given bin normalized by width of the bin")
+    ax[1].set_xscale("log")
+    ax[1].set_xticks([0.5, 4, 8, 13, 30, 80])
+    ax[1].get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    ax[1].grid()
+    ax[1].set_xlim([0.5, 80])
+    ax[1].set_ylim(0, 0.07)
+
+    output_dir.mkdir(exist_ok=True)
+    plt.savefig(output_dir / "mean_power_share_in_intervals.png", format="png")
+    plt.show()
+
+
+def plot_lobes(
+    psd_clust: pd.DataFrame,
+    psd: pd.DataFrame,
+    f: np.ndarray,
+    smal: list[int],
+    dataset: str,
+    sig_lobes: dict[str, list] | None = None,
+    show: bool = False,
+    output_dir: Path = Path("images"),
+) -> None:
+    """4-panel plot: PSD per lobe with significant-interval overlays."""
+    _, median = get_no_peak(psd_clust, smal)
+    matplotlib.rcParams.update({"font.size": 22})
+
+    lobes = ["Occipital", "Parietal", "Frontal", "Temporal"]
+    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
+    fig.suptitle(f"Lobar differences in EEG frequencies: {dataset}")
+    fig.subplots_adjust(hspace=0.25, wspace=0.25)
+
+    for ax, lobe in zip(axes.flatten(), lobes):
+        lobe_psd = psd[psd.Lobe == lobe].drop(["Region name", "Lobe"], axis=1)
+        intervals = sig_lobes[lobe] if sig_lobes else None
+        title = f"{lobe} lobe - {len(lobe_psd)} channels"
+        _plot_subplot(lobe_psd, median, f, intervals, title, ax=ax)
+
+    output_dir.mkdir(exist_ok=True)
+    plt.savefig(output_dir / f"{dataset}_lobar_differences.svg", format="svg")
+    if show:
+        plt.show()
+    else:
+        plt.close()
+
+
+def plot_regions(
+    psd_clust: pd.DataFrame,
+    psd: pd.DataFrame,
+    f: np.ndarray,
+    smal: list[int],
+    dataset: str,
+    sig_regions: dict[str, dict[str, list]] | None = None,
+    output_dir: Path = Path("images"),
+) -> None:
+    """One figure per lobe, with one subplot per region."""
+    matplotlib.rcParams.update({"font.size": 8})
+    _, median = get_no_peak(psd_clust, smal)
+    output_dir.mkdir(exist_ok=True)
+
+    for lobe in psd["Lobe"].unique():
+        regions = psd[psd.Lobe == lobe]["Region name"].unique()
+        n_rows = _ceildiv(len(regions), 2)
+        fig, axes = plt.subplots(n_rows, 2, figsize=(10, 8 * _ceildiv(n_rows, 2)))
+        fig.subplots_adjust(hspace=0.25, wspace=0.25)
+
+        for ax, region in zip(axes.flatten(), regions):
+            region_psd = psd[
+                (psd.Lobe == lobe) & (psd["Region name"] == region)
+            ].drop(["Region name", "Lobe"], axis=1)
+            intervals = (
+                sig_regions[lobe].get(region) if sig_regions else None
+            )
+            title = f"{region} - {len(region_psd)} channels"
+            _plot_subplot(region_psd, median, f, intervals, title, ax=ax)
+
+        fig.get_axes()[0].annotate(
+            f"Regional differences in {lobe.lower()} lobe ({dataset})",
+            (0.5, 0.95), xycoords="figure fraction", ha="center", fontsize=24,
+        )
+        plt.savefig(
+            output_dir / f"{dataset}_{lobe}_regional_differences.svg",
+            format="svg", bbox_inches="tight", pad_inches=0,
+        )
+        plt.show()
 
 </document_content>
 </document>

@@ -56,32 +56,35 @@ def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool
 
     return raw, result
 
-
-
 def prepare_psd(
     matfile: pathlib.Path | str,
     region_dict_file: pathlib.Path | str,
     normalize: bool = True,
+    freq_range: tuple[float, float] = (0.5, 80.0),
 ) -> tuple[np.ndarray, pd.DataFrame]:
     """Load the Frauscher 2018 .mat file and compute per-channel PSD.
-
+ 
     Frauscher, B. et al. (2018). Atlas of the normal intracranial EEG.
     Brain, 141(4), 1130-1144. https://doi.org/10/gc5ct7
-
+ 
     Parameters
     ----------
     matfile, region_dict_file : path
         Paths to WakefulnessMatlabFile.mat and RegionInformation.csv.
     normalize : bool, default True
-        If True, L1-normalize each channel's PSD so its total in-band
-        power sums to 1 (paper convention; required for the Frauscher
+        If True, L1-normalize each channel's PSD so its in-band power
+        sums to 1 (paper convention; required for the Frauscher
         clustering pipeline). Set False to keep raw V**2/Hz density,
         e.g. for specparam fitting.
-
+    freq_range : (fmin, fmax), default (0.5, 80.0)
+        Frequency band kept in the returned PSD. Narrowing this (e.g.
+        (1.0, 80.0) for HD-EEG bandpassed at 1 Hz) excludes degenerate
+        bins from clustering, peak testing and plotting downstream.
+ 
     Returns
     -------
     f : ndarray
-        Frequency bins (Hz).
+        Frequency bins (Hz) within freq_range.
     psd_df : DataFrame
         Indexed by ChannelRegion (joined to region info). Frequency
         columns followed by 'Region name' and 'Lobe' from
@@ -91,18 +94,18 @@ def prepare_psd(
     channel_names = [l.flatten()[0] for l in mat["ChannelName"].flatten()]
     data = mat["Data"].T  # (n_channels, n_samples)
     fs = 200.0  # Frauscher data is downsampled to 200 Hz
-
-    f, psd = compute_psd(data, fs)
+ 
+    fmin, fmax = freq_range
+    f, psd = compute_psd(data, fs, fmin=fmin, fmax=fmax)
     if normalize:
         psd = normalize_psd(psd)
-
+ 
     psd_df = pd.DataFrame(psd, index=channel_names, columns=f)
     psd_df["ChannelRegion"] = mat["ChannelRegion"]
     region_dict = pd.read_csv(region_dict_file)
     psd_df = psd_df.set_index("ChannelRegion").join(region_dict.set_index("Region"))
     return f, psd_df
-
-
+ 
 def concat_mat(
     currentfold: pathlib.Path,
     A: pd.DataFrame,

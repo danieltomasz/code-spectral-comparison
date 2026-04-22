@@ -67,31 +67,46 @@ def test_intervals(
 
 
 def test_lobes(
-    no_peak_df: pd.DataFrame,
+    no_peak_df: pd.DataFrame | None,
     psd: pd.DataFrame,
     colbin: pd.Categorical,
 ) -> dict[str, list[list[tuple[float, float]]]]:
-    """Run test_intervals for each lobe vs the no-peak set."""
+    """Run test_intervals for each lobe vs the no-peak set.
+
+    Returns empty intervals for every lobe when no_peak_df is None.
+    """
+    lobes = ["Occipital", "Parietal", "Frontal", "Temporal"]
+    if no_peak_df is None:
+        return {lobe: [] for lobe in lobes}
+
     psd_intervals = get_intervals(psd, colbin)
     psd_intervals = psd_intervals.assign(Lobe=psd["Lobe"])
     no_peak_intervals = get_intervals(no_peak_df, colbin)
 
     result = {}
-    for lobe in ["Occipital", "Parietal", "Frontal", "Temporal"]:
+    for lobe in lobes:
         lobe_intervals = psd_intervals[psd_intervals.Lobe == lobe].drop(["Lobe"], axis=1)
         result[lobe] = test_intervals(lobe_intervals, no_peak_intervals)
     return result
 
 
 def test_regions(
-    no_peak_df: pd.DataFrame,
+    no_peak_df: pd.DataFrame | None,
     psd: pd.DataFrame,
     colbin: pd.Categorical,
 ) -> dict[str, dict[str, list[list[tuple[float, float]]]]]:
     """Run test_intervals for each region within each lobe vs the no-peak set.
 
     Returns nested dict: {lobe: {region: significant_intervals}}.
+    Returns empty intervals for every region when no_peak_df is None.
     """
+    if no_peak_df is None:
+        result = {}
+        for lobe in psd["Lobe"].unique():
+            regions = psd[psd.Lobe == lobe]["Region name"].unique()
+            result[lobe] = {region: [] for region in regions}
+        return result
+
     no_peak_intervals = get_intervals(no_peak_df, colbin)
 
     result = {}

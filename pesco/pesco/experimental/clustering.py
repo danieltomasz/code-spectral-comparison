@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 import sklearn.metrics.pairwise
+
+
+Summary = Literal["mean", "median"]
+
+
+def _summary(data, how: Summary, axis: int = 0) -> np.ndarray:
+    """Mean or median along `axis`, returned as ndarray. Works on DataFrame or ndarray."""
+    func = {"mean": np.mean, "median": np.median}.get(how)
+    if func is None:
+        raise ValueError(f"summary must be 'mean' or 'median', got {how!r}")
+    return np.asarray(func(data, axis=axis))
 
 
 def compute_clusters(
@@ -23,41 +36,56 @@ def compute_clusters(
     return psd_df.assign(clusters=kmeans.labels_)
 
 
-def identify_small_clusters(cluster_medians: pd.DataFrame) -> list[int]:
-    """Return cluster indices whose median spectrum is below all others' max at every frequency.
+def identify_small_clusters(
+    psd_clust: pd.DataFrame, summary: Summary = "mean",
+) -> list[int]:
+    """Return cluster indices whose per-cluster summary spectrum is below all others' max at every frequency.
 
-    Paper criterion for the no-peak group: its mean normalized spectrum must be
-    lower than the maximum among the other groups at every frequency.
-    (This implementation uses median, not mean — to be revisited.)
+    Paper criterion (Frauscher 2018): the no-peak group's *mean* normalized
+    spectrum is lower than the maximum among the other groups at every
+    frequency. Pass summary='median' to use median instead (not paper-faithful).
     """
+    cluster_summary = (
+        psd_clust.drop(columns="clusters")
+        .groupby(psd_clust["clusters"])
+        .agg(summary)
+    )
+
     smal = []
-    n_freqs = cluster_medians.shape[1]
-    for index, row in cluster_medians.iterrows():
-        max_completion = cluster_medians.iloc[cluster_medians.index != index, :].max()
+    n_freqs = cluster_summary.shape[1]
+    for index, row in cluster_summary.iterrows():
+        max_completion = cluster_summary.iloc[cluster_summary.index != index, :].max()
         if np.sum(np.less(row, max_completion)) == n_freqs:
             smal.append(index)
     return smal
 
 
 def get_no_peak(
-    psd_clust: pd.DataFrame, smal: list[int]
-) -> tuple[pd.DataFrame, np.ndarray]:
-    """Take the 50% of channels in the no-peak cluster closest to its median.
+    psd_clust: pd.DataFrame, smal: list[int], summary: Summary = "mean",
+) -> tuple[pd.DataFrame | None, np.ndarray | None]:
+    """Take the 50% of channels in the no-peak cluster closest to its center.
 
-    Paper takes the 50% closest to the mean — this uses median. To be revisited.
+    Paper uses the mean as center; pass summary='median' to use the median instead.
     Picks smal[0] when smal has multiple entries — to be revisited.
+    Returns (None, None) when smal is empty (no cluster qualified as no-peak).
     """
-    no_peak = psd_clust[psd_clust["clusters"] == smal[0]]
-    no_peak = no_peak[no_peak.columns[:-1]]
-    median = np.median(no_peak, 0)
-    temp_med = np.tile(median, (len(no_peak), 1))
-    no_peak["distances_to_median"] = sklearn.metrics.pairwise.paired_distances(
-        no_peak, temp_med
+    if not smal:
+        return None, None
+    no_peak = (
+        psd_clust[psd_clust["clusters"] == smal[0]]
+        .drop(columns="clusters")
+        .copy()
+    )
+    freq_values = no_peak.values
+    center = _summary(freq_values, summary, axis=0)
+    temp = np.tile(center, (len(no_peak), 1))
+    no_peak["distance_to_center"] = sklearn.metrics.pairwise.paired_distances(
+        freq_values, temp
     )
     df = no_peak[
-        no_peak.distances_to_median < no_peak.distances_to_median.quantile(0.50)
+        no_peak["distance_to_center"] < no_peak["distance_to_center"].quantile(0.50)
     ]
-    return df, median
+    return df, center
 
 
 def _elbow_scores_psd(psd_df: pd.DataFrame, n: int) -> dict[int, float]:
