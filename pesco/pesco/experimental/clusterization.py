@@ -13,8 +13,6 @@ import matplotlib
 import matplotlib.ticker
 import sklearn.metrics.pairwise
 
-from scipy import stats
-
 seed = 3
 
 # for importing r
@@ -62,25 +60,14 @@ def eblow_psd(psd_df: pd.DataFrame, n: int) -> None:
 
 
 def compute_clusters(psd_df: pd.DataFrame, HowManyClusters: int, random_seed: int = 2) -> pd.DataFrame:
-    power = psd_df.values
-
-    from sklearn.preprocessing import Normalizer
     from sklearn.cluster import KMeans
-    from sklearn.pipeline import make_pipeline
 
-    normalizer = Normalizer()
-    np.random.seed(42)
-    np.random.RandomState(3)
-
-    np.random.seed(3)
+    power = psd_df.values
     kmeans = KMeans(
         n_clusters=HowManyClusters, max_iter=300, n_init=100, random_state=random_seed
     )
-    pipeline = make_pipeline(normalizer, kmeans)
-    pipeline.fit(power)
-    # cluster labels
-    cluster_labels = kmeans.labels_
-    psd_df = psd_df.assign(clusters=cluster_labels)
+    kmeans.fit(power)
+    psd_df = psd_df.assign(clusters=kmeans.labels_)
     return psd_df
 
 
@@ -89,9 +76,10 @@ def compute_clusters(psd_df: pd.DataFrame, HowManyClusters: int, random_seed: in
 def identify_small_clusters(psd_medianas: pd.DataFrame) -> list[int]:
     """Return indices of clusters whose median is below all other clusters' max at every frequency."""
     smal = []
+    n_freqs = psd_medianas.shape[1]
     for index, row in psd_medianas.iterrows():
         max_completion = psd_medianas.iloc[psd_medianas.index != index, :].max()
-        if np.sum(np.less(row, max_completion)) == 160:
+        if np.sum(np.less(row, max_completion)) == n_freqs:
             smal.append(index)
     return smal
 
@@ -258,7 +246,6 @@ def return_signifcant(temp: pd.DataFrame, df_intervals: pd.DataFrame, print_debu
         print(v1, v2, idxCol) if print_debug else True
         # v1 is a column from lobes
         # v2 is  a column from no peak set
-        t, pval = stats.ks_2samp(v1, v2)
         # details of r function https://rdrr.io/cran/dgof/man/ks.test.html
         # ther is no computation of True value only assymptotic aproximation
         v1 = FloatVector(v1)
@@ -326,19 +313,3 @@ def check_intervals(psd: pd.DataFrame, colbin: pd.Categorical, dataset: str, col
 
 def ceildiv(a: int, b: int) -> int:
     return -(-a // b)
-
-
-
-
-# Unsupervised classification of channels and no-peak set.
-# %% [markdown]
-# After reading the data output
-
-
-# %% #for intracranial datata
-#    import os
-#    dir = os.path.dirname(__file__)
-#    images = os.path.join(dir, '/images/')
-#    if not os.path.exists(images):
-#       os.makedirs(images)
-

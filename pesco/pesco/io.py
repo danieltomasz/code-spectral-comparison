@@ -11,6 +11,9 @@ import pandas as pd
 import h5py
 import pathlib
 import numpy as np
+import scipy.io
+
+from pesco.preprocess import compute_psd, normalize_psd
 
 def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool = False) -> tuple[mne.io.RawArray, pd.DataFrame]:
     """
@@ -28,9 +31,6 @@ def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool
     ch_names = list(matdata["ChannelName"])
     ch_names = [str(x[0][0]) for x in ch_names]
     ch_types = ["ecog"] * len(ch_names)
-
-    # region =  list(matdata['ChannelRegion'])
-    # region = [x[0] for x in  region]
 
     sfreq = matdata["SamplingFrequency"].item()
     data = matdata["Data"].T
@@ -55,6 +55,52 @@ def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool
     result.to_csv(OUT_PATH / "ieeg_raw.csv")
 
     return raw, result
+
+
+
+def prepare_psd(
+    matfile: pathlib.Path | str,
+    region_dict_file: pathlib.Path | str,
+    normalize: bool = True,
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """Load the Frauscher 2018 .mat file and compute per-channel PSD.
+
+    Frauscher, B. et al. (2018). Atlas of the normal intracranial EEG.
+    Brain, 141(4), 1130-1144. https://doi.org/10/gc5ct7
+
+    Parameters
+    ----------
+    matfile, region_dict_file : path
+        Paths to WakefulnessMatlabFile.mat and RegionInformation.csv.
+    normalize : bool, default True
+        If True, L1-normalize each channel's PSD so its total in-band
+        power sums to 1 (paper convention; required for the Frauscher
+        clustering pipeline). Set False to keep raw V**2/Hz density,
+        e.g. for specparam fitting.
+
+    Returns
+    -------
+    f : ndarray
+        Frequency bins (Hz).
+    psd_df : DataFrame
+        Indexed by ChannelRegion (joined to region info). Frequency
+        columns followed by 'Region name' and 'Lobe' from
+        region_dict_file.
+    """
+    mat = scipy.io.loadmat(matfile)
+    channel_names = [l.flatten()[0] for l in mat["ChannelName"].flatten()]
+    data = mat["Data"].T  # (n_channels, n_samples)
+    fs = 200.0  # Frauscher data is downsampled to 200 Hz
+
+    f, psd = compute_psd(data, fs)
+    if normalize:
+        psd = normalize_psd(psd)
+
+    psd_df = pd.DataFrame(psd, index=channel_names, columns=f)
+    psd_df["ChannelRegion"] = mat["ChannelRegion"]
+    region_dict = pd.read_csv(region_dict_file)
+    psd_df = psd_df.set_index("ChannelRegion").join(region_dict.set_index("Region"))
+    return f, psd_df
 
 
 def concat_mat(
@@ -125,4 +171,3 @@ def load_sources(
         result.to_csv(pathlib.Path(OUT_PATH) / "sources_raw.csv")
 
     return raw, result
-
