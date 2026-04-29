@@ -1,7 +1,7 @@
 .ONESHELL:
 
 PROJECT?=spectral-comparison
-VERSION?=3.13
+VERSION?=3.14
 VENV=${PROJECT}-${VERSION}
 
 

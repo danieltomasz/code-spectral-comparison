@@ -98,7 +98,7 @@ def prepare_psd(
     fmin, fmax = freq_range
     f, psd = compute_psd(data, fs, fmin=fmin, fmax=fmax)
     if normalize:
-        psd = normalize_psd(psd)
+        psd = normalize_psd(psd, f)
  
     psd_df = pd.DataFrame(psd, index=channel_names, columns=f)
     psd_df["ChannelRegion"] = mat["ChannelRegion"]

@@ -89,10 +89,12 @@ def compute_psd(
     return f[band], psd[..., band]
 
 
-def normalize_psd(psd: np.ndarray) -> np.ndarray:
-    """L1 normalize each channel's PSD so total power in band sums to 1.
+def normalize_psd(psd: np.ndarray, f: np.ndarray) -> np.ndarray:
+    """Normalize each channel's PSD so its in-band integral equals 1.
 
-    Paper convention for the clustering / KS-test pipeline.
-    Do NOT apply before specparam.
+    Paper convention (Frauscher 2018): ``∫ psd df = 1`` over the kept
+    band, i.e. a true density. Bin-width invariant — values stay the
+    same if ``nperseg`` changes. Do NOT apply before specparam.
     """
-    return psd / psd.sum(axis=-1, keepdims=True)
+    df = f[1] - f[0]
+    return psd / (psd.sum(axis=-1, keepdims=True) * df)

@@ -6,6 +6,7 @@ import re
 
 import numpy as np
 import pandas as pd
+from scipy.stats import ks_2samp
 
 
 # Paper Table: 22 frequency intervals (Hz boundaries)
@@ -41,21 +42,13 @@ def test_intervals(
     interval, ready to feed to a LineCollection. p-values are Bonferroni
     corrected by 22*42 — to be replaced with Dunnett.
     """
-    from rpy2.robjects.packages import importr
-    from rpy2.robjects.vectors import FloatVector
-
-    rstats = importr("stats")
     list_of_intervals = []
     for (idxCol, v1), (_, v2) in zip(region_intervals.items(), no_peak_intervals.items()):
         if print_debug:
             print(v1, v2, idxCol)
-        v1 = FloatVector(v1)
-        v2 = FloatVector(v2)
-        htest = rstats.ks_test(v1, v2, alternative="less", exact=False)
-        htestlist = list(htest)
-        t = htestlist[0][0]
-        pval = htestlist[1][0]
-        pval = pval * 22 * 42
+        res = ks_2samp(np.asarray(v1), np.asarray(v2), alternative="less", method="asymp")
+        t = res.statistic
+        pval = res.pvalue * 22 * 42
         if pval < 0.05:
             y = 0.08
             pattern = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")

@@ -11,16 +11,17 @@ description = "Project for working with MEG  and EEG data"
 license = { file = "LICENSE" }
 classifiers = ["License :: OSI Approved :: MIT License"]
 
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 dependencies = [
     "mne",
-    "specparam>=2.0.0rc1",
+    "specparam>=2.0.0rc6",
     "numpy",
     "pandas",
     "h5py",
     "scikit-learn",
-    "mpltex","rpy2"]
+    "mpltex",
+    "scipy"]
 
 
 [tool.setuptools.packages.find]
@@ -36,7 +37,7 @@ testpaths = ["docs"]
 
 [tool.black]
 line-length = 88
-target-version = ['py310', 'py311', 'py313']
+target-version = ['py311', 'py312', 'py313']
 include = '\.pyi?$'
 
 
