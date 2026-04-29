@@ -17,10 +17,59 @@ _PAPER_INTERVALS = (
 )
 
 
-def cutintervals(x: np.ndarray) -> tuple[pd.Categorical, np.ndarray]:
-    """Bin frequencies into the paper's 22 intervals."""
-    colBin, y = pd.cut(x, _PAPER_INTERVALS, retbins=True, include_lowest=True)
+def cutintervals(
+    x: np.ndarray,
+    edges: tuple[float, ...] | np.ndarray | None = None,
+) -> tuple[pd.Categorical, np.ndarray]:
+    """Bin frequencies into the paper's 22 intervals (or custom edges)."""
+    if edges is None:
+        edges = _PAPER_INTERVALS
+    colBin, y = pd.cut(x, edges, retbins=True, include_lowest=True)
     return colBin, y
+
+
+def compute_intervals(
+    f: np.ndarray,
+    psd_reference: np.ndarray,
+    threshold: float = 0.04,
+) -> np.ndarray:
+    """Frauscher-style frequency-interval edges: greedy ≥``threshold`` cuts.
+
+    Each interval holds at least ``threshold`` of the total mass of
+    ``psd_reference``. Uses the methodology from Frauscher et al. 2018:
+    "The intervals were selected so that each of them had at least 4%
+    of the power of the average normalized spectrum of all the studied
+    channels".
+
+    Parameters
+    ----------
+    f : array, shape (n_freqs,)
+        Frequency grid (uniformly spaced).
+    psd_reference : array, shape (n_freqs,)
+        Reference spectrum — typically the mean of the per-channel
+        normalized PSDs. Need not sum to 1; it's renormalized internally.
+    threshold : float, default 0.04
+        Minimum mass per interval, as a fraction of the total.
+
+    Returns
+    -------
+    edges : array
+        Sorted edges. Cuts are placed midway between consecutive ``f``
+        bins, matching the paper's 0.5/0.75/1.25/... grid.
+    """
+    f = np.asarray(f, dtype=float)
+    psd_reference = np.asarray(psd_reference, dtype=float)
+    df = f[1] - f[0]
+    mass = psd_reference / psd_reference.sum()  # normalize to total = 1
+    edges = [f[0] - df / 2]
+    cum = 0.0
+    for i in range(len(f) - 1):
+        cum += mass[i]
+        if cum >= threshold:
+            edges.append(f[i] + df / 2)
+            cum = 0.0
+    edges.append(f[-1] + df / 2)
+    return np.asarray(edges)
 
 
 def get_intervals(psd: pd.DataFrame, colbin: pd.Categorical) -> pd.DataFrame:

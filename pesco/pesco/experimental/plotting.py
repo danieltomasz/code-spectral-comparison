@@ -160,11 +160,9 @@ def plot_histogram(
     ax = ax.flatten()
     matplotlib.rcParams.update({"font.size": 22})
 
-    bins = np.array([
-        0.25, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75,
-        7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25,
-        31.75, 80,
-    ])
+    cats = colbin.categories
+    bins = np.array([cats[0].left] + [iv.right for iv in cats], dtype=float)
+    bins[0] = bins[0] / 2  # cosmetic: widen leftmost bar on log-x axis
 
     if "Lobe" in psd_intervals.columns:
         freqs = psd_intervals.iloc[0].drop(["Lobe"]).values
