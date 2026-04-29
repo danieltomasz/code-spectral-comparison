@@ -31,7 +31,7 @@ context-pesco:
 	files-to-prompt ./pesco -e py -e md -e toml --ignore ./_archive/ ./.venv/ --cxml -o pesco-context.txt
 
 ch2:
-	quarto render manuscript/chapter_2.qmd --to pdf
+	quarto render chapters/ch02.qmd --to pdf
 
 docs:
 	 uv run great-docs build && great-docs preview 

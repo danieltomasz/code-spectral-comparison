@@ -1,0 +1,72 @@
+format:
+  pdf:
+    documentclass: book
+    classoption: [oneside, 12pt]
+    fontsize: 12pt
+    link-citations: true
+    urlcolor: blue
+    toclinkcolor: blue
+    number-sections: true
+    pdf-engine: lualatex
+    toc-depth: 2
+#  template: include/title.tex
+ #   template-partials:
+ #     - include/title.tex
+    include-in-header:
+      text: |
+        %%
+        %% Paragraph indentation
+        %%
+        \usepackage{indentfirst}  % Indents the first paragraph of each section
+        \setlength{\parindent}{2em}
+        %indentation size (change as needed)
+        %%
+        %%Memoir
+        %%
+        %\chapterstyle{ell}
+        %\epigraphfontsize{\small\itshape}
+        %\setlength\epigraphwidth{8cm}
+        %\setlength\epigraphrule{0pt}
+        \usepackage{color,graphicx}
+        \definecolor{ugentblue}{RGB}{30,100,200}
+        %\renewcommand\colorchapnum{\color{ugentblue}}
+        %\renewcommand\colorchaptitle{\color{ugentblue}}
+        %\chapterstyle{pedersen}
+        %%
+        %% Other packes
+        %%
+        \usepackage{epigraph}
+        \usepackage{microtype}
+        %%
+        %% Fonts
+        %%
+        \usepackage{unicode-math}
+        \setmathfont{TeX Gyre Pagella Math}
+        %%
+        %% Figures
+        %%
+        \graphicspath{{figures}{chapters/figures}{../figures}{chapters}}
+        \usepackage{float}
+        \let\origfigure\figure
+        \let\endorigfigure\endfigure
+        \renewenvironment{figure}[1][2] {
+            \expandafter\origfigure\expandafter[H]
+        } {
+            \endorigfigure
+        }
+        %\frontmatter % disable after disablig memoir
+    include-before-body:
+      text: |
+        \pagestyle{plain}
+        \pagenumbering{roman}
+  docx:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+
+bibliography:
+  - references.bib
+reference-section-title: References
+citeproc: true
+suppress-bibliography: false
+
