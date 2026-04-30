@@ -111,6 +111,7 @@ The k-means clustering procedure applied to the iEEG atlas yielded eight spectra
 
 
 
+
 Applying the same procedure to the HD-EEG source-reconstructed data (Mantini dataset) yielded six spectral groups. The reduced number of clusters indicates a narrower range of spectral shapes than in iEEG, consistent with the spatial smoothing introduced by source reconstruction. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart, with stronger concentration of power in the alpha range across most clusters, likely reflecting both the eyes-open recording condition and the dominance of posterior sources in the source model. Figure @fig-cluster-comparison presents these clustering results side by side.
 
 ![Figure 2. Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the eight iEEG clusters and Panel B shows the six HD-EEG clusters. In both modalities, one no-peak cluster is visible, while HD-EEG shows fewer distinct spectral classes, consistent with stronger spatial smoothing.](figures/chapter2/fig2_cluster_panels.png){#fig-cluster-comparison width=95%}

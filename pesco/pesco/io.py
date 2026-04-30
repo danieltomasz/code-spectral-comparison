@@ -12,8 +12,79 @@ import h5py
 import pathlib
 import numpy as np
 import scipy.io
+import scipy.signal
 
 from pesco.preprocess import compute_psd, normalize_psd
+
+
+def _true_runs(mask: np.ndarray) -> list[tuple[int, int]]:
+    """Return start/stop pairs for contiguous True runs."""
+    runs = []
+    start = None
+    for sample, value in enumerate(mask):
+        if value and start is None:
+            start = sample
+        if (not value or sample == mask.size - 1) and start is not None:
+            stop = sample + int(value and sample == mask.size - 1)
+            runs.append((start, stop))
+            start = None
+    return runs
+
+
+def _remove_frauscher_zero_buffers(
+    data: np.ndarray,
+    patients: np.ndarray,
+    fs: float,
+    duration: float = 60.0,
+    min_zero_run: float = 2.0,
+    bandpass: tuple[float, float] | None = None,
+    filter_order: int = 4,
+) -> np.ndarray:
+    """Remove atlas zero buffers/padding and return 60 s per channel."""
+    expected_samples = int(round(duration * fs))
+    min_zero_samples = int(round(min_zero_run * fs))
+    patients = np.asarray(patients).ravel()
+    filter_coeffs = None
+    if bandpass is not None:
+        filter_coeffs = scipy.signal.butter(
+            filter_order, bandpass, btype="bandpass", fs=fs
+        )
+
+    if data.ndim != 2:
+        raise ValueError("data must have shape (n_channels, n_samples)")
+    if patients.shape[0] != data.shape[0]:
+        raise ValueError("patients must have one entry per channel")
+
+    compact = np.empty((data.shape[0], expected_samples), dtype=data.dtype)
+    for patient in np.unique(patients):
+        channel_idx = np.flatnonzero(patients == patient)
+        zero_samples = np.all(data[channel_idx] == 0, axis=0)
+        drop = np.zeros_like(zero_samples, dtype=bool)
+
+        for start, stop in _true_runs(zero_samples):
+            if stop - start >= min_zero_samples:
+                drop[start:stop] = True
+
+        keep = ~drop
+        if keep.sum() != expected_samples:
+            raise ValueError(
+                f"Patient {patient} has {keep.sum()} non-buffer samples; "
+                f"expected {expected_samples}."
+            )
+
+        if filter_coeffs is None:
+            compact[channel_idx] = data[channel_idx][:, keep]
+            continue
+
+        b, a = filter_coeffs
+        filtered_segments = [
+            scipy.signal.filtfilt(b, a, data[channel_idx, start:stop], axis=-1)
+            for start, stop in _true_runs(keep)
+        ]
+        compact[channel_idx] = np.concatenate(filtered_segments, axis=-1)
+
+    return compact
+
 
 def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool = False) -> tuple[mne.io.RawArray, pd.DataFrame]:
     """
@@ -61,6 +132,9 @@ def prepare_psd(
     region_dict_file: pathlib.Path | str,
     normalize: bool = True,
     freq_range: tuple[float, float] = (0.5, 80.0),
+    remove_zero_buffers: bool = True,
+    frauscher_bandpass: bool = True,
+    filter_order: int = 4,
 ) -> tuple[np.ndarray, pd.DataFrame]:
     """Load the Frauscher 2018 .mat file and compute per-channel PSD.
  
@@ -80,6 +154,17 @@ def prepare_psd(
         Frequency band kept in the returned PSD. Narrowing this (e.g.
         (1.0, 80.0) for HD-EEG bandpassed at 1 Hz) excludes degenerate
         bins from clustering, peak testing and plotting downstream.
+    remove_zero_buffers : bool, default True
+        Drop the 2 s zero buffers between artifact-free segments and the
+        trailing zero padding in the downloadable atlas file before Welch.
+        This reconstructs the 60 s signal used for Frauscher's 59
+        overlapping 2 s Welch blocks.
+    frauscher_bandpass : bool, default True
+        Apply the paper's 0.5-80 Hz band-pass before Welch. When
+        remove_zero_buffers is True, filtering is applied separately to the
+        valid signal segments so filter transients do not cross zero buffers.
+    filter_order : int, default 4
+        Butterworth filter order used for the Frauscher band-pass.
  
     Returns
     -------
@@ -91,9 +176,23 @@ def prepare_psd(
         region_dict_file.
     """
     mat = scipy.io.loadmat(matfile)
-    channel_names = [l.flatten()[0] for l in mat["ChannelName"].flatten()]
+    channel_names = [label.flatten()[0] for label in mat["ChannelName"].flatten()]
     data = mat["Data"].T  # (n_channels, n_samples)
     fs = 200.0  # Frauscher data is downsampled to 200 Hz
+    if remove_zero_buffers:
+        bandpass = (0.5, 80.0) if frauscher_bandpass else None
+        data = _remove_frauscher_zero_buffers(
+            data,
+            mat["Patient"],
+            fs,
+            bandpass=bandpass,
+            filter_order=filter_order,
+        )
+    elif frauscher_bandpass:
+        b, a = scipy.signal.butter(
+            filter_order, (0.5, 80.0), btype="bandpass", fs=fs
+        )
+        data = scipy.signal.filtfilt(b, a, data, axis=-1)
  
     fmin, fmax = freq_range
     f, psd = compute_psd(data, fs, fmin=fmin, fmax=fmax)

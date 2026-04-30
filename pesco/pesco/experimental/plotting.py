@@ -100,8 +100,12 @@ def plot_clusters(
     nopeak: int | None = None,
     output_dir: Path = Path("images"),
     summary: Summary = "mean",
+    log_y: bool = False,
 ):
-    """Plot per-cluster summary PSD, highlighting the no-peak cluster."""
+    """Plot per-cluster summary PSD, highlighting the no-peak cluster.
+
+    Set log_y=True to use a logarithmic scale on the PSD axis.
+    """
     smal = smal or []
     cluster_summary = psd_clust.groupby("clusters").agg(summary)
     matplotlib.rcParams.update({"font.size": 16})
@@ -119,6 +123,8 @@ def plot_clusters(
     ax.legend()
     ax.set_xticks([0.5, 4, 8, 13, 30, 80])
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    if log_y:
+        ax.set_yscale("log")
     ax.grid()
     for t, text in zip(
         [2, 6, 10, 16, 36],
