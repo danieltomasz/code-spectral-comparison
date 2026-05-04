@@ -5,6 +5,7 @@ Loading data and switch to mne format
 """
 
 # %% loading data to mne
+from __future__ import annotations
 import mne
 import scipy.io as sio
 import pandas as pd
@@ -13,6 +14,7 @@ import pathlib
 import numpy as np
 import scipy.io
 import scipy.signal
+
 
 from pesco.preprocess import compute_psd, normalize_psd
 
@@ -86,46 +88,69 @@ def _remove_frauscher_zero_buffers(
     return compact
 
 
-def load_ieeg(DATA_PATH: pathlib.Path, OUT_PATH: pathlib.Path, print_debug: bool = False) -> tuple[mne.io.RawArray, pd.DataFrame]:
+def _load_frauscher_mat(
+    matfile: pathlib.Path | str,
+    region_dict_file: pathlib.Path | str,
+) -> tuple[np.ndarray, float, pd.DataFrame]:
+    """Load atlas .mat, return (data, fs, meta).
+
+    Parameters
+    ----------
+    matfile, region_dict_file : path
+        Paths to WakefulnessMatlabFile.mat and RegionInformation.csv.
+
+    Returns
+    -------
+    data : ndarray, shape (n_channels, n_samples)
+    fs : float
+        Sampling frequency in Hz.
+    meta : DataFrame
+        Indexed by channel name. Columns: ChannelRegion, patient,
+        mni_x, mni_y, mni_z, Region name, Lobe.
     """
-    Load intracranial data from file and return time series as an mne object and pandas dataset
-    DATA_PATH is the location of the  folder containing the data
-    OUT_PATH is the path, where to write mne file
+    mat = scipy.io.loadmat(matfile)
+    ch_names: list[str] = [str(x[0][0]) for x in mat["ChannelName"]]
+    fs = float(mat["SamplingFrequency"].item())
+    data: np.ndarray = mat["Data"].T
 
-    """
-    matlabfile = DATA_PATH / "WakefulnessMatlabFile.mat"
-    region_dict_name = DATA_PATH / "RegionInformation.csv"
+    region_num: np.ndarray = mat["ChannelRegion"].ravel()
+    pos: np.ndarray = mat["ChannelPosition"]
+    patient: np.ndarray = mat["Patient"].ravel()
 
-    matdata = sio.loadmat(matlabfile)
-    print(matdata.keys()) if print_debug else True
+    meta = pd.DataFrame(
+        {
+            "ChannelRegion": region_num,
+            "patient": patient,
+            "mni_x": pos[:, 0],
+            "mni_y": pos[:, 1],
+            "mni_z": pos[:, 2],
+        },
+        index=pd.Index(ch_names, name="channel"),
+    )
 
-    ch_names = list(matdata["ChannelName"])
-    ch_names = [str(x[0][0]) for x in ch_names]
-    ch_types = ["ecog"] * len(ch_names)
+    region_dict = pd.read_csv(region_dict_file)
+    meta = meta.join(region_dict.set_index("Region"), on="ChannelRegion")
+    return data, fs, meta
 
-    sfreq = matdata["SamplingFrequency"].item()
-    data = matdata["Data"].T
 
-    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
+def load_ieeg(
+    data_path: pathlib.Path | str,
+    out_path: pathlib.Path | str | None = None,
+) -> tuple[mne.io.RawArray, pd.DataFrame]:
+    """Atlas → mne.Raw + metadata. Optional disk dump if out_path given."""
+    data_path = pathlib.Path(data_path)
+    data, fs, meta = _load_frauscher_mat(
+        data_path / "WakefulnessMatlabFile.mat",
+        data_path / "RegionInformation.csv",
+    )
+    info = mne.create_info(ch_names=list(meta.index), sfreq=fs, ch_types="ecog")
     raw = mne.io.RawArray(data, info)
+    if out_path is not None:
+        out_path = pathlib.Path(out_path)
+        raw.save(out_path / "ieeg_raw.fif", overwrite=True)
+        meta.to_csv(out_path / "ieeg_raw.csv")
+    return raw, meta
 
-    region = list(matdata["ChannelRegion"])
-    region = [x[0] for x in region]
-
-    df = pd.DataFrame({
-        "ch_name": ch_names,
-        "region": region,
-        "region_number": region,
-    })
-
-    region_dict = pd.read_csv(region_dict_name)
-    result = df.set_index("region").join(region_dict.set_index("Region"))
-    dataset = ["ieeg"] * len(result)
-    result["dataset"] = dataset
-    raw.save(OUT_PATH / "ieeg_raw.fif", overwrite=True)
-    result.to_csv(OUT_PATH / "ieeg_raw.csv")
-
-    return raw, result
 
 def prepare_psd(
     matfile: pathlib.Path | str,
@@ -136,75 +161,41 @@ def prepare_psd(
     frauscher_bandpass: bool = True,
     filter_order: int = 4,
 ) -> tuple[np.ndarray, pd.DataFrame]:
-    """Load the Frauscher 2018 .mat file and compute per-channel PSD.
- 
-    Frauscher, B. et al. (2018). Atlas of the normal intracranial EEG.
-    Brain, 141(4), 1130-1144. https://doi.org/10/gc5ct7
- 
-    Parameters
-    ----------
-    matfile, region_dict_file : path
-        Paths to WakefulnessMatlabFile.mat and RegionInformation.csv.
-    normalize : bool, default True
-        If True, L1-normalize each channel's PSD so its in-band power
-        sums to 1 (paper convention; required for the Frauscher
-        clustering pipeline). Set False to keep raw V**2/Hz density,
-        e.g. for specparam fitting.
-    freq_range : (fmin, fmax), default (0.5, 80.0)
-        Frequency band kept in the returned PSD. Narrowing this (e.g.
-        (1.0, 80.0) for HD-EEG bandpassed at 1 Hz) excludes degenerate
-        bins from clustering, peak testing and plotting downstream.
-    remove_zero_buffers : bool, default True
-        Drop the 2 s zero buffers between artifact-free segments and the
-        trailing zero padding in the downloadable atlas file before Welch.
-        This reconstructs the 60 s signal used for Frauscher's 59
-        overlapping 2 s Welch blocks.
-    frauscher_bandpass : bool, default True
-        Apply the paper's 0.5-80 Hz band-pass before Welch. When
-        remove_zero_buffers is True, filtering is applied separately to the
-        valid signal segments so filter transients do not cross zero buffers.
-    filter_order : int, default 4
-        Butterworth filter order used for the Frauscher band-pass.
- 
+    """Load atlas .mat and compute per-channel PSD.
+
     Returns
     -------
-    f : ndarray
-        Frequency bins (Hz) within freq_range.
+    f : ndarray, shape (n_freqs,)
     psd_df : DataFrame
-        Indexed by ChannelRegion (joined to region info). Frequency
-        columns followed by 'Region name' and 'Lobe' from
-        region_dict_file.
+        Indexed by channel name. Frequency columns (float, Hz) followed
+        by metadata: ChannelRegion, patient, mni_x/y/z, Region name, Lobe.
     """
-    mat = scipy.io.loadmat(matfile)
-    channel_names = [label.flatten()[0] for label in mat["ChannelName"].flatten()]
-    data = mat["Data"].T  # (n_channels, n_samples)
-    fs = 200.0  # Frauscher data is downsampled to 200 Hz
+    data, fs, meta = _load_frauscher_mat(matfile, region_dict_file)
+
     if remove_zero_buffers:
-        bandpass = (0.5, 80.0) if frauscher_bandpass else None
+        bandpass: tuple[float, float] | None = (
+            (0.5, 80.0) if frauscher_bandpass else None
+        )
         data = _remove_frauscher_zero_buffers(
             data,
-            mat["Patient"],
+            meta["patient"].to_numpy(),
             fs,
             bandpass=bandpass,
             filter_order=filter_order,
         )
     elif frauscher_bandpass:
-        b, a = scipy.signal.butter(
-            filter_order, (0.5, 80.0), btype="bandpass", fs=fs
-        )
+        b, a = scipy.signal.butter(filter_order, (0.5, 80.0), btype="bandpass", fs=fs)
         data = scipy.signal.filtfilt(b, a, data, axis=-1)
- 
+
     fmin, fmax = freq_range
     f, psd = compute_psd(data, fs, fmin=fmin, fmax=fmax)
     if normalize:
         psd = normalize_psd(psd, f)
- 
-    psd_df = pd.DataFrame(psd, index=channel_names, columns=f)
-    psd_df["ChannelRegion"] = mat["ChannelRegion"]
-    region_dict = pd.read_csv(region_dict_file)
-    psd_df = psd_df.set_index("ChannelRegion").join(region_dict.set_index("Region"))
+
+    psd_df = pd.DataFrame(psd, index=meta.index, columns=f).join(meta)
     return f, psd_df
- 
+
+
 def concat_mat(
     currentfold: pathlib.Path,
     A: pd.DataFrame,

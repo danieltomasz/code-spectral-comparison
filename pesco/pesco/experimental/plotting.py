@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Hashable, Iterable, Mapping, Sequence
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -14,7 +14,11 @@ from matplotlib import collections as mc
 from matplotlib.axes import Axes
 
 from pesco.experimental.clustering import (
+    EEG_BANDS,
     Summary,
+    band_edges,
+    cluster_bands,
+    cluster_peak_frequencies,
     get_no_peak,
     order_clusters_by_peak,
 )
@@ -110,6 +114,10 @@ def plot_clusters(
     cmap: str = "viridis",
     peak_baseline: np.ndarray | None = None,
     peak_freq_range: tuple[float, float] | None = None,
+    feature_cols: Iterable[Hashable] | None = None,
+    label_col: str = "clusters",
+    label_by_band: bool = False,
+    ylabel: str | None = None,
 ):
     """Plot per-cluster summary PSD, highlighting the no-peak cluster.
 
@@ -124,10 +132,28 @@ def plot_clusters(
     picks the genuine spectral peak rather than the δ/1f maximum.
     """
     smal = smal or []
-    cluster_summary = psd_clust.groupby("clusters").agg(summary)
+    if feature_cols is None:
+        feature_cols = [
+            c for c in psd_clust.columns
+            if c != label_col and isinstance(c, (int, float, np.floating))
+        ]
+    feature_cols = list(feature_cols)
+    cluster_summary = (
+        psd_clust[feature_cols].groupby(psd_clust[label_col]).agg(summary)
+    )
     matplotlib.rcParams.update({"font.size": 16})
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-    counts = psd_clust["clusters"].value_counts()
+    counts = psd_clust[label_col].value_counts()
+
+    band_labels: dict[int, str] = {}
+    if label_by_band:
+        peaks = cluster_peak_frequencies(
+            psd_clust, f, summary=summary,
+            baseline=peak_baseline, freq_range=peak_freq_range,
+            feature_cols=feature_cols, label_col=label_col,
+            no_peak=smal,
+        )
+        band_labels = cluster_bands(peaks)
 
     if order_by_peak:
         sorted_keys = order_clusters_by_peak(
@@ -135,6 +161,8 @@ def plot_clusters(
             exclude=[nopeak] if nopeak is not None else None,
             baseline=peak_baseline,
             freq_range=peak_freq_range,
+            feature_cols=feature_cols,
+            label_col=label_col,
         )
         cm = plt.get_cmap(cmap)
         n = len(sorted_keys)
@@ -148,7 +176,10 @@ def plot_clusters(
 
     for k in plot_order:
         row = cluster_summary.loc[k]
-        label = f"cl. {k} ({counts.loc[k]} el.)"
+        if label_by_band and k in band_labels:
+            label = f"{band_labels[k]} ({counts.loc[k]})"
+        else:
+            label = f"cl. {k} ({counts.loc[k]} el.)"
         if k in smal and k == nopeak:
             ax.semilogx(f, row, linewidth=4.0, color="black", label=label)
         elif k == nopeak:
@@ -158,19 +189,23 @@ def plot_clusters(
         else:
             ax.semilogx(f, row, alpha=0.5, label=label)
     ax.legend()
-    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
+    ax.set_xticks(band_edges())
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     if log_y:
         ax.set_yscale("log")
     ax.grid()
-    for t, text in zip(
-        [2, 6, 10, 16, 36],
-        [r"$\delta$", r"$\theta$", r"$\alpha$", r"$\beta$", r"$\gamma$"],
-    ):
-        ax.text(t, 0.97, text, fontsize=14,
-                transform=ax.get_xaxis_transform(), ha="center", va="top")
+    for b in EEG_BANDS:
+        ax.text(
+            b.label_x, 0.97, f"${b.tex}$", fontsize=14,
+            transform=ax.get_xaxis_transform(), ha="center", va="top",
+        )
     ax.set_xlabel("Frequency")
-    ax.set_ylabel("Normalized spectral density")
+    if ylabel is None:
+        ylabel = (
+            "Log of normalized spectral density"
+            if log_y else "Normalized spectral density"
+        )
+    ax.set_ylabel(ylabel)
     plt.title(f"{summary.capitalize()} power of different PSDs clusters of {dataset}")
     output_dir.mkdir(exist_ok=True)
     plt.savefig(output_dir / f"{dataset}_clusters.svg", format="svg")
@@ -329,6 +364,8 @@ def plot_cluster_brain(
     label_order: Sequence | None = None,
     label_colors: Mapping | None = None,
     label_names: Mapping | None = None,
+    label_markers: Mapping | None = None,
+    default_marker: str = "o",
     cmap: str = "viridis",
     display_mode: str = "lzry",
     node_size: float = 30.0,
@@ -353,19 +390,29 @@ def plot_cluster_brain(
     label_colors : {label: matplotlib colour}; defaults to ``cmap`` sampled in
         ``label_order``.
     label_names : {label: display name} for legend.
+    label_markers : {label: marker}; labels omitted here use ``default_marker``.
+        Use e.g. ``{no_peak_label: "^"}`` to draw no-peak clusters as triangles.
+    default_marker : matplotlib marker for labels not listed in ``label_markers``.
     display_mode : nilearn glass-brain mode. ``"lzry"`` = left/coronal/axial/right.
     node_size : marker size in pt^2.
     output_path : save figure to this path if given.
     """
     from nilearn import plotting as nlp
-    from matplotlib.colors import ListedColormap, BoundaryNorm
+    from matplotlib.colors import ListedColormap
 
     positions = np.asarray(positions, dtype=float)
     labels = np.asarray(labels, dtype=object)
-    valid = np.array([l is not None and not (isinstance(l, float) and np.isnan(l))
-                      for l in labels])
+    valid = np.array([
+        label is not None
+        and not (isinstance(label, float) and np.isnan(label))
+        for label in labels
+    ])
     positions = positions[valid]
     labels = labels[valid]
+    if not isinstance(node_size, str) and np.ndim(node_size) > 0:
+        node_size = np.asarray(node_size)
+        if len(node_size) == len(valid):
+            node_size = node_size[valid]
 
     if label_order is None:
         try:
@@ -377,35 +424,96 @@ def plot_cluster_brain(
     if label_colors is None:
         cm = plt.get_cmap(cmap)
         n = len(label_order)
-        label_colors = {l: cm(i / max(n - 1, 1)) for i, l in enumerate(label_order)}
+        label_colors = {
+            label: cm(i / max(n - 1, 1))
+            for i, label in enumerate(label_order)
+        }
 
-    label_to_int = {l: i for i, l in enumerate(label_order)}
-    node_values = np.array([label_to_int[l] for l in labels], dtype=float)
-    colors = [label_colors[l] for l in label_order]
+    label_to_int = {label: i for i, label in enumerate(label_order)}
+    node_values = np.array(
+        [label_to_int[label] for label in labels], dtype=float
+    )
+    colors = [label_colors[label] for label in label_order]
     listed = ListedColormap(colors)
-    bounds = np.arange(len(label_order) + 1) - 0.5
-    norm = BoundaryNorm(bounds, listed.N)
+
+    label_markers = dict(label_markers or {})
+    plot_markers_kwargs = dict(plot_markers_kwargs)
+    node_kwargs = dict(plot_markers_kwargs.pop("node_kwargs", {}) or {})
+    default_marker = node_kwargs.get("marker", default_marker)
+    marker_for_label = {
+        label: label_markers.get(label, default_marker)
+        for label in label_order
+    }
+
+    def _layer_size(mask: np.ndarray):
+        if isinstance(node_size, str):
+            if node_size == "auto":
+                return min(1e4 / len(positions), 100)
+            return node_size
+        if np.ndim(node_size) == 0:
+            return node_size
+        return np.asarray(node_size)[mask]
+
+    unique_markers = list(dict.fromkeys(marker_for_label.values()))
+    base_marker = (
+        default_marker
+        if default_marker in unique_markers
+        else unique_markers[0]
+    )
+    base_mask = np.array(
+        [
+            marker_for_label.get(label, default_marker) == base_marker
+            for label in labels
+        ]
+    )
+    base_node_kwargs = dict(node_kwargs)
+    base_node_kwargs["marker"] = base_marker
 
     display = nlp.plot_markers(
-        node_values=node_values,
-        node_coords=positions,
+        node_values=node_values[base_mask],
+        node_coords=positions[base_mask],
         node_cmap=listed,
         node_vmin=-0.5, node_vmax=len(label_order) - 0.5,
-        node_size=node_size,
+        node_size=_layer_size(base_mask),
         alpha=alpha,
         display_mode=display_mode,
         colorbar=False,
         title=title,
+        node_kwargs=base_node_kwargs,
         **plot_markers_kwargs,
     )
 
-    counts = {l: int(np.sum(labels == l)) for l in label_order}
+    for marker in unique_markers:
+        if marker == base_marker:
+            continue
+        marker_mask = np.array(
+            [
+                marker_for_label.get(label, default_marker) == marker
+                for label in labels
+            ]
+        )
+        display.add_markers(
+            marker_coords=positions[marker_mask],
+            marker_color=[
+                label_colors[label] for label in labels[marker_mask]
+            ],
+            marker_size=_layer_size(marker_mask),
+            marker=marker,
+            alpha=alpha,
+        )
+
+    counts = {
+        label: int(np.sum(labels == label)) for label in label_order
+    }
     legend_handles = [
-        plt.Line2D([0], [0], marker="o", linestyle="",
-                   markerfacecolor=label_colors[l], markeredgecolor="black",
-                   markersize=8,
-                   label=f"{(label_names or {}).get(l, str(l))} ({counts[l]})")
-        for l in label_order
+        plt.Line2D(
+            [0], [0], marker=marker_for_label[label], linestyle="",
+            markerfacecolor=label_colors[label], markeredgecolor="black",
+            markersize=8,
+            label=f"{(label_names or {}).get(label, str(label))} "
+                  f"({counts[label]})",
+        )
+        for label in label_order
     ]
     fig = plt.gcf()
     fig.legend(
