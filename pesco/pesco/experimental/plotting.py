@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Mapping, Sequence
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -12,7 +13,11 @@ import pandas as pd
 from matplotlib import collections as mc
 from matplotlib.axes import Axes
 
-from pesco.experimental.clustering import Summary, get_no_peak
+from pesco.experimental.clustering import (
+    Summary,
+    get_no_peak,
+    order_clusters_by_peak,
+)
 from pesco.experimental.peak_testing import get_intervals
 
 
@@ -101,23 +106,55 @@ def plot_clusters(
     output_dir: Path = Path("images"),
     summary: Summary = "mean",
     log_y: bool = False,
+    order_by_peak: bool = False,
+    cmap: str = "viridis",
+    peak_baseline: np.ndarray | None = None,
+    peak_freq_range: tuple[float, float] | None = None,
 ):
     """Plot per-cluster summary PSD, highlighting the no-peak cluster.
 
     Set log_y=True to use a logarithmic scale on the PSD axis.
+    Set order_by_peak=True to colour clusters by ascending peak frequency
+    (no-peak cluster stays black/darkest, low-freq peaks dark, high-freq
+    peaks lighter along ``cmap``).
+
+    ``peak_baseline`` / ``peak_freq_range`` are forwarded to
+    ``order_clusters_by_peak`` so the peak is taken relative to a baseline
+    (e.g. the no-peak cluster summary) and/or restricted to a band — this
+    picks the genuine spectral peak rather than the δ/1f maximum.
     """
     smal = smal or []
     cluster_summary = psd_clust.groupby("clusters").agg(summary)
     matplotlib.rcParams.update({"font.size": 16})
     fig, ax = plt.subplots(1, 1, figsize=(10, 8))
     counts = psd_clust["clusters"].value_counts()
-    for k in range(len(cluster_summary.index)):
+
+    if order_by_peak:
+        sorted_keys = order_clusters_by_peak(
+            psd_clust, f, summary=summary,
+            exclude=[nopeak] if nopeak is not None else None,
+            baseline=peak_baseline,
+            freq_range=peak_freq_range,
+        )
+        cm = plt.get_cmap(cmap)
+        n = len(sorted_keys)
+        color_map = {k: cm(i / max(n - 1, 1)) for i, k in enumerate(sorted_keys)}
+        plot_order = sorted_keys + (
+            [nopeak] if nopeak is not None and nopeak in cluster_summary.index else []
+        )
+    else:
+        color_map = {}
+        plot_order = list(cluster_summary.index)
+
+    for k in plot_order:
         row = cluster_summary.loc[k]
         label = f"cl. {k} ({counts.loc[k]} el.)"
         if k in smal and k == nopeak:
             ax.semilogx(f, row, linewidth=4.0, color="black", label=label)
         elif k == nopeak:
-            ax.semilogx(f, row, linestyle=":", linewidth=5.0, label=label)
+            ax.semilogx(f, row, linestyle=":", linewidth=5.0, color="black", label=label)
+        elif k in color_map:
+            ax.semilogx(f, row, color=color_map[k], linewidth=2.0, label=label)
         else:
             ax.semilogx(f, row, alpha=0.5, label=label)
     ax.legend()
@@ -279,3 +316,107 @@ def plot_regions(
             format="svg", bbox_inches="tight", pad_inches=0,
         )
         plt.show()
+
+
+# ---------------------------------------------------------------------------
+# Frauscher-style brain plot: electrodes coloured by cluster on glass brain
+# ---------------------------------------------------------------------------
+
+def plot_cluster_brain(
+    positions: np.ndarray,
+    labels: np.ndarray | Sequence,
+    *,
+    label_order: Sequence | None = None,
+    label_colors: Mapping | None = None,
+    label_names: Mapping | None = None,
+    cmap: str = "viridis",
+    display_mode: str = "lzry",
+    node_size: float = 30.0,
+    alpha: float = 0.7,
+    title: str | None = None,
+    output_path: Path | str | None = None,
+    show: bool = True,
+    legend_loc: str = "center left",
+    legend_bbox: tuple[float, float] = (-0.02, 0.5),
+    legend_fontsize: float = 9,
+    **plot_markers_kwargs,
+):
+    """Plot electrodes on a glass brain, coloured by cluster (Frauscher-style).
+
+    Thin wrapper around ``nilearn.plotting.plot_markers``.
+
+    Parameters
+    ----------
+    positions : (n, 3) MNI electrode coords (e.g. ``ChannelPosition``).
+    labels : (n,) cluster id / band per electrode. NaN or None entries skipped.
+    label_order : legend order; defaults to sorted unique labels.
+    label_colors : {label: matplotlib colour}; defaults to ``cmap`` sampled in
+        ``label_order``.
+    label_names : {label: display name} for legend.
+    display_mode : nilearn glass-brain mode. ``"lzry"`` = left/coronal/axial/right.
+    node_size : marker size in pt^2.
+    output_path : save figure to this path if given.
+    """
+    from nilearn import plotting as nlp
+    from matplotlib.colors import ListedColormap, BoundaryNorm
+
+    positions = np.asarray(positions, dtype=float)
+    labels = np.asarray(labels, dtype=object)
+    valid = np.array([l is not None and not (isinstance(l, float) and np.isnan(l))
+                      for l in labels])
+    positions = positions[valid]
+    labels = labels[valid]
+
+    if label_order is None:
+        try:
+            label_order = sorted(set(labels))
+        except TypeError:
+            label_order = list(dict.fromkeys(labels))
+    label_order = list(label_order)
+
+    if label_colors is None:
+        cm = plt.get_cmap(cmap)
+        n = len(label_order)
+        label_colors = {l: cm(i / max(n - 1, 1)) for i, l in enumerate(label_order)}
+
+    label_to_int = {l: i for i, l in enumerate(label_order)}
+    node_values = np.array([label_to_int[l] for l in labels], dtype=float)
+    colors = [label_colors[l] for l in label_order]
+    listed = ListedColormap(colors)
+    bounds = np.arange(len(label_order) + 1) - 0.5
+    norm = BoundaryNorm(bounds, listed.N)
+
+    display = nlp.plot_markers(
+        node_values=node_values,
+        node_coords=positions,
+        node_cmap=listed,
+        node_vmin=-0.5, node_vmax=len(label_order) - 0.5,
+        node_size=node_size,
+        alpha=alpha,
+        display_mode=display_mode,
+        colorbar=False,
+        title=title,
+        **plot_markers_kwargs,
+    )
+
+    counts = {l: int(np.sum(labels == l)) for l in label_order}
+    legend_handles = [
+        plt.Line2D([0], [0], marker="o", linestyle="",
+                   markerfacecolor=label_colors[l], markeredgecolor="black",
+                   markersize=8,
+                   label=f"{(label_names or {}).get(l, str(l))} ({counts[l]})")
+        for l in label_order
+    ]
+    fig = plt.gcf()
+    fig.legend(
+        handles=legend_handles, loc=legend_loc,
+        bbox_to_anchor=legend_bbox, frameon=True, fontsize=legend_fontsize,
+    )
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, bbox_inches="tight")
+    if show:
+        plt.show()
+    return display

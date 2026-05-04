@@ -88,6 +88,86 @@ def get_no_peak(
     return df, center
 
 
+def cluster_peak_frequencies(
+    psd_clust: pd.DataFrame,
+    f: np.ndarray,
+    summary: Summary = "mean",
+    baseline: np.ndarray | None = None,
+    freq_range: tuple[float, float] | None = None,
+) -> dict[int, float]:
+    """Frequency of maximum (relative) power per cluster.
+
+    Frauscher 2018 identifies a cluster's characteristic band as the
+    frequencies where the cluster's spectrum exceeds the no-peak baseline.
+    Pass ``baseline`` (e.g. no-peak cluster summary) to find the freq where
+    each cluster stands out most above baseline — this picks up genuine
+    spectral peaks rather than the 1/f maximum.
+
+    Parameters
+    ----------
+    psd_clust : DataFrame
+        Output of ``compute_clusters`` (must contain a ``clusters`` column).
+    f : array
+        Frequency grid matching the spectral columns.
+    summary : 'mean' | 'median'
+        Aggregation per cluster.
+    baseline : array, shape (n_freqs,), optional
+        Reference spectrum (e.g. ``get_no_peak`` center). When given,
+        argmax is taken over ``cluster / baseline``. When None, raw
+        argmax of cluster summary is used (likely returns a low-freq
+        1/f point).
+    freq_range : (fmin, fmax), optional
+        Restrict argmax to this band. Useful to exclude the δ shoulder
+        from being picked as "the" peak.
+
+    Returns
+    -------
+    dict mapping cluster id → peak frequency in Hz.
+    """
+    cluster_summary = (
+        psd_clust.drop(columns="clusters")
+        .groupby(psd_clust["clusters"])
+        .agg(summary)
+    )
+    f = np.asarray(f, dtype=float)
+    arr = cluster_summary.to_numpy()
+    if baseline is not None:
+        baseline = np.asarray(baseline, dtype=float)
+        arr = arr / baseline[None, :]
+    if freq_range is not None:
+        fmin, fmax = freq_range
+        mask = (f >= fmin) & (f <= fmax)
+    else:
+        mask = np.ones_like(f, dtype=bool)
+    f_masked = f[mask]
+    return {
+        int(k): float(f_masked[arr[i, mask].argmax()])
+        for i, k in enumerate(cluster_summary.index)
+    }
+
+
+def order_clusters_by_peak(
+    psd_clust: pd.DataFrame,
+    f: np.ndarray,
+    summary: Summary = "mean",
+    exclude: list[int] | None = None,
+    baseline: np.ndarray | None = None,
+    freq_range: tuple[float, float] | None = None,
+) -> list[int]:
+    """Cluster ids ordered by ascending peak frequency.
+
+    Same ``baseline`` / ``freq_range`` semantics as
+    ``cluster_peak_frequencies``. Pass ``exclude=[no_peak_id]`` to drop the
+    no-peak cluster (it has no meaningful peak).
+    """
+    exclude = set(exclude or [])
+    peaks = cluster_peak_frequencies(
+        psd_clust, f, summary=summary,
+        baseline=baseline, freq_range=freq_range,
+    )
+    return sorted([k for k in peaks if k not in exclude], key=lambda k: peaks[k])
+
+
 def _elbow_scores_psd(psd_df: pd.DataFrame, n: int) -> dict[int, float]:
     from sklearn.cluster import KMeans
 

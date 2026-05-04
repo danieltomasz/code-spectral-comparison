@@ -98,3 +98,31 @@ def normalize_psd(psd: np.ndarray, f: np.ndarray) -> np.ndarray:
     """
     df = f[1] - f[0]
     return psd / (psd.sum(axis=-1, keepdims=True) * df)
+
+
+def normalize_psd_ratio_to_mean(psd: np.ndarray) -> np.ndarray:
+    """Express each PSD as ratio to grand-mean PSD (Keitel & Gross 2016).
+
+    Paper convention: "expressed each single-segment power spectrum for each
+    brain area as ratio to the mean power spectrum (averaged across all
+    segments and brain areas)". Emphasises regionally specific spectral
+    profiles by removing the shared 1/f background.
+
+    Parameters
+    ----------
+    psd : array, shape (..., n_freqs)
+        PSD with frequency on the last axis. Any leading axes (channels,
+        segments, ...) are averaged together to form the grand mean.
+
+    Returns
+    -------
+    array of same shape as ``psd``: ``psd / psd.mean(axis=leading_axes)``.
+    """
+    if isinstance(psd, pd.DataFrame):
+        numeric = psd.select_dtypes(include=np.number)
+        arr = numeric.to_numpy()
+        grand_mean = arr.mean(axis=tuple(range(arr.ndim - 1)), keepdims=True)
+        return pd.DataFrame(arr / grand_mean, index=numeric.index, columns=numeric.columns)
+    arr = np.asarray(psd)
+    grand_mean = arr.mean(axis=tuple(range(arr.ndim - 1)), keepdims=True)
+    return arr / grand_mean
