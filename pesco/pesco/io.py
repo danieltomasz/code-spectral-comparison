@@ -7,7 +7,6 @@ Loading data and switch to mne format
 # %% loading data to mne
 from __future__ import annotations
 import mne
-import scipy.io as sio
 import pandas as pd
 import h5py
 import pathlib
@@ -17,6 +16,59 @@ import scipy.signal
 
 
 from pesco.preprocess import compute_psd, normalize_psd
+
+
+def _clean_region_name(region_name: object) -> str:
+    """Return region names without CSV quote literals or surrounding whitespace."""
+    return str(region_name).strip().strip("'")
+
+
+def _load_mantini_centroids(hd_dataset_path: pathlib.Path | str) -> pd.DataFrame:
+    """Load Mantini source-region centroids keyed by region and hemisphere."""
+    hd_dataset_path = pathlib.Path(hd_dataset_path)
+    region_info = pd.read_csv(hd_dataset_path / "RegionInformation.csv")
+    region_info = region_info.assign(
+        region_name_clean=region_info["Region name"].map(_clean_region_name)
+    )
+
+    mat = scipy.io.loadmat(
+        hd_dataset_path / "seed_iEEG.mat",
+        squeeze_me=True,
+        struct_as_record=False,
+    )
+    rows = []
+    for item in np.ravel(mat["seed_info"]):
+        label = str(item.label).strip().strip("'")
+        region_name, hemisphere = label.rsplit("_", 1)
+        coord = np.asarray(item.coord_mni, dtype=float).ravel()
+        rows.append(
+            {
+                "region_name_clean": region_name,
+                "hemisphere": hemisphere.upper(),
+                "mni_x": coord[0],
+                "mni_y": coord[1],
+                "mni_z": coord[2],
+            }
+        )
+
+    centroids = pd.DataFrame(rows)
+    centroids = centroids.merge(
+        region_info[["Region", "region_name_clean"]],
+        on="region_name_clean",
+        how="left",
+        validate="many_to_one",
+    )
+    missing = centroids["Region"].isna()
+    if missing.any():
+        missing_labels = sorted(centroids.loc[missing, "region_name_clean"].unique())
+        raise ValueError(
+            "Centroid labels missing from RegionInformation.csv: "
+            f"{missing_labels}"
+        )
+
+    return centroids.rename(columns={"Region": "region_number"})[
+        ["region_number", "hemisphere", "mni_x", "mni_y", "mni_z"]
+    ]
 
 
 def _true_runs(mask: np.ndarray) -> list[tuple[int, int]]:
@@ -238,11 +290,17 @@ def load_sources(
     # A is temporaty df with names of regions
     A = pd.read_csv(currentDirectory / "RegionInformation.csv")
     A = pd.DataFrame(A.values.repeat(2, axis=0), columns=A.columns)
+    centroids = _load_mantini_centroids(currentDirectory)
     matlab_df = pd.DataFrame()
     result = pd.DataFrame()
     # iter over folders to read the data or load single
     for currentfold in sorted(currentDirectory.iterdir()):
-        if specific and int(currentfold.name[7:]) != specific:
+        if not currentfold.is_dir() or not currentfold.name.startswith("dataset"):
+            continue
+        dataset_id = currentfold.name.removeprefix("dataset")
+        if not dataset_id.isdigit():
+            continue
+        if specific and int(dataset_id) != specific:
             continue
         A, matlab_df, result = concat_mat(currentfold, A, matlab_df, result)
     ch_names = list(matlab_df.columns)
@@ -254,9 +312,37 @@ def load_sources(
 
     result.columns = ["region_number", "Region name", "Lobe", "ch_name"]
     result = result[["ch_name", "region_number", "Region name", "Lobe"]]
+    result["region_number"] = result["region_number"].astype(int)
+    result["hemisphere"] = result["ch_name"].str[-1]
 
-    dataset = ["sources"] * len(result)
-    result["dataset"] = dataset
+    result["dataset"] = "sources"
+    result = result.merge(
+        centroids,
+        on=["region_number", "hemisphere"],
+        how="left",
+        validate="many_to_one",
+    )
+    missing_coords = result[["mni_x", "mni_y", "mni_z"]].isna().any(axis=1)
+    if missing_coords.any():
+        missing_channels = result.loc[missing_coords, "ch_name"].head(10).to_list()
+        raise ValueError(
+            "Missing Mantini centroid coordinates for source channels: "
+            f"{missing_channels}"
+        )
+
+    result = result[
+        [
+            "ch_name",
+            "region_number",
+            "Region name",
+            "Lobe",
+            "hemisphere",
+            "dataset",
+            "mni_x",
+            "mni_y",
+            "mni_z",
+        ]
+    ]
     # change to set index proper way
     result = result.set_index("ch_name")
     if OUT_PATH:
