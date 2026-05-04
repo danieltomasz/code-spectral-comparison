@@ -43,6 +43,7 @@ dev = [
 [tool.uv]
 package = false
 link-mode = "copy"
+config-settings = { editable_mode = "compat" }
 
 [tool.uv.workspace]
 members = [
