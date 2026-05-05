@@ -25,6 +25,15 @@ from pesco.experimental.clustering import (
 from pesco.experimental.peak_testing import get_intervals
 
 
+def _resolve_feature_cols(
+    df: pd.DataFrame, feature_cols: Iterable[Hashable] | None,
+) -> list[Hashable]:
+    """Return explicit feature columns, or auto-pick numeric-named ones."""
+    if feature_cols is not None:
+        return list(feature_cols)
+    return [c for c in df.columns if isinstance(c, (int, float, np.floating))]
+
+
 # ---------------------------------------------------------------------------
 # private helpers
 # ---------------------------------------------------------------------------
@@ -41,6 +50,7 @@ def _plot_subplot(
     title: str,
     ax: Axes | None = None,
     summary: Summary = "mean",
+    tick_labelsize: float = 10.0,
 ) -> Axes:
     """Plot one PSD subplot: summary + IQR + min/max + significance overlay.
 
@@ -80,7 +90,14 @@ def _plot_subplot(
         ax.text(t, 0.97, text, fontsize=14,
                 transform=ax.get_xaxis_transform(), ha="center", va="top")
     ax.set_xticks([0.5, 4, 8, 13, 30, 80])
-    ax.set_ylim(0, 0.10)
+    ax.tick_params(axis="both", labelsize=tick_labelsize)
+
+    summary_curve = channel_data.agg(summary, axis=0).to_numpy(dtype=float)
+    candidates = [np.nanmax(summary_curve)] if summary_curve.size else []
+    if no_peak_center is not None and np.size(no_peak_center) > 0:
+        candidates.append(float(np.nanmax(no_peak_center)))
+    ymax = max(candidates) * 1.15 if candidates else 0.10
+    ax.set_ylim(0, ymax)
     ax.set_xlim(0.5, 80)
     return ax
 
@@ -220,16 +237,21 @@ def plot_histogram(
     cols_to_drop: list[str] | None = None,
     output_dir: Path = Path("images"),
     summary: Summary = "mean",
+    feature_cols: Iterable[Hashable] | None = None,
 ) -> None:
     """Histogram of summary power per frequency interval (Fig. 4 inset style).
 
     Two panels: absolute share, and share normalized by interval width.
+    Tolerates extra metadata columns in ``psd`` (Region name, Lobe,
+    clusters, mni_x/y/z, hemisphere, dataset, region_number, ...) by
+    selecting only numeric-named spectral columns. Pass ``feature_cols``
+    explicitly to override.
     """
-    if cols_to_drop is None:
-        cols_to_drop = ["Region name", "Lobe"]
-    cols_present = [c for c in cols_to_drop if c in psd.columns]
-    if cols_present:
-        psd = psd.drop(cols_present, axis=1)
+    if feature_cols is None and cols_to_drop:
+        cols_present = [c for c in cols_to_drop if c in psd.columns]
+        if cols_present:
+            psd = psd.drop(cols_present, axis=1)
+    psd = psd[_resolve_feature_cols(psd, feature_cols)]
 
     psd_summary = pd.DataFrame(psd.agg(summary, axis=0)).T
     psd_intervals = get_intervals(psd_summary, colbin)
@@ -242,10 +264,11 @@ def plot_histogram(
     bins = np.array([cats[0].left] + [iv.right for iv in cats], dtype=float)
     bins[0] = bins[0] / 2  # cosmetic: widen leftmost bar on log-x axis
 
-    if "Lobe" in psd_intervals.columns:
-        freqs = psd_intervals.iloc[0].drop(["Lobe"]).values
-    else:
-        freqs = psd_intervals.iloc[0].values
+    cat_keys = [str(cat) for cat in cats]
+    row = psd_intervals.iloc[0]
+    if "Lobe" in row.index:
+        row = row.drop(["Lobe"])
+    freqs = row.reindex(cat_keys, fill_value=0.0).to_numpy(dtype=float)
 
     fig.suptitle(dataset)
 
@@ -287,21 +310,49 @@ def plot_lobes(
     show: bool = False,
     output_dir: Path = Path("images"),
     summary: Summary = "mean",
+    feature_cols: Iterable[Hashable] | None = None,
+    tick_labelsize: float = 10.0,
 ) -> None:
-    """4-panel plot: PSD per lobe with significant-interval overlays."""
-    _, center = get_no_peak(psd_clust, smal, summary=summary)
+    """Per-lobe PSD subplots vs no-peak centre, with significance overlays.
+
+    For every lobe present in ``psd["Lobe"]``, draws the lobe's per-channel
+    summary spectrum (mean/median), IQR band, and min/max envelope on a
+    log-frequency axis, overlaid against the no-peak cluster centre derived
+    from ``psd_clust``/``smal``. Frequency intervals flagged in
+    ``sig_lobes`` are rendered as horizontal segments. Subplot grid sizes
+    automatically to the number of lobes (2 cols × ceil(n/2) rows).
+    """
+    psd_cols = _resolve_feature_cols(psd, feature_cols)
+    clust_cols = set(psd_clust.columns)
+    cols = [c for c in psd_cols if c in clust_cols]
+    f_axis = np.asarray(cols, dtype=float) if len(cols) != len(f) else f
+    _, center = get_no_peak(psd_clust, smal, summary=summary, feature_cols=cols)
     matplotlib.rcParams.update({"font.size": 22})
 
-    lobes = ["Occipital", "Parietal", "Frontal", "Temporal"]
-    fig, axes = plt.subplots(2, 2, figsize=(16, 16))
+    canonical = ["Occipital", "Parietal", "Frontal", "Temporal"]
+    present = list(psd["Lobe"].dropna().unique())
+    lobes = [lb for lb in canonical if lb in present] + [
+        lb for lb in present if lb not in canonical
+    ]
+    n_cols = 2
+    n_rows = _ceildiv(len(lobes), n_cols)
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(8 * n_cols, 8 * n_rows), squeeze=False,
+    )
     fig.suptitle(f"Lobar differences in EEG frequencies: {dataset}")
     fig.subplots_adjust(hspace=0.25, wspace=0.25)
 
-    for ax, lobe in zip(axes.flatten(), lobes):
-        lobe_psd = psd[psd.Lobe == lobe].drop(["Region name", "Lobe"], axis=1)
-        intervals = sig_lobes[lobe] if sig_lobes else None
+    flat_axes = axes.flatten()
+    for ax, lobe in zip(flat_axes, lobes):
+        lobe_psd = psd.loc[psd["Lobe"] == lobe, cols]
+        intervals = sig_lobes.get(lobe) if sig_lobes else None
         title = f"{lobe} lobe - {len(lobe_psd)} channels"
-        _plot_subplot(lobe_psd, center, f, intervals, title, ax=ax, summary=summary)
+        _plot_subplot(
+            lobe_psd, center, f_axis, intervals, title,
+            ax=ax, summary=summary, tick_labelsize=tick_labelsize,
+        )
+    for ax in flat_axes[len(lobes):]:
+        ax.set_visible(False)
 
     output_dir.mkdir(exist_ok=True)
     plt.savefig(output_dir / f"{dataset}_lobar_differences.svg", format="svg")
@@ -320,27 +371,36 @@ def plot_regions(
     sig_regions: dict[str, dict[str, list]] | None = None,
     output_dir: Path = Path("images"),
     summary: Summary = "mean",
+    feature_cols: Iterable[Hashable] | None = None,
+    tick_labelsize: float = 8.0,
 ) -> None:
     """One figure per lobe, with one subplot per region."""
     matplotlib.rcParams.update({"font.size": 8})
-    _, center = get_no_peak(psd_clust, smal, summary=summary)
+    psd_cols = _resolve_feature_cols(psd, feature_cols)
+    clust_cols = set(psd_clust.columns)
+    cols = [c for c in psd_cols if c in clust_cols]
+    f_axis = np.asarray(cols, dtype=float) if len(cols) != len(f) else f
+    _, center = get_no_peak(psd_clust, smal, summary=summary, feature_cols=cols)
     output_dir.mkdir(exist_ok=True)
 
     for lobe in psd["Lobe"].unique():
-        regions = psd[psd.Lobe == lobe]["Region name"].unique()
+        regions = psd.loc[psd["Lobe"] == lobe, "Region name"].unique()
         n_rows = _ceildiv(len(regions), 2)
         fig, axes = plt.subplots(n_rows, 2, figsize=(10, 8 * _ceildiv(n_rows, 2)))
         fig.subplots_adjust(hspace=0.25, wspace=0.25)
 
         for ax, region in zip(axes.flatten(), regions):
-            region_psd = psd[
-                (psd.Lobe == lobe) & (psd["Region name"] == region)
-            ].drop(["Region name", "Lobe"], axis=1)
+            region_psd = psd.loc[
+                (psd["Lobe"] == lobe) & (psd["Region name"] == region), cols
+            ]
             intervals = (
                 sig_regions[lobe].get(region) if sig_regions else None
             )
-            title = f"{region} - {len(region_psd)} channels"
-            _plot_subplot(region_psd, center, f, intervals, title, ax=ax, summary=summary)
+            title = f"{_strip_quotes(region)} - {len(region_psd)} channels"
+            _plot_subplot(
+                region_psd, center, f_axis, intervals, title,
+                ax=ax, summary=summary, tick_labelsize=tick_labelsize,
+            )
 
         fig.get_axes()[0].annotate(
             f"Regional differences in {lobe.lower()} lobe ({dataset})",

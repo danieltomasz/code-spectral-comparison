@@ -308,15 +308,18 @@ def test_lobes(
 ) -> dict[str, list[list[tuple[float, float]]]]:
     """Run test_intervals for each lobe vs the no-peak set.
 
-    Returns empty intervals for every lobe when no_peak_df is None.
+    Lobes are derived from ``psd["Lobe"]``. Returns empty intervals for
+    every lobe when no_peak_df is None.
     """
-    lobes = ["Occipital", "Parietal", "Frontal", "Temporal"]
+    lobes = list(psd["Lobe"].dropna().unique())
     if no_peak_df is None:
         return {lobe: [] for lobe in lobes}
 
-    psd_intervals = get_intervals(psd, colbin)
-    psd_intervals = psd_intervals.assign(Lobe=psd["Lobe"])
-    no_peak_intervals = get_intervals(no_peak_df, colbin)
+    freq_cols = _frequency_columns(psd, colbin)
+    psd_intervals = get_intervals(psd[freq_cols], colbin)
+    psd_intervals = psd_intervals.assign(Lobe=psd["Lobe"].to_numpy())
+    no_peak_freq_cols = _frequency_columns(no_peak_df, colbin)
+    no_peak_intervals = get_intervals(no_peak_df[no_peak_freq_cols], colbin)
 
     result = {}
     for lobe in lobes:
