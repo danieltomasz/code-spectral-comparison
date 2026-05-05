@@ -6,7 +6,7 @@ import re
 
 import numpy as np
 import pandas as pd
-from scipy.stats import ks_2samp
+from scipy.stats import ks_2samp, mannwhitneyu
 
 
 # Paper Table: 22 frequency intervals (Hz boundaries)
@@ -78,6 +78,199 @@ def get_intervals(psd: pd.DataFrame, colbin: pd.Categorical) -> pd.DataFrame:
     psd_intervals = psd.T.groupby(dictionary).sum().T
     psd_intervals.columns = psd_intervals.columns.astype(str, copy=False)
     return psd_intervals
+
+
+def _frequency_columns(df: pd.DataFrame, colbin: pd.Categorical) -> list:
+    """Return spectral columns matching ``colbin``, ignoring metadata columns."""
+    numeric_name_cols = [
+        col
+        for col in df.columns
+        if isinstance(col, (int, float, np.integer, np.floating))
+    ]
+    if len(numeric_name_cols) >= len(colbin):
+        return numeric_name_cols[:len(colbin)]
+    return list(df.columns[:len(colbin)])
+
+
+def _interval_bounds(label: str) -> tuple[float, float]:
+    pattern = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)")
+    bounds = [float(v) for v in pattern.findall(label)]
+    if len(bounds) != 2:
+        raise ValueError(f"Could not parse interval bounds from {label!r}")
+    return bounds[0], bounds[1]
+
+
+def _channel_fraction_significant(
+    channel_values: np.ndarray,
+    no_peak_values: np.ndarray,
+    alpha: float,
+) -> tuple[int, float]:
+    significant = 0
+    no_peak_values = np.asarray(no_peak_values, dtype=float)
+    if len(no_peak_values) == 0:
+        return 0, np.nan
+    for value in np.asarray(channel_values, dtype=float):
+        res = mannwhitneyu(
+            [value],
+            no_peak_values,
+            alternative="greater",
+            method="auto",
+        )
+        if res.pvalue < alpha:
+            significant += 1
+    if len(channel_values) == 0:
+        return 0, np.nan
+    return significant, significant / len(channel_values)
+
+
+def _ks_and_channel_fraction(
+    group_values: np.ndarray,
+    no_peak_values: np.ndarray | None,
+    n_tests: int,
+    alpha: float,
+    channel_alpha: float,
+) -> dict:
+    n_group = len(group_values)
+    n_no_peak = 0 if no_peak_values is None else len(no_peak_values)
+    out = {
+        "ks_statistic": np.nan,
+        "ks_pvalue": np.nan,
+        "ks_pvalue_corrected": np.nan,
+        "ks_significant": False,
+        "n_region_channels": n_group,
+        "n_no_peak_channels": n_no_peak,
+        "n_channel_significant": 0,
+        "channel_fraction": np.nan,
+    }
+    if no_peak_values is None or n_group == 0 or n_no_peak == 0:
+        return out
+    res = ks_2samp(group_values, no_peak_values, alternative="less", method="asymp")
+    out["ks_statistic"] = float(res.statistic)
+    out["ks_pvalue"] = float(res.pvalue)
+    out["ks_pvalue_corrected"] = min(float(res.pvalue) * n_tests, 1.0)
+    out["ks_significant"] = out["ks_pvalue_corrected"] < alpha
+    if out["ks_significant"]:
+        n_sig, frac = _channel_fraction_significant(
+            group_values, no_peak_values, channel_alpha
+        )
+        out["n_channel_significant"] = n_sig
+        out["channel_fraction"] = frac
+    return out
+
+
+def test_regions_heatmap(
+    no_peak_df: pd.DataFrame | None,
+    psd: pd.DataFrame,
+    colbin: pd.Categorical,
+    *,
+    alpha: float = 0.05,
+    channel_alpha: float = 0.05,
+    region_col: str = "Region name",
+    lobe_col: str = "Lobe",
+    include_lobes: bool = True,
+) -> pd.DataFrame:
+    """Frauscher-style region x frequency-bin tests for heatmap plotting.
+
+    Each region/bin is first screened with a Bonferroni-corrected one-sided
+    KS test against the no-peak set. For significant cells, each regional
+    channel is tested against the no-peak distribution with a one-sided
+    rank-sum/Mann-Whitney test; ``channel_fraction`` is the fraction of
+    channels passing that uncorrected second-stage test.
+
+    With ``include_lobes=True`` (default) the result also contains rows
+    aggregating all channels of each lobe. Those rows have
+    ``Region name == Lobe`` and ``is_lobe_row == True``. Bonferroni
+    correction uses ``(n_regions + n_lobes) * n_intervals`` to match the
+    Frauscher 2018 convention (38 regions + 4 lobes).
+    """
+    freq_cols = _frequency_columns(psd, colbin)
+    psd_intervals = get_intervals(psd[freq_cols], colbin).assign(
+        **{
+            lobe_col: psd[lobe_col].to_numpy(),
+            region_col: psd[region_col].to_numpy(),
+        }
+    )
+    interval_cols = [
+        col for col in psd_intervals.columns if col not in {lobe_col, region_col}
+    ]
+    regions = psd_intervals[[lobe_col, region_col]].drop_duplicates()
+    lobes = psd_intervals[lobe_col].drop_duplicates() if include_lobes else []
+    n_groups = len(regions) + (len(lobes) if include_lobes else 0)
+    n_tests = max(n_groups * len(interval_cols), 1)
+
+    if no_peak_df is not None:
+        no_peak_freq_cols = _frequency_columns(no_peak_df, colbin)
+        no_peak_intervals = get_intervals(no_peak_df[no_peak_freq_cols], colbin)
+    else:
+        no_peak_intervals = None
+
+    rows = []
+
+    if include_lobes:
+        for lobe in lobes:
+            lobe_intervals = psd_intervals[psd_intervals[lobe_col] == lobe][
+                interval_cols
+            ]
+            for interval in interval_cols:
+                left, right = _interval_bounds(interval)
+                np_values = (
+                    no_peak_intervals[interval].to_numpy(dtype=float)
+                    if no_peak_intervals is not None
+                    else None
+                )
+                stats = _ks_and_channel_fraction(
+                    lobe_intervals[interval].to_numpy(dtype=float),
+                    np_values,
+                    n_tests,
+                    alpha,
+                    channel_alpha,
+                )
+                rows.append(
+                    {
+                        lobe_col: lobe,
+                        region_col: lobe,
+                        "is_lobe_row": True,
+                        "interval": interval,
+                        "interval_left": left,
+                        "interval_right": right,
+                        **stats,
+                    }
+                )
+
+    for _, region_meta in regions.iterrows():
+        lobe = region_meta[lobe_col]
+        region = region_meta[region_col]
+        region_intervals = psd_intervals[
+            (psd_intervals[lobe_col] == lobe)
+            & (psd_intervals[region_col] == region)
+        ][interval_cols]
+
+        for interval in interval_cols:
+            left, right = _interval_bounds(interval)
+            np_values = (
+                no_peak_intervals[interval].to_numpy(dtype=float)
+                if no_peak_intervals is not None
+                else None
+            )
+            stats = _ks_and_channel_fraction(
+                region_intervals[interval].to_numpy(dtype=float),
+                np_values,
+                n_tests,
+                alpha,
+                channel_alpha,
+            )
+            rows.append(
+                {
+                    lobe_col: lobe,
+                    region_col: region,
+                    "is_lobe_row": False,
+                    "interval": interval,
+                    "interval_left": left,
+                    "interval_right": right,
+                    **stats,
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def test_intervals(

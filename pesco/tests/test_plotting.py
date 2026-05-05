@@ -10,7 +10,11 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 
-from pesco.experimental.plotting import plot_cluster_brain, plot_clusters  # noqa: E402
+from pesco.experimental.plotting import (  # noqa: E402
+    plot_cluster_brain,
+    plot_clusters,
+    plot_region_difference_heatmap,
+)
 
 
 def test_plot_clusters_can_use_log_y_axis(tmp_path):
@@ -88,3 +92,28 @@ def test_plot_cluster_brain_can_use_label_markers_with_viridis(monkeypatch):
     legend = plt.gcf().legends[0]
     assert legend.legend_handles[0].get_marker() == "^"
     plt.close("all")
+
+
+def test_plot_region_difference_heatmap_saves_file(tmp_path):
+    regional_diff = pd.DataFrame(
+        {
+            "Lobe": ["Occipital", "Occipital", "Frontal", "Frontal"],
+            "Region name": ["Cuneus", "Cuneus", "Precentral gyrus", "Precentral gyrus"],
+            "interval": ["(0.5, 3.0]", "(3.0, 7.0]", "(0.5, 3.0]", "(3.0, 7.0]"],
+            "interval_left": [0.5, 3.0, 0.5, 3.0],
+            "ks_significant": [True, False, False, True],
+            "channel_fraction": [0.75, np.nan, np.nan, 0.5],
+        }
+    )
+    output_path = tmp_path / "regional_heatmap.png"
+
+    fig, ax = plot_region_difference_heatmap(
+        regional_diff,
+        title="Regional differences",
+        output_path=output_path,
+        show=False,
+    )
+
+    assert output_path.exists()
+    assert ax.get_title() == "Regional differences"
+    plt.close(fig)

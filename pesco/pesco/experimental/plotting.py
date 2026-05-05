@@ -353,6 +353,174 @@ def plot_regions(
         plt.show()
 
 
+_LOBE_ORDER = ("Occipital", "Parietal", "Frontal", "Temporal")
+_LOBE_COLORS = {
+    "Occipital": "red",
+    "Parietal": "green",
+    "Frontal": "#c8b800",
+    "Temporal": "black",
+}
+
+
+def _strip_quotes(value: object) -> str:
+    return str(value).strip().strip("'").strip('"').strip()
+
+
+def plot_region_difference_heatmap(
+    regional_diff: pd.DataFrame,
+    *,
+    title: str | None = None,
+    value_col: str = "channel_fraction",
+    region_col: str = "Region name",
+    lobe_col: str = "Lobe",
+    interval_col: str = "interval",
+    cmap: str = "YlGnBu",
+    vmin: float = 0.0,
+    vmax: float = 1.0,
+    annotate: bool = True,
+    annot_fontsize: float = 7.0,
+    output_path: Path | str | None = None,
+    show: bool = True,
+    figsize: tuple[float, float] | None = None,
+    lobe_order: Sequence[str] = _LOBE_ORDER,
+):
+    """Plot a Frauscher-style regional difference heatmap.
+
+    ``regional_diff`` is the tidy output of
+    :func:`pesco.experimental.peak_testing.test_regions_heatmap`. Cells that
+    do not pass the corrected KS screen are left blank. Rows are grouped by
+    lobe, with optional lobe-aggregate rows (``is_lobe_row``) appearing as
+    the first row of each lobe block.
+    """
+    import seaborn as sns
+
+    required = {
+        region_col,
+        lobe_col,
+        interval_col,
+        value_col,
+        "interval_left",
+        "ks_significant",
+    }
+    missing = required.difference(regional_diff.columns)
+    if missing:
+        raise ValueError(
+            "regional_diff is missing required columns: "
+            f"{', '.join(sorted(missing))}"
+        )
+
+    df = regional_diff.copy()
+    df["__region_display"] = df[region_col].map(_strip_quotes)
+    df["__lobe_display"] = df[lobe_col].map(_strip_quotes)
+    if "is_lobe_row" not in df.columns:
+        df["is_lobe_row"] = df["__region_display"] == df["__lobe_display"]
+
+    interval_order = (
+        df[[interval_col, "interval_left"]]
+        .drop_duplicates()
+        .sort_values("interval_left")[interval_col]
+        .to_list()
+    )
+
+    rows_meta = df[
+        ["__lobe_display", "__region_display", "is_lobe_row"]
+    ].drop_duplicates()
+
+    lobe_rank = {lobe: i for i, lobe in enumerate(lobe_order)}
+    fallback_rank = len(lobe_order)
+    encounter = {key: i for i, key in enumerate(rows_meta["__region_display"])}
+
+    def _row_sort_key(row):
+        return (
+            lobe_rank.get(row["__lobe_display"], fallback_rank),
+            0 if row["is_lobe_row"] else 1,
+            encounter[row["__region_display"]],
+        )
+
+    rows_meta = rows_meta.assign(__sort=rows_meta.apply(_row_sort_key, axis=1))
+    rows_meta = rows_meta.sort_values("__sort").reset_index(drop=True)
+
+    region_order = rows_meta["__region_display"].to_list()
+    lobe_by_region = dict(
+        zip(rows_meta["__region_display"], rows_meta["__lobe_display"])
+    )
+    is_lobe_row = dict(
+        zip(rows_meta["__region_display"], rows_meta["is_lobe_row"])
+    )
+
+    values = df.pivot(
+        index="__region_display",
+        columns=interval_col,
+        values=value_col,
+    ).reindex(index=region_order, columns=interval_order)
+    significant = df.pivot(
+        index="__region_display",
+        columns=interval_col,
+        values="ks_significant",
+    ).reindex(index=region_order, columns=interval_order)
+    plot_values = values.where(significant)
+    mask = plot_values.isna()
+
+    if figsize is None:
+        figsize = (
+            max(10.0, 0.5 * len(interval_order) + 4.0),
+            max(6.0, 0.32 * len(region_order) + 2.0),
+        )
+    fig, ax = plt.subplots(figsize=figsize)
+
+    if annotate:
+        labels = plot_values.map(lambda value: "" if pd.isna(value) else f"{value:.2g}")
+    else:
+        labels = False
+
+    sns.heatmap(
+        plot_values,
+        mask=mask,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        annot=labels,
+        fmt="",
+        annot_kws={"size": annot_fontsize},
+        linewidths=0.5,
+        linecolor="white",
+        cbar_kws={"label": "% of significantly different channels"},
+        ax=ax,
+    )
+
+    if title is not None:
+        ax.set_title(title)
+    ax.set_xlabel("Frequencies [Hz]")
+    ax.set_ylabel("Regions")
+    ax.tick_params(axis="x", labelrotation=90, length=0)
+    ax.tick_params(axis="y", labelrotation=0, length=0)
+
+    for tick in ax.get_yticklabels():
+        name = tick.get_text()
+        if is_lobe_row.get(name, False):
+            tick.set_color("black")
+            tick.set_fontweight("bold")
+        else:
+            lobe = lobe_by_region.get(name)
+            tick.set_color(_LOBE_COLORS.get(lobe, "black"))
+
+    region_lobes = [lobe_by_region[region] for region in region_order]
+    for idx, (previous, current) in enumerate(
+        zip(region_lobes, region_lobes[1:]), start=1
+    ):
+        if previous != current:
+            ax.axhline(idx, color="white", linewidth=2.0)
+
+    fig.tight_layout()
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, bbox_inches="tight")
+    if show:
+        plt.show()
+    return fig, ax
+
+
 # ---------------------------------------------------------------------------
 # Frauscher-style brain plot: electrodes coloured by cluster on glass brain
 # ---------------------------------------------------------------------------
