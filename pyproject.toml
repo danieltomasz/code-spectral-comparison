@@ -19,7 +19,9 @@ dependencies = [
     "nibabel",
     "nilearn",
     "pyvistaqt",
-    "ipywidgets"
+    "ipywidgets",
+    "ggsegpy",
+    "atlasreader"
 ]
 
 [project.optional-dependencies]
@@ -53,6 +55,7 @@ members = [
 [tool.uv.sources]
 pesco = { workspace = true, editable = true }
 gedai = { git = "https://github.com/neurotuning/gedai" }
+ggsegpy = { git = "https://github.com/ggsegverse/ggsegpy.git" }
 
 [tool.ruff]
 line-length = 88
