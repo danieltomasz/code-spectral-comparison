@@ -137,9 +137,11 @@ Peak detection was performed per region and frequency bin using the Frauscher pr
 <!-- Peak frequency maps, peak prevalence by region and band, per dataset. -->
 
 
-![](figures/chapter2/intracranial data__all_regional_differences.png)
+<!-- ![](figures/chapter2/intracranial data__all_regional_differences.png)
 
-![](figures/chapter2/reconstructed sources__all_regional_differences.png)
+![](figures/chapter2/reconstructed sources__all_regional_differences.png) -->
+
+![](figures/chapter2/combined_regional_differences.svg)
 
 ### Regional broadband profiles
 

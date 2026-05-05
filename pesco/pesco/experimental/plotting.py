@@ -430,13 +430,49 @@ _LOBE_ORDER = ("Occipital", "Parietal", "Frontal", "Temporal")
 _LOBE_COLORS = {
     "Occipital": "red",
     "Parietal": "green",
-    "Frontal": "#c8b800",
+    "Frontal": "#1f6feb",
     "Temporal": "black",
 }
 
 
 def _strip_quotes(value: object) -> str:
     return str(value).strip().strip("'").strip('"').strip()
+
+
+def _build_region_rows_meta(
+    df: pd.DataFrame,
+    lobe_order: Sequence[str],
+) -> pd.DataFrame:
+    rows_meta = df[
+        ["__lobe_display", "__region_display", "is_lobe_row"]
+    ].drop_duplicates()
+
+    lobe_rank = {lobe: i for i, lobe in enumerate(lobe_order)}
+    fallback_rank = len(lobe_order)
+    encounter = {key: i for i, key in enumerate(rows_meta["__region_display"])}
+
+    def _row_sort_key(row):
+        return (
+            lobe_rank.get(row["__lobe_display"], fallback_rank),
+            0 if row["is_lobe_row"] else 1,
+            encounter[row["__region_display"]],
+        )
+
+    rows_meta = rows_meta.assign(__sort=rows_meta.apply(_row_sort_key, axis=1))
+    return rows_meta.sort_values("__sort").reset_index(drop=True)
+
+
+def _prepare_region_df(
+    regional_diff: pd.DataFrame,
+    region_col: str,
+    lobe_col: str,
+) -> pd.DataFrame:
+    df = regional_diff.copy()
+    df["__region_display"] = df[region_col].map(_strip_quotes)
+    df["__lobe_display"] = df[lobe_col].map(_strip_quotes)
+    if "is_lobe_row" not in df.columns:
+        df["is_lobe_row"] = df["__region_display"] == df["__lobe_display"]
+    return df
 
 
 def plot_region_difference_heatmap(
@@ -456,6 +492,25 @@ def plot_region_difference_heatmap(
     show: bool = True,
     figsize: tuple[float, float] | None = None,
     lobe_order: Sequence[str] = _LOBE_ORDER,
+    reference_df: pd.DataFrame | None = None,
+    ax: "plt.Axes | None" = None,
+    show_yticks: bool = True,
+    show_ylabel: bool = True,
+    cbar: bool = True,
+    cbar_kws: dict | None = None,
+    facecolor: str | None = None,
+    xtick_rotation: float = 90,
+    xtick_ha: str | None = None,
+    ytick_rotation: float = 0,
+    ytick_ha: str | None = None,
+    tick_fontsize: float | None = None,
+    title_fontsize: float | None = None,
+    title_loc: str = "center",
+    title_fontweight: str = "normal",
+    axis_label_fontsize: float | None = None,
+    cbar_label_fontsize: float | None = None,
+    cbar_tick_fontsize: float | None = None,
+    dpi: int = 300,
 ):
     """Plot a Frauscher-style regional difference heatmap.
 
@@ -464,6 +519,11 @@ def plot_region_difference_heatmap(
     do not pass the corrected KS screen are left blank. Rows are grouped by
     lobe, with optional lobe-aggregate rows (``is_lobe_row``) appearing as
     the first row of each lobe block.
+
+    Pass ``reference_df`` (same schema as ``regional_diff``) to lock the row
+    order and lobe metadata to that reference — useful for stacking two
+    heatmaps with matching rows. Regions absent from ``regional_diff`` render
+    as blank rows.
     """
     import seaborn as sns
 
@@ -482,11 +542,7 @@ def plot_region_difference_heatmap(
             f"{', '.join(sorted(missing))}"
         )
 
-    df = regional_diff.copy()
-    df["__region_display"] = df[region_col].map(_strip_quotes)
-    df["__lobe_display"] = df[lobe_col].map(_strip_quotes)
-    if "is_lobe_row" not in df.columns:
-        df["is_lobe_row"] = df["__region_display"] == df["__lobe_display"]
+    df = _prepare_region_df(regional_diff, region_col, lobe_col)
 
     interval_order = (
         df[[interval_col, "interval_left"]]
@@ -495,23 +551,18 @@ def plot_region_difference_heatmap(
         .to_list()
     )
 
-    rows_meta = df[
-        ["__lobe_display", "__region_display", "is_lobe_row"]
-    ].drop_duplicates()
+    if reference_df is not None:
+        ref_missing = required.difference(reference_df.columns)
+        if ref_missing:
+            raise ValueError(
+                "reference_df is missing required columns: "
+                f"{', '.join(sorted(ref_missing))}"
+            )
+        meta_source = _prepare_region_df(reference_df, region_col, lobe_col)
+    else:
+        meta_source = df
 
-    lobe_rank = {lobe: i for i, lobe in enumerate(lobe_order)}
-    fallback_rank = len(lobe_order)
-    encounter = {key: i for i, key in enumerate(rows_meta["__region_display"])}
-
-    def _row_sort_key(row):
-        return (
-            lobe_rank.get(row["__lobe_display"], fallback_rank),
-            0 if row["is_lobe_row"] else 1,
-            encounter[row["__region_display"]],
-        )
-
-    rows_meta = rows_meta.assign(__sort=rows_meta.apply(_row_sort_key, axis=1))
-    rows_meta = rows_meta.sort_values("__sort").reset_index(drop=True)
+    rows_meta = _build_region_rows_meta(meta_source, lobe_order)
 
     region_order = rows_meta["__region_display"].to_list()
     lobe_by_region = dict(
@@ -534,17 +585,33 @@ def plot_region_difference_heatmap(
     plot_values = values.where(significant)
     mask = plot_values.isna()
 
-    if figsize is None:
-        figsize = (
-            max(12.0, 0.7 * len(interval_order) + 4.0),
-            max(8.0, 0.38 * len(region_order) + 2.0),
-        )
-    fig, ax = plt.subplots(figsize=figsize)
+    owns_fig = ax is None
+    if owns_fig:
+        if figsize is None:
+            figsize = (
+                max(12.0, 0.7 * len(interval_order) + 4.0),
+                max(8.0, 0.38 * len(region_order) + 2.0),
+            )
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+
+    if facecolor is not None:
+        ax.set_facecolor(facecolor)
 
     if annotate:
         labels = plot_values.map(lambda value: "" if pd.isna(value) else f"{value:.2g}")
     else:
         labels = False
+
+    default_cbar_kws = {
+        "label": "% of significantly different channels",
+        "shrink": 0.55,
+        "aspect": 30,
+        "pad": 0.02,
+    }
+    if cbar_kws:
+        default_cbar_kws.update(cbar_kws)
 
     sns.heatmap(
         plot_values,
@@ -557,31 +624,72 @@ def plot_region_difference_heatmap(
         annot_kws={"size": annot_fontsize},
         linewidths=0.5,
         linecolor="white",
-        cbar_kws={"label": "% of significantly different channels"},
+        cbar=cbar,
+        cbar_kws=default_cbar_kws if cbar else None,
         xticklabels=interval_order,
-        yticklabels=region_order,
+        yticklabels=region_order if show_yticks else False,
         ax=ax,
     )
-    ax.set_yticks(np.arange(len(region_order)) + 0.5)
-    ax.set_yticklabels(region_order)
+    if show_yticks:
+        ax.set_yticks(np.arange(len(region_order)) + 0.5)
+        ax.set_yticklabels(region_order)
+    else:
+        ax.set_yticks([])
+        ax.set_yticklabels([])
     ax.set_xticks(np.arange(len(interval_order)) + 0.5)
     ax.set_xticklabels(interval_order)
 
     if title is not None:
-        ax.set_title(title)
-    ax.set_xlabel("Frequencies [Hz]")
-    ax.set_ylabel("Regions")
-    ax.tick_params(axis="x", labelrotation=90, length=0)
-    ax.tick_params(axis="y", labelrotation=0, length=0)
+        title_kwargs = {"loc": title_loc, "fontweight": title_fontweight}
+        if title_fontsize is not None:
+            title_kwargs["fontsize"] = title_fontsize
+        ax.set_title(title, **title_kwargs)
+    label_kwargs = {}
+    if axis_label_fontsize is not None:
+        label_kwargs["fontsize"] = axis_label_fontsize
+    ax.set_xlabel("Frequencies [Hz]", **label_kwargs)
+    ax.set_ylabel(
+        "Regions" if (show_yticks and show_ylabel) else "", **label_kwargs
+    )
+    if tick_fontsize is not None:
+        ax.tick_params(axis="both", labelsize=tick_fontsize)
+    if cbar and (cbar_label_fontsize is not None or cbar_tick_fontsize is not None):
+        cb = ax.collections[0].colorbar
+        if cb is not None:
+            if cbar_label_fontsize is not None:
+                cb.set_label(
+                    default_cbar_kws.get("label", ""),
+                    fontsize=cbar_label_fontsize,
+                )
+            if cbar_tick_fontsize is not None:
+                cb.ax.tick_params(labelsize=cbar_tick_fontsize)
+    ha = xtick_ha if xtick_ha is not None else ("right" if 0 < xtick_rotation < 90 else "center")
+    plt.setp(
+        ax.get_xticklabels(),
+        rotation=xtick_rotation,
+        ha=ha,
+        rotation_mode="anchor" if 0 < xtick_rotation < 90 else "default",
+    )
+    ax.tick_params(axis="x", length=0)
+    if show_yticks and ytick_rotation:
+        y_ha = ytick_ha if ytick_ha is not None else "right"
+        plt.setp(
+            ax.get_yticklabels(),
+            rotation=ytick_rotation,
+            ha=y_ha,
+            rotation_mode="anchor",
+        )
+    ax.tick_params(axis="y", length=0)
 
-    for tick in ax.get_yticklabels():
-        name = tick.get_text()
-        if is_lobe_row.get(name, False):
-            tick.set_color("black")
-            tick.set_fontweight("bold")
-        else:
-            lobe = lobe_by_region.get(name)
-            tick.set_color(_LOBE_COLORS.get(lobe, "black"))
+    if show_yticks:
+        for tick in ax.get_yticklabels():
+            name = tick.get_text()
+            if is_lobe_row.get(name, False):
+                tick.set_color("black")
+                tick.set_fontweight("bold")
+            else:
+                lobe = lobe_by_region.get(name)
+                tick.set_color(_LOBE_COLORS.get(lobe, "black"))
 
     region_lobes = [lobe_by_region[region] for region in region_order]
     for idx, (previous, current) in enumerate(
@@ -590,14 +698,143 @@ def plot_region_difference_heatmap(
         if previous != current:
             ax.axhline(idx, color="white", linewidth=2.0)
 
+    if owns_fig:
+        fig.tight_layout()
+    if output_path is not None and owns_fig:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, bbox_inches="tight", dpi=dpi)
+    if show and owns_fig:
+        plt.show()
+    return fig, ax
+
+
+def plot_region_difference_heatmap_pair(
+    left_df: pd.DataFrame,
+    right_df: pd.DataFrame,
+    *,
+    suptitle: str | None = None,
+    left_title: str | None = None,
+    right_title: str | None = None,
+    output_path: Path | str | None = None,
+    show: bool = True,
+    figsize: tuple[float, float] | None = None,
+    width_ratios: tuple[float, float] | None = None,
+    lobe_order: Sequence[str] = _LOBE_ORDER,
+    region_col: str = "Region name",
+    lobe_col: str = "Lobe",
+    facecolor: str | None = None,
+    xtick_rotation: float = 45,
+    ytick_rotation: float = 20,
+    show_left_ylabel: bool = False,
+    tick_fontsize: float = 11,
+    title_fontsize: float = 14,
+    title_loc: str = "left",
+    title_fontweight: str = "bold",
+    suptitle_fontsize: float = 16,
+    suptitle_fontweight: str = "bold",
+    axis_label_fontsize: float = 12,
+    cbar_label_fontsize: float = 11,
+    cbar_tick_fontsize: float = 10,
+    dpi: int = 300,
+    **plot_kwargs,
+):
+    """Side-by-side heatmaps with shared row order.
+
+    Row order/lobe metadata derived from ``pd.concat([left_df, right_df])`` so
+    both panels use the same region rows. Right panel has y-tick labels and
+    colorbar suppressed (shared via the left panel).
+    """
+    reference_df = pd.concat([left_df, right_df], ignore_index=True)
+
+    meta_source = _build_region_rows_meta(
+        _prepare_region_df(reference_df, region_col, lobe_col), lobe_order
+    )
+    n_rows = len(meta_source)
+    interval_left = (
+        left_df[["interval", "interval_left"]]
+        .drop_duplicates()
+        .sort_values("interval_left")["interval"]
+        .to_list()
+    )
+    interval_right = (
+        right_df[["interval", "interval_left"]]
+        .drop_duplicates()
+        .sort_values("interval_left")["interval"]
+        .to_list()
+    )
+    if figsize is None:
+        total_intervals = len(interval_left) + len(interval_right)
+        figsize = (
+            max(18.0, 0.55 * total_intervals + 6.0),
+            max(8.0, 0.38 * n_rows + 2.0),
+        )
+    if width_ratios is None:
+        width_ratios = (float(len(interval_left)), float(len(interval_right)))
+
+    fig, axes = plt.subplots(
+        1, 2, figsize=figsize, gridspec_kw={"width_ratios": list(width_ratios)}
+    )
+
+    style_kwargs = dict(
+        tick_fontsize=tick_fontsize,
+        title_fontsize=title_fontsize,
+        title_loc=title_loc,
+        title_fontweight=title_fontweight,
+        axis_label_fontsize=axis_label_fontsize,
+        cbar_label_fontsize=cbar_label_fontsize,
+        cbar_tick_fontsize=cbar_tick_fontsize,
+    )
+
+    plot_region_difference_heatmap(
+        left_df,
+        title=left_title,
+        reference_df=reference_df,
+        ax=axes[0],
+        show_yticks=True,
+        show_ylabel=show_left_ylabel,
+        cbar=False,
+        show=False,
+        lobe_order=lobe_order,
+        region_col=region_col,
+        lobe_col=lobe_col,
+        facecolor=facecolor,
+        xtick_rotation=xtick_rotation,
+        ytick_rotation=ytick_rotation,
+        **style_kwargs,
+        **plot_kwargs,
+    )
+    plot_region_difference_heatmap(
+        right_df,
+        title=right_title,
+        reference_df=reference_df,
+        ax=axes[1],
+        show_yticks=False,
+        cbar=True,
+        show=False,
+        lobe_order=lobe_order,
+        region_col=region_col,
+        lobe_col=lobe_col,
+        facecolor=facecolor,
+        xtick_rotation=xtick_rotation,
+        ytick_rotation=ytick_rotation,
+        **style_kwargs,
+        **plot_kwargs,
+    )
+
+    if suptitle is not None:
+        fig.suptitle(
+            suptitle, fontsize=suptitle_fontsize, fontweight=suptitle_fontweight
+        )
+
     fig.tight_layout()
     if output_path is not None:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(output_path, bbox_inches="tight")
+        fig.savefig(output_path, bbox_inches="tight", dpi=dpi)
     if show:
         plt.show()
-    return fig, ax
+    return fig, axes
 
 
 # ---------------------------------------------------------------------------

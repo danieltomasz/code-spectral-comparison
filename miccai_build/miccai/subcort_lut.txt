@@ -1,0 +1,4 @@
+  4  3rd Ventricle                   255   0   0   0
+ 31  Right Amygdala                  255  45   0   0
+ 32  Left Amygdala                   255  56   0   0
+

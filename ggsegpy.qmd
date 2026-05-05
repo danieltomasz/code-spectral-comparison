@@ -1,0 +1,149 @@
+---
+title: "ggsegpy"
+format: html
+---
+
+```{r}
+library(xml2)
+library(dplyr)
+library(readr)
+library(stringr)
+library(tibble)
+library(ggseg.extra)
+
+dir.create("miccai_input", showWarnings = FALSE)
+dir.create("miccai_build", showWarnings = FALSE)
+```
+
+```{r}
+download.file(
+  "https://raw.githubusercontent.com/neurodebian/spm12/master/tpm/labels_Neuromorphometrics.xml",
+  destfile = "miccai_input/labels_Neuromorphometrics.xml",
+  mode = "wb"
+)
+
+download.file(
+  "https://raw.githubusercontent.com/neurodebian/spm12/master/tpm/labels_Neuromorphometrics.nii",
+  destfile = "miccai_input/labels_Neuromorphometrics.nii",
+  mode = "wb"
+)
+```
+
+```{r}
+xml <- read_xml("miccai_input/labels_Neuromorphometrics.xml")
+
+label_nodes <- xml_find_all(xml, ".//data/label")
+
+label_lut <- tibble(
+  idx = label_nodes |>
+    xml_find_first("./index") |>
+    xml_text() |>
+    as.integer(),
+  label = label_nodes |>
+    xml_find_first("./name") |>
+    xml_text() |>
+    str_squish()
+) |>
+  filter(!is.na(idx), !is.na(label), label != "")
+
+stopifnot(nrow(label_lut) > 0)
+
+set.seed(1)
+rgb_mat <- grDevices::col2rgb(grDevices::rainbow(nrow(label_lut)))
+
+label_lut <- label_lut |>
+  mutate(
+    R = as.integer(rgb_mat[1, ]),
+    G = as.integer(rgb_mat[2, ]),
+    B = as.integer(rgb_mat[3, ]),
+    A = 0L
+  ) |>
+  select(idx, label, R, G, B, A)
+
+write_csv(label_lut, "miccai_input/labels_neuromorphometrics.csv")
+```
+
+```{r}
+lut_check <- read_csv(
+  "miccai_input/labels_neuromorphometrics.csv",
+  show_col_types = FALSE
+)
+
+print(names(lut_check))
+print(dim(lut_check))
+print(head(lut_check, 10))
+
+stopifnot(all(c("idx", "label", "R", "G", "B", "A") %in% names(lut_check)))
+stopifnot(nrow(lut_check) > 0)
+```
+
+```{r}
+fs_home <- "/Applications/freesurfer/8.2.0"
+
+Sys.setenv(
+  FREESURFER_HOME = fs_home,
+  SUBJECTS_DIR = file.path(fs_home, "subjects")
+)
+
+Sys.setenv(
+  PATH = paste(
+    file.path(fs_home, "bin"),
+    Sys.getenv("PATH"),
+    sep = .Platform$path.sep
+  )
+)
+
+print(Sys.getenv("FREESURFER_HOME"))
+print(Sys.getenv("SUBJECTS_DIR"))
+print(Sys.which("mri_vol2surf"))
+print(file.exists(file.path(Sys.getenv("SUBJECTS_DIR"), "fsaverage5")))
+
+stopifnot(Sys.which("mri_vol2surf") != "")
+stopifnot(file.exists(file.path(Sys.getenv("SUBJECTS_DIR"), "fsaverage5")))
+```
+
+```{r}
+atlas_test <- ggseg.extra::create_wholebrain_from_volume(
+  input_volume = "miccai_input/labels_Neuromorphometrics.nii",
+  input_lut    = label_lut,
+  atlas_name   = "miccai",
+  output_dir   = "miccai_build",
+  subject      = "fsaverage5",
+  steps        = 1:2,
+  verbose      = TRUE
+)
+
+saveRDS(atlas_test, "miccai_atlas_steps_1_2.rds")
+```
+```{r}
+library(ggplot2)
+library(ggseg)
+library(ggseg.extra)
+
+miccai <- readRDS("miccai_atlas_steps_1_2.rds")
+ggplot() +
+  geom_brain(
+    atlas = miccai,
+    mapping = aes(fill = label),
+    show.legend = FALSE
+  ) +
+  theme_void()
+```
+
+<!--
+After inspecting the output from steps 1:2, run the full pipeline.
+
+```{r}
+atlas <- ggseg.extra::create_wholebrain_from_volume(
+  input_volume = "miccai_input/labels_Neuromorphometrics.nii",
+  input_lut    = "miccai_input/labels_neuromorphometrics.csv",
+  atlas_name   = "miccai",
+  output_dir   = "miccai_build",
+  subject      = "fsaverage5",
+  steps        = 1:7,
+  verbose      = TRUE
+)
+
+saveRDS(atlas, "miccai_atlas.rds")
+```
+-->
