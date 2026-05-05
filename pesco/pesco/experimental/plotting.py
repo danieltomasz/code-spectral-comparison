@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import collections as mc
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 from pesco.experimental.clustering import (
     EEG_BANDS,
@@ -93,7 +94,11 @@ def _plot_subplot(
     ax.tick_params(axis="both", labelsize=tick_labelsize)
 
     summary_curve = channel_data.agg(summary, axis=0).to_numpy(dtype=float)
-    candidates = [np.nanmax(summary_curve)] if summary_curve.size else []
+    q75_curve = channel_data.quantile(0.75, axis=0).to_numpy(dtype=float)
+    candidates = []
+    for arr in (summary_curve, q75_curve):
+        if arr.size:
+            candidates.append(float(np.nanmax(arr)))
     if no_peak_center is not None and np.size(no_peak_center) > 0:
         candidates.append(float(np.nanmax(no_peak_center)))
     ymax = max(candidates) * 1.15 if candidates else 0.10
@@ -135,7 +140,7 @@ def plot_clusters(
     label_col: str = "clusters",
     label_by_band: bool = False,
     ylabel: str | None = None,
-):
+) -> tuple[Figure, Axes]:
     """Plot per-cluster summary PSD, highlighting the no-peak cluster.
 
     Set log_y=True to use a logarithmic scale on the PSD axis.
@@ -235,10 +240,10 @@ def plot_histogram(
     colbin: pd.Categorical,
     dataset: str,
     cols_to_drop: list[str] | None = None,
-    output_dir: Path = Path("images"),
     summary: Summary = "mean",
     feature_cols: Iterable[Hashable] | None = None,
-) -> None:
+    output_path: Path | str | None = None,
+) -> tuple[Figure, list[Axes]]:
     """Histogram of summary power per frequency interval (Fig. 4 inset style).
 
     Two panels: absolute share, and share normalized by interval width.
@@ -256,8 +261,8 @@ def plot_histogram(
     psd_summary = pd.DataFrame(psd.agg(summary, axis=0)).T
     psd_intervals = get_intervals(psd_summary, colbin)
 
-    fig, ax = plt.subplots(1, 2, sharex=False, figsize=(30, 15))
-    ax = ax.flatten()
+    fig, ax_arr = plt.subplots(1, 2, sharex=False, figsize=(30, 15))
+    ax: list[Axes] = list(ax_arr.flatten())
     matplotlib.rcParams.update({"font.size": 22})
 
     cats = colbin.categories
@@ -278,7 +283,7 @@ def plot_histogram(
     ax[0].hlines(y=0.04, xmin=0.5, xmax=80, linewidth=2, color="r")
     ax[0].set_title("absolute share of power in a given bin")
     ax[0].set_xscale("log")
-    ax[0].set_xlim([0.5, 80])
+    ax[0].set_xlim(0.5, 80)
     ax[0].set_xticks([0.5, 4, 8, 13, 30, 80])
     ax[0].get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax[0].grid()
@@ -292,12 +297,14 @@ def plot_histogram(
     ax[1].set_xticks([0.5, 4, 8, 13, 30, 80])
     ax[1].get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax[1].grid()
-    ax[1].set_xlim([0.5, 80])
+    ax[1].set_xlim(0.5, 80)
     ax[1].set_ylim(0, 0.07)
 
-    output_dir.mkdir(exist_ok=True)
-    plt.savefig(output_dir / "mean_power_share_in_intervals.png", format="png")
-    plt.show()
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, bbox_inches="tight")
+    return fig, ax
 
 
 def plot_lobes(
@@ -307,12 +314,11 @@ def plot_lobes(
     smal: list[int],
     dataset: str,
     sig_lobes: dict[str, list] | None = None,
-    show: bool = False,
-    output_dir: Path = Path("images"),
     summary: Summary = "mean",
     feature_cols: Iterable[Hashable] | None = None,
     tick_labelsize: float = 10.0,
-) -> None:
+    output_path: Path | str | None = None,
+) -> tuple[Figure, list[Axes]]:
     """Per-lobe PSD subplots vs no-peak centre, with significance overlays.
 
     For every lobe present in ``psd["Lobe"]``, draws the lobe's per-channel
@@ -339,10 +345,10 @@ def plot_lobes(
     fig, axes = plt.subplots(
         n_rows, n_cols, figsize=(8 * n_cols, 8 * n_rows), squeeze=False,
     )
-    fig.suptitle(f"Lobar differences in EEG frequencies: {dataset}")
-    fig.subplots_adjust(hspace=0.25, wspace=0.25)
+    fig.suptitle(f"Lobar differences in EEG frequencies: {dataset}", y=0.98)
+    fig.subplots_adjust(top=0.94, hspace=0.25, wspace=0.25)
 
-    flat_axes = axes.flatten()
+    flat_axes: list[Axes] = list(axes.flatten())
     for ax, lobe in zip(flat_axes, lobes):
         lobe_psd = psd.loc[psd["Lobe"] == lobe, cols]
         intervals = sig_lobes.get(lobe) if sig_lobes else None
@@ -354,12 +360,11 @@ def plot_lobes(
     for ax in flat_axes[len(lobes):]:
         ax.set_visible(False)
 
-    output_dir.mkdir(exist_ok=True)
-    plt.savefig(output_dir / f"{dataset}_lobar_differences.svg", format="svg")
-    if show:
-        plt.show()
-    else:
-        plt.close()
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, bbox_inches="tight")
+    return fig, flat_axes
 
 
 def plot_regions(
@@ -369,21 +374,27 @@ def plot_regions(
     smal: list[int],
     dataset: str,
     sig_regions: dict[str, dict[str, list]] | None = None,
-    output_dir: Path = Path("images"),
     summary: Summary = "mean",
     feature_cols: Iterable[Hashable] | None = None,
     tick_labelsize: float = 8.0,
-) -> None:
-    """One figure per lobe, with one subplot per region."""
+    output_path_template: str | None = None,
+) -> dict[str, Figure]:
+    """One figure per lobe, with one subplot per region.
+
+    Returns ``{lobe: fig}``. Use ``fig.axes`` if you need the per-region
+    axes. Pass ``output_path_template`` (a format string with ``{lobe}``
+    placeholder, e.g. ``"images/{lobe}_regions.svg"``) to save each
+    figure; otherwise figures are returned unsaved.
+    """
     matplotlib.rcParams.update({"font.size": 8})
     psd_cols = _resolve_feature_cols(psd, feature_cols)
     clust_cols = set(psd_clust.columns)
     cols = [c for c in psd_cols if c in clust_cols]
     f_axis = np.asarray(cols, dtype=float) if len(cols) != len(f) else f
     _, center = get_no_peak(psd_clust, smal, summary=summary, feature_cols=cols)
-    output_dir.mkdir(exist_ok=True)
 
-    for lobe in psd["Lobe"].unique():
+    figs: dict[str, Figure] = {}
+    for lobe in psd["Lobe"].dropna().unique():
         regions = psd.loc[psd["Lobe"] == lobe, "Region name"].unique()
         n_rows = _ceildiv(len(regions), 2)
         fig, axes = plt.subplots(n_rows, 2, figsize=(10, 8 * _ceildiv(n_rows, 2)))
@@ -406,11 +417,13 @@ def plot_regions(
             f"Regional differences in {lobe.lower()} lobe ({dataset})",
             (0.5, 0.95), xycoords="figure fraction", ha="center", fontsize=24,
         )
-        plt.savefig(
-            output_dir / f"{dataset}_{lobe}_regional_differences.svg",
-            format="svg", bbox_inches="tight", pad_inches=0,
-        )
-        plt.show()
+
+        if output_path_template is not None:
+            out = Path(output_path_template.format(lobe=lobe, dataset=dataset))
+            out.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(out, bbox_inches="tight", pad_inches=0)
+        figs[lobe] = fig
+    return figs
 
 
 _LOBE_ORDER = ("Occipital", "Parietal", "Frontal", "Temporal")
@@ -523,8 +536,8 @@ def plot_region_difference_heatmap(
 
     if figsize is None:
         figsize = (
-            max(10.0, 0.5 * len(interval_order) + 4.0),
-            max(6.0, 0.32 * len(region_order) + 2.0),
+            max(12.0, 0.7 * len(interval_order) + 4.0),
+            max(8.0, 0.38 * len(region_order) + 2.0),
         )
     fig, ax = plt.subplots(figsize=figsize)
 
@@ -545,8 +558,14 @@ def plot_region_difference_heatmap(
         linewidths=0.5,
         linecolor="white",
         cbar_kws={"label": "% of significantly different channels"},
+        xticklabels=interval_order,
+        yticklabels=region_order,
         ax=ax,
     )
+    ax.set_yticks(np.arange(len(region_order)) + 0.5)
+    ax.set_yticklabels(region_order)
+    ax.set_xticks(np.arange(len(interval_order)) + 0.5)
+    ax.set_xticklabels(interval_order)
 
     if title is not None:
         ax.set_title(title)
