@@ -143,6 +143,11 @@ Peak detection was performed per region and frequency bin using the Frauscher pr
 
 ![](figures/chapter2/combined_regional_differences.svg)
 
+
+![](figures/chapter2/per_roi_spearman_atlas.svg)
+
+
+
 ### Regional broadband profiles
 
 Regional broadband parameters were estimated using both specparam (fixed mode, 1-40 Hz) and IRASA, and aggregated at the atlas-region level for each dataset.
