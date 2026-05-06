@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Hashable, Iterable, Mapping, Sequence
 
@@ -140,6 +141,11 @@ def plot_clusters(
     label_col: str = "clusters",
     label_by_band: bool = False,
     ylabel: str | None = None,
+    ax: "plt.Axes | None" = None,
+    show: bool = True,
+    save: bool = True,
+    title: str | None = None,
+    legend_fontsize: float | None = None,
 ) -> tuple[Figure, Axes]:
     """Plot per-cluster summary PSD, highlighting the no-peak cluster.
 
@@ -164,7 +170,11 @@ def plot_clusters(
         psd_clust[feature_cols].groupby(psd_clust[label_col]).agg(summary)
     )
     matplotlib.rcParams.update({"font.size": 16})
-    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    owns_fig = ax is None
+    if owns_fig:
+        fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    else:
+        fig = ax.figure
     counts = psd_clust[label_col].value_counts()
 
     band_labels: dict[int, str] = {}
@@ -210,7 +220,10 @@ def plot_clusters(
             ax.semilogx(f, row, color=color_map[k], linewidth=2.0, label=label)
         else:
             ax.semilogx(f, row, alpha=0.5, label=label)
-    ax.legend()
+    legend_kwargs = {}
+    if legend_fontsize is not None:
+        legend_kwargs["fontsize"] = legend_fontsize
+    ax.legend(**legend_kwargs)
     ax.set_xticks(band_edges())
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     if log_y:
@@ -228,11 +241,55 @@ def plot_clusters(
             if log_y else "Normalized spectral density"
         )
     ax.set_ylabel(ylabel)
-    plt.title(f"{summary.capitalize()} power of different PSDs clusters of {dataset}")
-    output_dir.mkdir(exist_ok=True)
-    plt.savefig(output_dir / f"{dataset}_clusters.svg", format="svg")
-    plt.show()
+    resolved_title = title if title is not None else (
+        f"{summary.capitalize()} power of different PSDs clusters of {dataset}"
+    )
+    ax.set_title(resolved_title)
+    if save and owns_fig:
+        output_dir.mkdir(exist_ok=True)
+        fig.savefig(output_dir / f"{dataset}_clusters.svg", format="svg")
+    if show and owns_fig:
+        plt.show()
     return fig, ax
+
+
+def plot_clusters_pair(
+    top: dict,
+    bottom: dict,
+    *,
+    suptitle: str | None = None,
+    figsize: tuple[float, float] = (12, 14),
+    output_path: Path | str | None = None,
+    show: bool = True,
+    dpi: int = 300,
+    suptitle_fontsize: float = 18,
+    suptitle_fontweight: str = "bold",
+    sharex: bool = True,
+    legend_fontsize: float = 11,
+) -> tuple[Figure, np.ndarray]:
+    """Stack two ``plot_clusters`` panels vertically (top/bottom).
+
+    Each of ``top`` and ``bottom`` is a kwargs dict forwarded to
+    :func:`plot_clusters`. Required: ``psd_clust``, ``f``, ``dataset``.
+    """
+    fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=sharex)
+    for panel_kwargs, ax in ((top, axes[0]), (bottom, axes[1])):
+        kw = dict(panel_kwargs)
+        kw.setdefault("legend_fontsize", legend_fontsize)
+        plot_clusters(ax=ax, show=False, save=False, **kw)
+
+    if suptitle is not None:
+        fig.suptitle(
+            suptitle, fontsize=suptitle_fontsize, fontweight=suptitle_fontweight,
+        )
+    fig.tight_layout()
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, bbox_inches="tight", dpi=dpi)
+    if show:
+        plt.show()
+    return fig, axes
 
 
 def plot_histogram(
@@ -318,8 +375,14 @@ def plot_lobes(
     feature_cols: Iterable[Hashable] | None = None,
     tick_labelsize: float = 10.0,
     output_path: Path | str | None = None,
+    subplot_height_ratio: float = 1.0,
+    font_size: float = 22.0,
 ) -> tuple[Figure, list[Axes]]:
     """Per-lobe PSD subplots vs no-peak centre, with significance overlays.
+
+    ``subplot_height_ratio`` scales the y-extent of each subplot relative to
+    its x-extent. ``1.0`` keeps the original square panels; ``0.6`` makes
+    panels shorter (wider-looking).
 
     For every lobe present in ``psd["Lobe"]``, draws the lobe's per-channel
     summary spectrum (mean/median), IQR band, and min/max envelope on a
@@ -333,7 +396,7 @@ def plot_lobes(
     cols = [c for c in psd_cols if c in clust_cols]
     f_axis = np.asarray(cols, dtype=float) if len(cols) != len(f) else f
     _, center = get_no_peak(psd_clust, smal, summary=summary, feature_cols=cols)
-    matplotlib.rcParams.update({"font.size": 22})
+    matplotlib.rcParams.update({"font.size": font_size})
 
     canonical = ["Occipital", "Parietal", "Frontal", "Temporal"]
     present = list(psd["Lobe"].dropna().unique())
@@ -343,7 +406,9 @@ def plot_lobes(
     n_cols = 2
     n_rows = _ceildiv(len(lobes), n_cols)
     fig, axes = plt.subplots(
-        n_rows, n_cols, figsize=(8 * n_cols, 8 * n_rows), squeeze=False,
+        n_rows, n_cols,
+        figsize=(8 * n_cols, 8 * n_rows * subplot_height_ratio),
+        squeeze=False,
     )
     fig.suptitle(f"Lobar differences in EEG frequencies: {dataset}", y=0.98)
     fig.subplots_adjust(top=0.94, hspace=0.25, wspace=0.25)
@@ -497,6 +562,7 @@ def plot_region_difference_heatmap(
     show_yticks: bool = True,
     show_ylabel: bool = True,
     cbar: bool = True,
+    cbar_ax: "plt.Axes | None" = None,
     cbar_kws: dict | None = None,
     facecolor: str | None = None,
     xtick_rotation: float = 90,
@@ -511,6 +577,7 @@ def plot_region_difference_heatmap(
     cbar_label_fontsize: float | None = None,
     cbar_tick_fontsize: float | None = None,
     dpi: int = 300,
+    square: bool = False,
 ):
     """Plot a Frauscher-style regional difference heatmap.
 
@@ -625,17 +692,17 @@ def plot_region_difference_heatmap(
         linewidths=0.5,
         linecolor="white",
         cbar=cbar,
+        cbar_ax=cbar_ax,
         cbar_kws=default_cbar_kws if cbar else None,
         xticklabels=interval_order,
         yticklabels=region_order if show_yticks else False,
+        square=square,
         ax=ax,
     )
-    if show_yticks:
-        ax.set_yticks(np.arange(len(region_order)) + 0.5)
-        ax.set_yticklabels(region_order)
-    else:
-        ax.set_yticks([])
-        ax.set_yticklabels([])
+    ax.set_yticks(np.arange(len(region_order)) + 0.5)
+    ax.set_yticklabels(region_order)
+    if not show_yticks:
+        ax.tick_params(axis="y", labelleft=False)
     ax.set_xticks(np.arange(len(interval_order)) + 0.5)
     ax.set_xticklabels(interval_order)
 
@@ -733,10 +800,14 @@ def plot_region_difference_heatmap_pair(
     title_fontweight: str = "bold",
     suptitle_fontsize: float = 16,
     suptitle_fontweight: str = "bold",
+    suptitle_y: float = 0.98,
     axis_label_fontsize: float = 12,
     cbar_label_fontsize: float = 11,
     cbar_tick_fontsize: float = 10,
     dpi: int = 300,
+    square: bool = False,
+    wspace: float | None = None,
+    cbar_shrink: float = 0.55,
     **plot_kwargs,
 ):
     """Side-by-side heatmaps with shared row order.
@@ -765,16 +836,36 @@ def plot_region_difference_heatmap_pair(
     )
     if figsize is None:
         total_intervals = len(interval_left) + len(interval_right)
-        figsize = (
-            max(18.0, 0.55 * total_intervals + 6.0),
-            max(8.0, 0.38 * n_rows + 2.0),
-        )
+        if square:
+            cell_size = 0.32
+            label_margin = 5.0
+            figsize = (
+                cell_size * total_intervals + label_margin,
+                cell_size * n_rows + 2.5,
+            )
+        else:
+            figsize = (
+                max(18.0, 0.55 * total_intervals + 6.0),
+                max(8.0, 0.38 * n_rows + 2.0),
+            )
+    n_left = len(interval_left)
+    n_right = len(interval_right)
     if width_ratios is None:
-        width_ratios = (float(len(interval_left)), float(len(interval_right)))
+        width_ratios = (float(n_left), float(n_right))
 
-    fig, axes = plt.subplots(
-        1, 2, figsize=figsize, gridspec_kw={"width_ratios": list(width_ratios)}
+    cbar_width_ratio = 0.4
+    gridspec_kw = {
+        "width_ratios": list(width_ratios) + [cbar_width_ratio],
+    }
+    effective_wspace = wspace if wspace is not None else (0.05 if square else None)
+    if effective_wspace is not None:
+        gridspec_kw["wspace"] = effective_wspace
+    fig, all_axes = plt.subplots(
+        1, 3, figsize=figsize, gridspec_kw=gridspec_kw,
     )
+    axes = all_axes[:2]
+    cax = all_axes[2]
+    axes[1].sharey(axes[0])
 
     style_kwargs = dict(
         tick_fontsize=tick_fontsize,
@@ -784,6 +875,7 @@ def plot_region_difference_heatmap_pair(
         axis_label_fontsize=axis_label_fontsize,
         cbar_label_fontsize=cbar_label_fontsize,
         cbar_tick_fontsize=cbar_tick_fontsize,
+        square=False,
     )
 
     plot_region_difference_heatmap(
@@ -811,6 +903,7 @@ def plot_region_difference_heatmap_pair(
         ax=axes[1],
         show_yticks=False,
         cbar=True,
+        cbar_ax=cax,
         show=False,
         lobe_order=lobe_order,
         region_col=region_col,
@@ -822,12 +915,72 @@ def plot_region_difference_heatmap_pair(
         **plot_kwargs,
     )
 
+    suptitle_obj = None
     if suptitle is not None:
-        fig.suptitle(
-            suptitle, fontsize=suptitle_fontsize, fontweight=suptitle_fontweight
+        suptitle_obj = fig.suptitle(
+            suptitle,
+            fontsize=suptitle_fontsize,
+            fontweight=suptitle_fontweight,
+            y=suptitle_y,
         )
 
-    fig.tight_layout()
+    rect = [0, 0, 1, 0.96] if suptitle is not None else None
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="This figure includes Axes that are not compatible with tight_layout",
+        )
+        fig.tight_layout(rect=rect)
+    if effective_wspace is not None:
+        fig.subplots_adjust(wspace=effective_wspace)
+
+    # Equalize geometry: same y0/height on both panels, identical cell width.
+    # If square=True, also set height = cell_w * n_rows so cells are square.
+    pos0 = axes[0].get_position()
+    pos1 = axes[1].get_position()
+    pos_cax = cax.get_position()
+
+    y0 = max(pos0.y0, pos1.y0)
+    height = min(pos0.y0 + pos0.height, pos1.y0 + pos1.height) - y0
+
+    cell_w = min(pos0.width / n_left, pos1.width / n_right)
+    if square:
+        target_h = cell_w * n_rows
+        if target_h <= height:
+            top = y0 + height
+            y0 = top - target_h
+            height = target_h
+        else:
+            cell_w *= height / target_h
+
+    new_w_left = cell_w * n_left
+    new_w_right = cell_w * n_right
+    gap = pos1.x0 - (pos0.x0 + pos0.width)
+    cax_gap = pos_cax.x0 - (pos1.x0 + pos1.width)
+
+    x_left = pos0.x0
+    x_right = x_left + new_w_left + gap
+    x_cax = x_right + new_w_right + cax_gap
+
+    axes[0].set_position([x_left, y0, new_w_left, height])
+    axes[1].set_position([x_right, y0, new_w_right, height])
+    cbar_h = height * cbar_shrink
+    cbar_y0 = y0 + (height - cbar_h) / 2
+    cax.set_position([x_cax, cbar_y0, pos_cax.width, cbar_h])
+
+    if suptitle_obj is not None:
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        title_tops = [
+            ax.title.get_window_extent(renderer).y1
+            for ax in axes
+            if ax.get_title()
+        ]
+        if title_tops:
+            top_fig = max(title_tops) / fig.bbox.height
+            sup_bbox = suptitle_obj.get_window_extent(renderer)
+            sup_h_fig = (sup_bbox.y1 - sup_bbox.y0) / fig.bbox.height
+            suptitle_obj.set_y(top_fig + sup_h_fig / 2 + 0.005)
     if output_path is not None:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
