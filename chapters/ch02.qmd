@@ -175,6 +175,8 @@ across conditions. Magnitude of EO/EC effect relative to cross-modal differences
 
 ## Discussion
 
+This chapter does not aim to provide a definitive validation of source-reconstructed HD-EEG against intracranial EEG. Rather, it asks whether large-scale regional spectral organisation is sufficiently preserved to support cautious comparison, and whether separating oscillatory and broadband components changes that comparison. The chapter is therefore evaluated not by whether it eliminates all ambiguity, but by whether it makes the sources of ambiguity explicit and tests their consequences.
+
 ### Regional spectral organisation reflects cortical hierarchy
 
 <!-- Contextualise aperiodic and oscillatory gradients within the cortical hierarchy
