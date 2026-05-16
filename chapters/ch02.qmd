@@ -63,15 +63,29 @@ To enable direct comparison with the original atlas results, the peak detection 
 
 The 160 frequency bins were grouped into 22 frequency intervals based on the condition that each bin contains at least 4% of total mean power, yielding boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25, 31.75, and 80 Hz. The presence of a peak in a given frequency interval for a particular brain region was determined by comparing the distribution of spectral densities of all channels in that region against the distribution of the no-peak set at the same interval, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% significance level with Dunnett's correction for multiple comparisons across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals.
 
-For the HD-EEG source-reconstructed data, the same procedure was applied. However, the 22 frequency intervals proposed by @frauscher2018AtlasNormalIntracranial did not satisfy the 4% power condition for the reconstructed source spectra. However we decided the to use the same  frequency bins for the purpose for comparability across datasets.<!-- atisfying this condition were therefore defined separately for HD-EEG dataset -->. This should be note as a methodological caveat.
+For the HD-EEG source-reconstructed data, the same procedure was applied. However, the 22 frequency intervals proposed by @frauscher2018AtlasNormalIntracranial did not satisfy the 4% power condition for the reconstructed source spectra. However we decided the to use the same  frequency bins for the purpose for comparability across datasets.<!-- satisfying this condition were therefore defined separately for HD-EEG dataset -->. This should be noted as a methodological caveat.
 
 ### Oscillatory peak detection: after 1/f removal
 
+Both datasets themselves have different characteristics, so we used different settings for removing the 1/f background.
+The iEEG channel spectra exhibited a clear knee in log-log space (as orginally reported by @frauscher2018AtlasNormalIntracranial),  consistent with reports that knees are commonly observed in intracranial  recordings [@donoghue2024EvaluatingComparingMeasures; @bush2024AperiodicComponentsLocal]. We therefore  fit the iEEG spectra using Specparam's knee model. The HD-EEG  source-reconstructed spectra, by contrast, were approximately linear  in log-log space across the fitted frequency range and did not exhibit  a clear knee; we therefore used the fixed (no-knee) Specparam model  for these data, in line with standard practice for scalp/source M/EEG [donoghue2020ParameterizingNeuralPower].
 
-As the data itself has different charactering we used different setting for removing 
-Spectral parameterisation: specparam
+For each channel, the normalized PSD was parameterised over 1–80 Hz with peak_width_limits = [1, 8] Hz, max_n_peaks = 8, peak_threshold = 3.0 (in units of standard deviation of the residual), and aperiodic_mode = "knee". In knee mode, the aperiodic component is modelled in log-power space as
 
-For the purpose of removing the 1/f background and testing if it improve the comparability we used specparam algorithm. 
+$$L_\text{ap}(f) = b - \log_{10}\bigl(k + f^{\chi}\bigr),$$
+
+where $b$ is the offset, $k$ the knee parameter, and $\chi$ the exponent governing the high-frequency roll-off. The fitted parameters $(b, k, \chi)$ were extracted per channel and used to reconstruct $L_\text{ap}(f)$ on the fitted frequency grid. The oscillatory residual was obtained by subtracting the aperiodic fit from the empirical log-PSD,
+
+$$L_\text{osc}(f) = \log_{10} \text{PSD}(f) - L_\text{ap}(f),$$
+
+and back-transformed to linear power as $\text{PSD}\text{osc}(f) = 10^{L\text{osc}(f)}$.
+The resulting $\text{PSD}_\text{osc}$ was carried forward to the clustering analysis without further normalisation, preserving the channel-relative scaling implied by the aperiodic subtraction.
+
+
+<!-- Fit quality was assessed via the goodness-of-fit $R^2$ reported by specparam; across the iEEG channels, the median $R^2$ was 0.98, with 1765/1772 channels exceeding $R^2 \geq 0.9$.  -->
+
+For the purpose of removing the 1/f background and testing if it improves the comparability we used the specparam algorithm. 
+
 PSDs were parameterised using the specparam algorithm (formerly FOOOF; @donoghue2020ParameterizingNeuralPower) in fixed aperiodic mode. 
 ! We should use knee here as even frauscher describe the there was knee here.As it was noted by @frauscher2018AtlasNormalIntracranial
 

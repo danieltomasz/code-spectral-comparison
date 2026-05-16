@@ -133,6 +133,7 @@ def plot_clusters(
     output_dir: Path = Path("images"),
     summary: Summary = "mean",
     log_y: bool = False,
+    log_x: bool = True,
     order_by_peak: bool = False,
     cmap: str = "viridis",
     peak_baseline: np.ndarray | None = None,
@@ -206,6 +207,7 @@ def plot_clusters(
         color_map = {}
         plot_order = list(cluster_summary.index)
 
+    plot_fn = ax.semilogx if log_x else ax.plot
     for k in plot_order:
         row = cluster_summary.loc[k]
         if label_by_band and k in band_labels:
@@ -213,13 +215,13 @@ def plot_clusters(
         else:
             label = f"cl. {k} ({counts.loc[k]} el.)"
         if k in smal and k == nopeak:
-            ax.semilogx(f, row, linewidth=4.0, color="black", label=label)
+            plot_fn(f, row, linewidth=4.0, color="black", label=label)
         elif k == nopeak:
-            ax.semilogx(f, row, linestyle=":", linewidth=5.0, color="black", label=label)
+            plot_fn(f, row, linestyle=":", linewidth=5.0, color="black", label=label)
         elif k in color_map:
-            ax.semilogx(f, row, color=color_map[k], linewidth=2.0, label=label)
+            plot_fn(f, row, color=color_map[k], linewidth=2.0, label=label)
         else:
-            ax.semilogx(f, row, alpha=0.5, label=label)
+            plot_fn(f, row, alpha=0.5, label=label)
     legend_kwargs = {}
     if legend_fontsize is not None:
         legend_kwargs["fontsize"] = legend_fontsize
@@ -377,6 +379,7 @@ def plot_lobes(
     output_path: Path | str | None = None,
     subplot_height_ratio: float = 1.0,
     font_size: float = 22.0,
+    ylim: tuple[float | None, float | None] | None = None,
 ) -> tuple[Figure, list[Axes]]:
     """Per-lobe PSD subplots vs no-peak centre, with significance overlays.
 
@@ -422,6 +425,8 @@ def plot_lobes(
             lobe_psd, center, f_axis, intervals, title,
             ax=ax, summary=summary, tick_labelsize=tick_labelsize,
         )
+        if ylim is not None:
+            ax.set_ylim(*ylim)
     for ax in flat_axes[len(lobes):]:
         ax.set_visible(False)
 

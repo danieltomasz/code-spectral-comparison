@@ -23,8 +23,8 @@ dependencies = [
     "ggsegpy",
     "atlasreader",
     "pymc",
-    "bambi"
-]
+    "bambi",
+    "altair"]
 
 [project.optional-dependencies]
 dev = [
