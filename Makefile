@@ -33,5 +33,8 @@ context-pesco:
 ch2:
 	quarto render chapters/ch02.qmd --to typst
 
+preview:
+	quarto preview chapters/ch02.qmd 	
+
 docs:
 	 uv run great-docs build && great-docs preview 

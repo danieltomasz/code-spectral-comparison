@@ -22,7 +22,8 @@ dependencies = [
     "ipywidgets",
     "ggsegpy",
     "atlasreader",
-    "pymc"
+    "pymc",
+    "bambi"
 ]
 
 [project.optional-dependencies]
@@ -57,6 +58,7 @@ members = [
 pesco = { workspace = true, editable = true }
 gedai = { git = "https://github.com/neurotuning/gedai" }
 ggsegpy = { git = "https://github.com/ggsegverse/ggsegpy.git" }
+bambi = { git = "https://github.com/bambinos/bambi.git" }
 
 [tool.ruff]
 line-length = 88
