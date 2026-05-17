@@ -79,3 +79,13 @@ great-docs/
 CLAUDE.md
 building_atlas/
 tutorials/
+
+## Ignore specific files 
+
+*.svg
+*.pdf
+.png
+!chapters/**/.png
+!chapters/**/.pdf
+!chapters/**/.svg
+
