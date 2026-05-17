@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 sns.set_style('white')
 plt.close("all")
 
-from pesco.pesco import foofexplore
+from pesco.pesco.experimental import foofexplore
 datafolder = '/home/daniel/PhD/notebooks/pesco-pipeline/data/preproc/'
 
 all_data = pd.read_csv(datafolder+ 'all_data_peaks_foofed.csv')

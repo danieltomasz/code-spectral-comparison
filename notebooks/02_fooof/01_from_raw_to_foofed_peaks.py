@@ -62,7 +62,7 @@ raw_sources = mne.io.read_raw_fif(datafolder +"sources_raw.fif")
 
 # %%
 
-from pesco.pesco import foofexplore
+from pesco.pesco.experimental import foofexplore
 
 peaks_ieeg  = foofexplore.comp_foof(raw_ieeg , df_ieeg, datafolder + "ieeg_peaks_foofed.csv")
 peaks_sources  = foofexplore.comp_foof(raw_sources, df_sources, datafolder + "sources_peaks_foofed.csv")
