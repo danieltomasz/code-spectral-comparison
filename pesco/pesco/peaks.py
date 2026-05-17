@@ -12,7 +12,7 @@ def peak_survival(
 ) -> pd.DataFrame:
     """Compare regional peak prevalence before and after aperiodic correction.
 
-    Takes two DataFrames — each with one row per region × band combination and a
+    Takes two DataFrames — each with one row per region x band combination and a
     boolean presence column — and returns a merged table showing which peaks
     survived correction, were lost, or appeared for the first time.
 

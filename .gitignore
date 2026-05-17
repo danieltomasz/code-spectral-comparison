@@ -74,3 +74,18 @@ _drafts/
 nencki/
 code/
 data/
+# Great Docs build directory (ephemeral, do not commit)
+great-docs/
+CLAUDE.md
+building_atlas/
+tutorials/
+
+## Ignore specific files 
+
+*.svg
+*.pdf
+*.png
+!chapters/**/.png
+!chapters/**/.pdf
+!chapters/**/.svg
+

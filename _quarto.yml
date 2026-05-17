@@ -1,0 +1,23 @@
+format:
+  typst:
+    fontsize: 12pt
+    number-sections: true
+    toc: true
+    toc-depth: 2
+    # Tell Quarto/Pandoc to wrap citations in hyperlinks
+    link-citations: true
+    # Tell Typst to color all links blue
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+
+  docx:
+    toc: true
+    toc-depth: 3
+    toc-title: "Contents"
+
+bibliography:
+  - references.bib
+reference-section-title: References
+citeproc: true
+suppress-bibliography: false

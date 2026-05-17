@@ -1,21 +1,30 @@
 [project]
 name = "spectral-comparison"
 version = "0.1.0"
-description = "Analysis of EEG PATHS project data"
+description = "Analysis of intractranial and reconstructed spectral features"
 readme = "README.md"
-requires-python = ">=3.13.11, <=3.14"
+requires-python = ">=3.13.11"
 dependencies = [
-    "mne",
+    "mne>=1.12",
     "polars",
     "plotnine",
     "specparam>=2.0.0rc6",
     "pyrasa",
     "pesco",
     "seaborn",
-    
-
-    
-]
+    "great-docs",
+    "autoreject",
+    "neurodsp",
+    "patchworklib",
+    "nibabel",
+    "nilearn",
+    "pyvistaqt",
+    "ipywidgets",
+    "ggsegpy",
+    "atlasreader",
+    "pymc",
+    "bambi",
+    "altair"]
 
 [project.optional-dependencies]
 dev = [
@@ -30,13 +39,15 @@ dev = [
     "ipympl",
    "nbstripout",
    "pre-commit",
-   "watermark"
+   "watermark",
+   "mlxtend"
     
 ]
 
 [tool.uv]
 package = false
 link-mode = "copy"
+config-settings = { editable_mode = "compat" }
 
 [tool.uv.workspace]
 members = [
@@ -46,6 +57,8 @@ members = [
 [tool.uv.sources]
 pesco = { workspace = true, editable = true }
 gedai = { git = "https://github.com/neurotuning/gedai" }
+ggsegpy = { git = "https://github.com/ggsegverse/ggsegpy.git" }
+bambi = { git = "https://github.com/bambinos/bambi.git" }
 
 [tool.ruff]
 line-length = 88

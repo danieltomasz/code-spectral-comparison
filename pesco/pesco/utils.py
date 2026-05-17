@@ -31,3 +31,15 @@ def print_mat_nested(d, indent=0, nkeys=0):
         for n in d.dtype.names:  # This means it's a struct, it's bit of a kludge test.
             print("\t" * indent + "Field: " + str(n))
             print_mat_nested(d[n], indent + 1)
+
+
+def lobes_long(raw, result):
+    """transform channel info  from wide to long format"""
+
+    psd_df = get_psd(raw)
+    psd_df["id"] = psd_df.index
+    psd_long = pd.melt(psd_df, id_vars=["id"])
+    psd_long.columns = ["id", "frequency", "spectral_density"]
+    # psd_long[['frequency','spectral_density']] = psd_long[['frequency','spectral_density']].astype(float)
+    result_long = psd_long.set_index("id").join(result.set_index("ch_name"))
+    return result_long
