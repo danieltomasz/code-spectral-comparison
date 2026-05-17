@@ -84,7 +84,7 @@ tutorials/
 
 *.svg
 *.pdf
-.png
+*.png
 !chapters/**/.png
 !chapters/**/.pdf
 !chapters/**/.svg
