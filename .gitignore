@@ -91,3 +91,8 @@ tutorials/
 
 **/.jupyter_cache/
 _freeze/
+*.quarto_ipynb*
+*_quarto_ipynb*
+*.quarto_ipynb*
+
+*_quarto_ipynb*
