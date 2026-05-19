@@ -89,3 +89,5 @@ tutorials/
 !chapters/**/.pdf
 !chapters/**/.svg
 
+**/.jupyter_cache/
+_freeze/

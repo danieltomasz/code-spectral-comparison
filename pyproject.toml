@@ -24,7 +24,7 @@ dependencies = [
     "atlasreader",
     "pymc",
     "bambi",
-    "altair"]
+    "jupyter-cache"]
 
 [project.optional-dependencies]
 dev = [
@@ -58,7 +58,6 @@ members = [
 pesco = { workspace = true, editable = true }
 gedai = { git = "https://github.com/neurotuning/gedai" }
 ggsegpy = { git = "https://github.com/ggsegverse/ggsegpy.git" }
-bambi = { git = "https://github.com/bambinos/bambi.git" }
 
 [tool.ruff]
 line-length = 88
