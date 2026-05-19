@@ -1,0 +1,418 @@
+---
+title: "Bush Lorentzian aperiodic — sim tests"
+format: html
+jupyter: spectral-comparison-3.14
+---
+
+```{python}
+#| label: imports
+import numpy as np
+import matplotlib.pyplot as plt
+
+from pesco.aperiodic import generate_aperiodic, fit_aperiodic
+```
+
+## Test 1 — clean spectrum, knee at 13 Hz
+
+```{python}
+#| label: fit-clean-13hz
+rng = np.random.default_rng(0)
+
+freqs = np.linspace(1, 100, 400)
+true_offset = -1.0
+true_knee_hz = 13.0
+true_log_knee = np.log10(true_knee_hz)
+true_exponent = 2.0
+true_params = [true_offset, true_log_knee, true_exponent]
+
+log_ap = generate_aperiodic(freqs, true_params, fmin=1.0)
+noisy = log_ap + rng.normal(0, 0.05, size=log_ap.size)
+
+res = fit_aperiodic(freqs, noisy, power_is_log=True, fmin=1.0, robust=True)
+off, lk, exp = res.params
+
+print(f"true:   offset={true_offset:.3f}  knee_hz={true_knee_hz:.2f}  exp={true_exponent:.3f}")
+print(f"fitted: offset={off:.3f}  knee_hz={10**lk:.2f}  exp={exp:.3f}")
+print(f"rmse log-power vs truth: {np.sqrt(np.mean((res.aperiodic_fit - log_ap)**2)):.4f}")
+
+assert abs(10**lk - true_knee_hz) < 0.5, "knee recovery off"
+assert abs(exp - true_exponent) < 0.1, "exponent recovery off"
+```
+
+```{python}
+#| label: plot-clean-13hz
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(np.log10(freqs), noisy, ".", ms=2, label="noisy spectrum")
+ax.plot(np.log10(freqs), log_ap, "-", lw=1, label="truth")
+ax.plot(np.log10(freqs), res.aperiodic_fit, "--", lw=1.5, label="fit")
+ax.axvline(np.log10(true_knee_hz), color="k", ls=":", alpha=0.5, label="knee 13 Hz")
+ax.set_xlabel("log10 freq (Hz)")
+ax.set_ylabel("log10 power")
+ax.legend()
+plt.show()
+```
+
+## Test 2 — alpha peak contamination, robust vs non-robust
+
+```{python}
+#| label: fit-alpha-bump
+rng = np.random.default_rng(1)
+log_ap = generate_aperiodic(freqs, true_params, fmin=1.0)
+
+bump = 0.4 * np.exp(-0.5 * ((freqs - 10) / 1.5) ** 2)
+noisy = log_ap + bump + rng.normal(0, 0.03, size=log_ap.size)
+
+results = {}
+for robust in (False, True):
+    r = fit_aperiodic(freqs, noisy, power_is_log=True, fmin=1.0, robust=robust)
+    results[robust] = r
+    off, lk, exp = r.params
+    print(f"robust={robust!s:5s}  knee_hz={10**lk:.2f}  exp={exp:.3f}  offset={off:.3f}")
+
+assert abs(10 ** results[True].params[1] - true_knee_hz) < 0.5, "robust knee off"
+```
+
+```{python}
+#| label: plot-alpha-bump
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(np.log10(freqs), noisy, ".", ms=2, color="gray", label="noisy + alpha bump")
+ax.plot(np.log10(freqs), log_ap, "-", lw=1, label="aperiodic truth")
+ax.plot(np.log10(freqs), results[False].aperiodic_fit, "--", lw=1.5, label="fit non-robust")
+ax.plot(np.log10(freqs), results[True].aperiodic_fit, "--", lw=1.5, label="fit robust")
+ax.axvline(np.log10(true_knee_hz), color="k", ls=":", alpha=0.5, label="knee 13 Hz")
+ax.set_xlabel("log10 freq (Hz)")
+ax.set_ylabel("log10 power")
+ax.legend()
+plt.show()
+```
+
+## Test 3 — knee sweep, robust fit recovery
+
+```{python}
+#| label: knee-sweep
+rng = np.random.default_rng(2)
+knee_grid = [1.0, 3.0, 8.0, 13.0, 25.0, 50.0]
+
+print(f"{'true_knee':>10s}  {'fit_knee':>10s}  {'fit_exp':>10s}")
+for k in knee_grid:
+    params = [-1.0, np.log10(k), 2.0]
+    log_ap_k = generate_aperiodic(freqs, params, fmin=1.0)
+    y = log_ap_k + rng.normal(0, 0.03, size=log_ap_k.size)
+    r = fit_aperiodic(freqs, y, power_is_log=True, fmin=1.0, robust=True)
+    print(f"{k:10.2f}  {10**r.params[1]:10.2f}  {r.params[2]:10.3f}")
+```
+
+
+## Test 4 — neurodsp power-law signal, no knee
+
+Pure 1/f^chi has no knee. Bush model should saturate `log_knee` at the lower
+bound (`fmin/10`) and still recover the exponent. Diagnostic: if fitted knee
+hugs the lower bound, the spectrum is effectively knee-less.
+
+```{python}
+#| label: imports-neurodsp
+from neurodsp.sim import sim_powerlaw
+from neurodsp.spectral import compute_spectrum
+```
+
+```{python}
+#| label: fit-no-knee
+fs = 1000
+true_exp = 2.0
+sig = sim_powerlaw(n_seconds=60, fs=fs, exponent=-true_exp)
+
+freqs_psd, psd = compute_spectrum(sig, fs, method="welch", nperseg=2 * fs)
+mask = (freqs_psd >= 1) & (freqs_psd <= 100)
+freqs_psd, psd = freqs_psd[mask], psd[mask]
+
+res_nk = fit_aperiodic(freqs_psd, psd, power_is_log=False, fmin=1.0, robust=True)
+off, lk, exp = res_nk.params
+
+fmin_used = res_nk.fmin
+knee_lb_hz = fmin_used / 10.0
+
+print(f"true exponent: {true_exp:.3f}")
+print(f"fitted: knee_hz={10**lk:.4f}  exp={exp:.3f}  offset={off:.3f}")
+print(f"lower knee bound: {knee_lb_hz:.4f} Hz  -> fit at bound: {np.isclose(10**lk, knee_lb_hz, rtol=1e-3)}")
+
+assert abs(exp - true_exp) < 0.15, "exponent recovery off"
+```
+
+```{python}
+#| label: plot-no-knee
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.plot(np.log10(freqs_psd), np.log10(psd), ".", ms=2, label="neurodsp PSD")
+ax.plot(np.log10(freqs_psd), res_nk.aperiodic_fit, "--", lw=1.5, label="fit")
+ax.set_xlabel("log10 freq (Hz)")
+ax.set_ylabel("log10 power")
+ax.legend()
+plt.show()
+```
+
+
+## Test 5 — comparison vs specparam (fixed and knee modes)
+
+Ground-truth scenarios: two knee-less neurodsp spectra plus three synthetic
+Bush spectra with knees at 3, 13, 40 Hz. Compare:
+
+- **bush** (`pesco.aperiodic.fit_aperiodic`) — Lorentzian, knee-or-no-knee in one fit
+- **specparam-fixed** — pure power law, no knee parameter
+- **specparam-knee** — specparam's knee model `10^b / (k + f^chi)` (different
+  parameterization from Bush; recovered `fk = k^(1/chi)`)
+
+```{python}
+#| label: comparison-imports
+from specparam import SpectralModel
+
+
+def fit_specparam(freqs, psd, mode):
+    sm = SpectralModel(aperiodic_mode=mode, verbose=False)
+    sm.fit(freqs, psd, freq_range=(freqs[0], freqs[-1]))
+    p = sm.results.params.aperiodic.params
+    r2 = sm.results.metrics["gof_rsquared"].result
+    if mode == "fixed":
+        return {"offset": p[0], "exponent": p[1], "knee_hz": None, "r2": r2}
+    chi = p[2]
+    fk = p[1] ** (1 / chi) if p[1] > 0 else np.nan
+    return {"offset": p[0], "exponent": chi, "knee_hz": fk, "r2": r2}
+
+
+def fit_bush(freqs, psd):
+    r = fit_aperiodic(freqs, psd, power_is_log=False, fmin=1.0, robust=True)
+    off, lk, exp = r.params
+    ss_res = np.sum((np.log10(psd) - r.aperiodic_fit) ** 2)
+    ss_tot = np.sum((np.log10(psd) - np.mean(np.log10(psd))) ** 2)
+    return {"offset": off, "exponent": exp, "knee_hz": 10 ** lk, "r2": 1 - ss_res / ss_tot}
+```
+
+```{python}
+#| label: build-scenarios
+fs = 1000
+scenarios = []
+
+for chi_true in (2.0, 1.5):
+    sig = sim_powerlaw(n_seconds=60, fs=fs, exponent=-chi_true)
+    f, p = compute_spectrum(sig, fs, method="welch", nperseg=2 * fs)
+    m = (f >= 1) & (f <= 100)
+    scenarios.append((f"neurodsp no-knee chi={chi_true}", f[m], p[m], {"exp": chi_true, "knee_hz": None}))
+
+for knee_hz in (3.0, 13.0, 40.0):
+    f = np.linspace(1, 100, 400)
+    log_ap_k = generate_aperiodic(f, [-1.0, np.log10(knee_hz), 2.0], fmin=1.0)
+    rng = np.random.default_rng(int(knee_hz))
+    psd = 10 ** (log_ap_k + rng.normal(0, 0.03, size=log_ap_k.size))
+    scenarios.append((f"synth knee={knee_hz} chi=2", f, psd, {"exp": 2.0, "knee_hz": knee_hz}))
+```
+
+```{python}
+#| label: compare-table
+print(f"{'scenario':<26}{'method':<18}{'exp':>7}{'knee_hz':>10}{'r2':>7}")
+print("-" * 68)
+for name, freqs_s, psd_s, truth in scenarios:
+    khz_true = str(truth["knee_hz"])
+    print(f"{name:<26}{'TRUTH':<18}{truth['exp']:>7.2f}{khz_true:>10}{'-':>7}")
+    for label, fn in [
+        ("bush", lambda f=freqs_s, p=psd_s: fit_bush(f, p)),
+        ("specparam-fixed", lambda f=freqs_s, p=psd_s: fit_specparam(f, p, "fixed")),
+        ("specparam-knee", lambda f=freqs_s, p=psd_s: fit_specparam(f, p, "knee")),
+    ]:
+        r = fn()
+        khz = f"{r['knee_hz']:.2f}" if r["knee_hz"] is not None and np.isfinite(r["knee_hz"]) else "-"
+        print(f"{'':<26}{label:<18}{r['exponent']:>7.3f}{khz:>10}{r['r2']:>7.3f}")
+    print()
+```
+
+**Expected pattern**
+
+- `specparam-fixed` collapses on spectra with real knees (exponent biases
+  toward 0 as knee moves into the fitted range)
+- `specparam-knee` and `bush` recover both exponent and knee within ~1 Hz
+- On knee-less spectra, `bush` reports knee at the lower bound (`fmin/10`) —
+  the saturation flag, not a real estimate
+
+```{python}
+#| label: plot-comparison
+def specparam_curve(freqs, mode):
+    sm = SpectralModel(aperiodic_mode=mode, verbose=False)
+    sm.fit(freqs, psd_s, freq_range=(freqs[0], freqs[-1]))
+    p = sm.results.params.aperiodic.params
+    if mode == "fixed":
+        return p[0] - p[1] * np.log10(freqs)
+    return p[0] - np.log10(p[1] + freqs ** p[2])
+
+
+fig, axes = plt.subplots(1, len(scenarios), figsize=(3.5 * len(scenarios), 3.5), sharey=True)
+for ax, (name, freqs_s, psd_s, truth) in zip(axes, scenarios):
+    ax.plot(np.log10(freqs_s), np.log10(psd_s), ".", ms=2, color="gray", label="data")
+    r_b = fit_aperiodic(freqs_s, psd_s, power_is_log=False, fmin=1.0, robust=True)
+    ax.plot(np.log10(freqs_s), r_b.aperiodic_fit, "-", lw=1.5, label="bush")
+    ax.plot(np.log10(freqs_s), specparam_curve(freqs_s, "fixed"), "--", lw=1.5, label="sp-fixed")
+    ax.plot(np.log10(freqs_s), specparam_curve(freqs_s, "knee"), ":", lw=1.5, label="sp-knee")
+    if truth["knee_hz"] is not None:
+        ax.axvline(np.log10(truth["knee_hz"]), color="k", ls=":", alpha=0.4)
+    ax.set_title(name, fontsize=8)
+    ax.set_xlabel("log10 freq")
+axes[0].set_ylabel("log10 power")
+axes[-1].legend(fontsize=7)
+plt.tight_layout()
+plt.show()
+```
+
+
+## Test 6 — oscillations at various locations
+
+Truth: knee=13 Hz, exponent=2.0. Add gaussian peaks at different center
+frequencies and check whether each method recovers the aperiodic params.
+
+```{python}
+#| label: osc-scenarios
+def add_peak(log_ap, freqs, cf, amp, bw):
+    return log_ap + amp * np.exp(-0.5 * ((freqs - cf) / bw) ** 2)
+
+
+def fit_bush_only(freqs, psd):
+    r = fit_aperiodic(freqs, psd, power_is_log=False, fmin=1.0, robust=True)
+    return r.params[2], 10 ** r.params[1], r.aperiodic_fit
+
+
+def fit_sp_only(freqs, psd, mode):
+    sm = SpectralModel(aperiodic_mode=mode, max_n_peaks=4, verbose=False)
+    sm.fit(freqs, psd, freq_range=(freqs[0], freqs[-1]))
+    p = sm.results.params.aperiodic.params
+    if mode == "fixed":
+        curve = p[0] - p[1] * np.log10(freqs)
+        return p[1], None, curve
+    chi = p[2]
+    fk = p[1] ** (1 / chi) if p[1] > 0 else float("nan")
+    curve = p[0] - np.log10(p[1] + freqs ** chi)
+    return chi, fk, curve
+
+
+rng_osc = np.random.default_rng(7)
+freqs_o = np.linspace(1, 100, 400)
+true_knee, true_exp = 13.0, 2.0
+base_log = generate_aperiodic(freqs_o, [-1.0, np.log10(true_knee), true_exp], fmin=1.0)
+
+osc_scenarios = [
+    ("alpha 10Hz", [(10, 0.4, 1.5)]),
+    ("beta 22Hz (near knee)", [(22, 0.4, 3.0)]),
+    ("gamma 60Hz", [(60, 0.3, 8.0)]),
+    ("alpha+beta", [(10, 0.4, 1.5), (22, 0.3, 3.0)]),
+    ("alpha+gamma", [(10, 0.4, 1.5), (60, 0.3, 8.0)]),
+]
+
+osc_spectra = []
+for name, peaks in osc_scenarios:
+    y = base_log.copy()
+    for cf, amp, bw in peaks:
+        y = add_peak(y, freqs_o, cf, amp, bw)
+    psd = 10 ** (y + rng_osc.normal(0, 0.03, size=y.size))
+    osc_spectra.append((name, peaks, psd))
+```
+
+```{python}
+#| label: osc-table
+print(f"truth: exp={true_exp:.2f}, knee={true_knee:.1f} Hz\n")
+print(f"{'oscillations':<24}{'method':<12}{'exp':>7}{'knee_hz':>10}")
+print("-" * 53)
+for name, _peaks, psd in osc_spectra:
+    for label, fn in [
+        ("bush", lambda p=psd: fit_bush_only(freqs_o, p)),
+        ("sp-fixed", lambda p=psd: fit_sp_only(freqs_o, p, "fixed")),
+        ("sp-knee", lambda p=psd: fit_sp_only(freqs_o, p, "knee")),
+    ]:
+        e, k, _ = fn()
+        ks = f"{k:.2f}" if k is not None and np.isfinite(k) else "-"
+        print(f"{name:<24}{label:<12}{e:>7.3f}{ks:>10}")
+    print()
+```
+
+```{python}
+#| label: osc-plot
+fig, axes = plt.subplots(1, len(osc_spectra), figsize=(3.2 * len(osc_spectra), 3.5), sharey=True)
+for ax, (name, peaks, psd) in zip(axes, osc_spectra):
+    ax.plot(np.log10(freqs_o), np.log10(psd), ".", ms=2, color="gray", label="data")
+    _, _, c_b = fit_bush_only(freqs_o, psd)
+    _, _, c_fx = fit_sp_only(freqs_o, psd, "fixed")
+    _, _, c_kn = fit_sp_only(freqs_o, psd, "knee")
+    ax.plot(np.log10(freqs_o), c_b, "-", lw=1.5, label="bush")
+    ax.plot(np.log10(freqs_o), c_fx, "--", lw=1.5, label="sp-fixed")
+    ax.plot(np.log10(freqs_o), c_kn, ":", lw=1.5, label="sp-knee")
+    ax.axvline(np.log10(true_knee), color="k", ls=":", alpha=0.4)
+    for cf, _amp, _bw in peaks:
+        ax.axvline(np.log10(cf), color="red", ls="-", alpha=0.2)
+    ax.set_title(name, fontsize=8)
+    ax.set_xlabel("log10 freq")
+axes[0].set_ylabel("log10 power")
+axes[-1].legend(fontsize=7)
+plt.tight_layout()
+plt.show()
+```
+
+
+## Test 7 — knee sweep with oscillations (alpha + gamma)
+
+Fix exponent=2.0, alpha 10 Hz + gamma 60 Hz peaks. Sweep knee across fitted
+range. Diagnostic: knee near upper edge of fit range becomes ill-constrained
+because little data above knee to anchor exponent.
+
+```{python}
+#| label: knee-sweep-osc
+true_exp_sw = 2.0
+knee_grid_sw = [2.0, 5.0, 13.0, 25.0, 50.0]
+peaks_sw = [(10, 0.4, 1.5), (60, 0.3, 8.0)]
+freqs_sw = np.linspace(1, 100, 400)
+
+print(f"{'true_knee':>10}  {'method':<10}{'exp':>7}{'knee_hz':>10}{'knee_err':>10}")
+print("-" * 53)
+
+sweep_results = []
+for k_true in knee_grid_sw:
+    rng = np.random.default_rng(int(k_true * 10))
+    base = generate_aperiodic(freqs_sw, [-1.0, np.log10(k_true), true_exp_sw], fmin=1.0)
+    y = base.copy()
+    for cf, amp, bw in peaks_sw:
+        y = y + amp * np.exp(-0.5 * ((freqs_sw - cf) / bw) ** 2)
+    psd = 10 ** (y + rng.normal(0, 0.03, size=y.size))
+
+    r = fit_aperiodic(freqs_sw, psd, power_is_log=False, fmin=1.0, robust=True)
+    exp_b, kh_b = r.params[2], 10 ** r.params[1]
+
+    sm_fx = SpectralModel(aperiodic_mode="fixed", max_n_peaks=4, verbose=False)
+    sm_fx.fit(freqs_sw, psd, freq_range=(freqs_sw[0], freqs_sw[-1]))
+    p_fx = sm_fx.results.params.aperiodic.params
+
+    sm_kn = SpectralModel(aperiodic_mode="knee", max_n_peaks=4, verbose=False)
+    sm_kn.fit(freqs_sw, psd, freq_range=(freqs_sw[0], freqs_sw[-1]))
+    p_kn = sm_kn.results.params.aperiodic.params
+    chi_kn = p_kn[2]
+    fk_kn = p_kn[1] ** (1 / chi_kn) if p_kn[1] > 0 else float("nan")
+
+    sweep_results.append((k_true, psd, (exp_b, kh_b), (p_fx[1], None), (chi_kn, fk_kn)))
+
+    print(f"{k_true:>10.1f}  {'bush':<10}{exp_b:>7.3f}{kh_b:>10.2f}{kh_b - k_true:>+10.2f}")
+    print(f"{'':>10}  {'sp-fixed':<10}{p_fx[1]:>7.3f}{'-':>10}{'-':>10}")
+    print(f"{'':>10}  {'sp-knee':<10}{chi_kn:>7.3f}{fk_kn:>10.2f}{fk_kn - k_true:>+10.2f}")
+    print()
+```
+
+```{python}
+#| label: knee-sweep-plots
+fig, axes = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
+ks = [r[0] for r in sweep_results]
+axes[0].plot(ks, [r[2][0] for r in sweep_results], "o-", label="bush")
+axes[0].plot(ks, [r[3][0] for r in sweep_results], "s--", label="sp-fixed")
+axes[0].plot(ks, [r[4][0] for r in sweep_results], "^:", label="sp-knee")
+axes[0].axhline(true_exp_sw, color="k", ls=":", alpha=0.5, label="truth")
+axes[0].set_ylabel("recovered exponent")
+axes[0].legend(fontsize=8)
+
+axes[1].plot(ks, [r[2][1] for r in sweep_results], "o-", label="bush")
+axes[1].plot(ks, [r[4][1] for r in sweep_results], "^:", label="sp-knee")
+axes[1].plot(ks, ks, "k:", alpha=0.5, label="truth y=x")
+axes[1].set_xlabel("true knee (Hz)")
+axes[1].set_ylabel("recovered knee (Hz)")
+axes[1].legend(fontsize=8)
+plt.tight_layout()
+plt.show()
+```

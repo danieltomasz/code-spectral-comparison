@@ -89,3 +89,10 @@ tutorials/
 !chapters/**/.pdf
 !chapters/**/.svg
 
+**/.jupyter_cache/
+_freeze/
+*.quarto_ipynb*
+*_quarto_ipynb*
+*.quarto_ipynb*
+
+*_quarto_ipynb*

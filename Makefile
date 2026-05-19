@@ -22,8 +22,6 @@ kernel:
 	    --name=${VENV} \
 	    --display-name=${VENV}
 
-
-
 context-py:
 	files-to-prompt . -e py -e md  -e toml  --ignore  ./_archive/  ./.venv/ --cxml -o py-context.txt 
 

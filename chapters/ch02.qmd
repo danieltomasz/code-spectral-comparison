@@ -103,7 +103,7 @@ where $b$ is the offset and $\chi$ is the exponent, and then identifies periodic
 
 For each region in each dataset, the primary aperiodic parameters of interest were the exponent ($\chi$) and offset ($b$). Oscillatory peaks were characterised by their centre frequency, power, and bandwidth. Model fits were evaluated using $R^2$ and mean absolute error; fits with $R^2$ below 0.90 were flagged for inspection.
 
-exponents extracted from knee and fixed mode are not directly comparable, so for direct comaprison we thought about using the extraction with the sam setings 
+exponents extracted from knee and fixed mode are not directly comparable, so for direct comaprison we thought about using the extraction with the sam setings .
 
 ### Aperiodic estimation: IRASA
 

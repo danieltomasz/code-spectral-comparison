@@ -1,0 +1,12 @@
+ignore:
+  - .git
+  - venv
+  - .venv
+  - env
+  - .env
+  - .tox
+  - node_modules
+  - vendor
+  - "*.ipynb"
+  - "*.quarto_ipynb*"
+  - "*_quarto_ipynb*"
