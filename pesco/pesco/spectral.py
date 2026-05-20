@@ -69,6 +69,77 @@ def _aperiodic_curve(
     return 10**offset / (knee + freqs**exponent)
 
 
+def remove_aperiodic(
+    fg: SpectralGroupModel,
+    mode: Literal["log", "linear"] = "log",
+) -> tuple[FloatArray, FloatArray]:
+    """Subtract the specparam aperiodic component from each fitted spectrum.
+
+    The aperiodic component is reconstructed from the fitted parameters and
+    removed from the empirical PSD. Two output conventions are available, both
+    invariant to an overall rescaling of the PSD -- so the result is
+    comparable across modalities with different units (e.g. iEEG vs source
+    HD-EEG).
+
+    ``mode="log"`` -- log-ratio residual (Afnan et al., 2023)::
+
+        L_osc(f) = log10(PSD(f)) - L_ap(f) = log10(PSD / PSD_ap)
+
+    The flattened spectrum in the specparam sense. Zero on the aperiodic fit,
+    positive above it, negative below. Dimensionless.
+
+    ``mode="linear"`` -- additive linear subtraction (IRASA-style, Wen & Liu
+    2016), made scale-free by per-channel normalisation to unit total power::
+
+        PSD_osc(f) = (PSD(f) - PSD_ap(f)) / sum_f PSD(f)
+
+    Linear oscillatory power as a fraction of total power; can be negative
+    where the empirical spectrum dips below the aperiodic fit.
+
+    Works for both fixed and knee aperiodic modes; the mode is read from
+    ``fg.modes.aperiodic``.
+
+    Parameters
+    ----------
+    fg : SpectralGroupModel
+        A fitted group model.
+    mode : {"log", "linear"}, optional, default: "log"
+        Output convention, see above.
+
+    Returns
+    -------
+    freqs : ndarray, shape (F,)
+        Fitted frequency grid (the ``freq_range`` passed to ``fg.fit``).
+    osc : ndarray, shape (N, F)
+        Oscillatory component; log10-ratio if ``mode="log"``, normalised
+        linear power if ``mode="linear"``.
+    """
+    if not fg.results.has_model:
+        raise ValueError("No model fit results available. Please fit the model first.")
+    if mode not in ("log", "linear"):
+        raise ValueError("mode must be 'log' or 'linear'")
+
+    freqs = np.asarray(fg.data.freqs, dtype=float)
+    # power_spectra are stored in log10-power, trimmed to the fitted range.
+    log_psd = np.asarray(fg.data.power_spectra, dtype=float)
+    psd = 10.0**log_psd
+
+    knee_mode = fg.modes.aperiodic.name == "knee"
+    psd_ap = np.empty_like(psd)
+    for i, r in enumerate(fg.results):
+        params = np.asarray(r.aperiodic_fit, dtype=float)
+        offset = params[0]
+        if knee_mode:
+            knee, exponent = params[1], params[2]
+        else:
+            knee, exponent = None, params[1]
+        psd_ap[i] = _aperiodic_curve(freqs, offset, exponent, knee)
+
+    if mode == "log":
+        return freqs, log_psd - np.log10(psd_ap)
+    return freqs, (psd - psd_ap) / psd.sum(axis=-1, keepdims=True)
+
+
 def _extract_fit_metric(
     fg: SpectralGroupModel,
     metric_group: str,

@@ -1170,3 +1170,71 @@ def plot_cluster_brain(
     if show:
         plt.show()
     return display
+
+
+def plot_regions_per_lobe(
+    psd_df: pd.DataFrame,
+    freqs: Sequence[Hashable],
+    y_label: str = "Mean PSD",
+    log_y: bool = True,
+):
+    """Mean spectrum per region, faceted by lobe (plotnine).
+
+    Melts the frequency columns of ``psd_df`` to long form, averages per
+    (lobe, region, frequency), and draws one line per region on a
+    log-frequency axis, faceted by lobe. Returns the plot object; saving is
+    left to the caller (``plot.save(path)``).
+
+    Parameters
+    ----------
+    psd_df : DataFrame
+        Channels x (frequency columns + 'Region name' + 'Lobe' metadata).
+    freqs : sequence
+        The frequency column labels of ``psd_df`` to plot.
+    y_label : str, optional, default: "Mean PSD"
+        Y-axis label.
+    log_y : bool, optional, default: True
+        Log-scale the y-axis. Set False for data with non-positive values,
+        e.g. a log-ratio oscillatory residual.
+
+    Returns
+    -------
+    plotnine.ggplot
+    """
+    from plotnine import (
+        aes,
+        facet_wrap,
+        geom_line,
+        ggplot,
+        labs,
+        scale_x_log10,
+        scale_y_log10,
+        theme,
+    )
+
+    long = psd_df.melt(
+        id_vars=["Region name", "Lobe"],
+        value_vars=list(freqs),
+        var_name="freq",
+        value_name="power",
+    )
+    long["freq"] = long["freq"].astype(float)
+
+    avg = (
+        long.groupby(["Lobe", "Region name", "freq"], observed=True)["power"]
+        .mean()
+        .reset_index()
+    )
+
+    plot = (
+        ggplot(avg, aes("freq", "power", color="Region name"))
+        + geom_line()
+        + facet_wrap("~Lobe")
+        + scale_x_log10(breaks=[0.5, 4, 8, 13, 30, 80])
+        + labs(x="Frequency [Hz]", y=y_label)
+        + theme(legend_position="none")
+    )
+    if log_y:
+        plot = plot + scale_y_log10()
+
+    return plot

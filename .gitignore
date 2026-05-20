@@ -88,6 +88,9 @@ tutorials/
 !chapters/**/.png
 !chapters/**/.pdf
 !chapters/**/.svg
+!analiza/figures/chapter2/**.png
+!analiza/figures/chapter2/**.pdf
+!analiza/figures/chapter2/**.svg
 
 **/.jupyter_cache/
 _freeze/
@@ -96,3 +99,4 @@ _freeze/
 *.quarto_ipynb*
 
 *_quarto_ipynb*
+*.ipynb
