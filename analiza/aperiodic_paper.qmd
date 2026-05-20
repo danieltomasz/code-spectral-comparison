@@ -53,13 +53,14 @@ from pesco.experimental.plotting import (
     plot_lobes,
     plot_region_difference_heatmap,
     plot_region_difference_heatmap_pair,
+    plot_overlap_heatmap,
     plot_regions,
     plot_regions_per_lobe,
 )
 from pesco.io import load_sources, prepare_psd
 from pesco.pipeline import DatasetCtx
 from pesco.preprocess import compute_psd, normalize_psd
-from pesco.spectral import remove_aperiodic, specparam2pandas
+from pesco.spectral import afnan_band_overlap, remove_aperiodic, specparam2pandas
 
 seed = 3
 np.random.seed(seed)
@@ -70,6 +71,17 @@ DATA_PATH_IEEG = Path(f"{PROJECT_DIR}/data/Frauscher2018")
 
 NO_PEAK_SUMMARY = "mean"
 PLOT_SUMMARY = "median"
+
+# specparam peak settings following Afnan et al. 2023, shared across every
+# fit. aperiodic_mode is passed per fit: knee for iEEG, and both knee and
+# fixed for HD-EEG so the two can be compared.
+FREQ_RANGE = (0.5, 80.0)
+R2_THRESHOLD = 0.9
+SPECPARAM_SETTINGS = dict(
+    peak_width_limits=[1, 8],
+    max_n_peaks=8,
+    peak_threshold=3.0,
+)
 
 ieeg_raw = DatasetCtx(name="intracranial data (raw)")
 ieeg_raw.f, ieeg_raw.psd = prepare_psd(
@@ -90,7 +102,7 @@ ieeg_raw.psd
 freqs = np.asarray(ieeg_raw.f, dtype=float)
 psd_mat = ieeg_raw.psd.iloc[:, : len(freqs)].to_numpy(dtype=float)
 
-fg = SpectralGroupModel(**SPECPARAM_SETTINGS)
+fg = SpectralGroupModel(**SPECPARAM_SETTINGS, aperiodic_mode="knee")
 fg.fit(freqs, psd_mat, freq_range=list(FREQ_RANGE), n_jobs=1)
 fg.report()
 ```
@@ -161,6 +173,8 @@ p.save(fig_dir / "regions_per_lobe_osc.svg", width=10, height=8, dpi=300)
 p
 ```
 
+![iEEG oscillatory residual $L_\text{osc}$ per region, faceted by lobe (knee aperiodic model).](figures/chapter2/regions_per_lobe_osc.svg){#fig-ieeg-osc}
+
 Actually i want to fit alternative - normalized ratio
 ```{python}
 ieeg_norm = DatasetCtx(name="intracranial data (normalized)")
@@ -179,13 +193,7 @@ ieeg_norm.psd
 freqs_norm = np.asarray(ieeg_norm.f, dtype=float)
 psd_mat_norm = ieeg_norm.psd.iloc[:, : len(freqs_norm)].to_numpy(dtype=float)
 
-fg_norm = SpectralGroupModel(
-    peak_width_limits=[1, 6],
-    max_n_peaks=8,
-    peak_threshold=2.0,
-    min_peak_height=0.3,
-    aperiodic_mode="knee",
-)
+fg_norm = SpectralGroupModel(**SPECPARAM_SETTINGS, aperiodic_mode="knee")
 fg_norm.fit(freqs_norm, psd_mat_norm, freq_range=list(FREQ_RANGE), n_jobs=1)
 fg_norm.report()
 ```
@@ -209,25 +217,14 @@ p.save(fig_dir / "regions_per_lobe_osc_normalized.svg", width=10, height=8, dpi=
 p
 ```
 
+![iEEG oscillatory residual $L_\text{osc}$ per region from the normalized-PSD fit, faceted by lobe.](figures/chapter2/regions_per_lobe_osc_normalized.svg){#fig-ieeg-osc-norm}
+
 
 ## HD EEG Data 
 
-For the purpose of removing the 1/f background and testing if it improves the comparability we used the specparam algorithm. 
+For the HD-EEG source data we applied the same aperiodic removal as for the iEEG atlas. To keep the recovered oscillatory residuals directly comparable between the two modalities, the specparam settings followed @afnan2023ValidatingMEGSource and were identical across datasets: fitting range 0.5-80 Hz, peak width limits 1-8 Hz, a maximum of 8 peaks, and a peak threshold of 3.0 SD. The aperiodic component was subtracted in log-power space and the resulting log-ratio residual $L_\text{osc}$ retained, exactly as for the iEEG atlas above.
 
-PSDs were parameterised using the specparam algorithm (formerly FOOOF; @donoghue2020ParameterizingNeuralPower) in fixed aperiodic mode. 
-! We should use knee here as even frauscher describe the there was knee here.As it was noted by @frauscher2018AtlasNormalIntracranial
-
-The algorithm fits an aperiodic component of the form
-
-$$\log_{10} P(f) = b - \chi \cdot \log_{10}(f)$$
-
-where $b$ is the offset and $\chi$ is the exponent, and then identifies periodic peaks above this background as Gaussian functions. The following settings were used:
-
-- Fitting frequency range: 1-40 Hz
-- Peak width limits: 1.0-8.0 Hz
-- Maximum number of peaks: 6
-- Minimum peak height: 0.1 (log power)
-- Peak threshold: 2.0 standard deviations
+The aperiodic mode is the one setting that cannot be transferred uncritically between modalities. @frauscher2018AtlasNormalIntracranial report a clear spectral knee in intracranial recordings, which motivates the knee model $L_\text{ap}(f) = b - \log_{10}(k + f^{\chi})$ for the iEEG atlas. Source-reconstructed HD-EEG spectra, by contrast, are frequently close to linear in log-log space across the fitted range, where the fixed model $L_\text{ap}(f) = b - \chi\log_{10}(f)$ is the more common choice [@donoghue2020ParameterizingNeuralPower]. Because the exponents returned by the two modes are not on the same scale, we do not compare them directly. Instead, we fit the HD-EEG spectra in **both** knee and fixed mode and quantify the consequence of the choice: for each channel we compute the Pearson correlation between the knee- and fixed-mode oscillatory residuals. A correlation close to one indicates that the mode choice has little effect on the recovered oscillations, so either model may be used; a low correlation would flag the aperiodic mode as a confound for the cross-modality comparison.
 
 ```{python}
 #| label: hd-load
@@ -246,50 +243,183 @@ hd_psd_df
 
 ```{python}
 #| label: hd-fit
-# Fixed (no-knee) aperiodic mode for source HD-EEG; settings as above.
-HD_FREQ_RANGE = (1.0, 40.0)
+# Fit specparam in both knee and fixed aperiodic mode, same Afnan settings
+# as iEEG. Source HD-EEG spectra are often near-linear in log-log space, so
+# fitting both lets us quantify how much the mode choice changes the result.
 hd_freqs = np.asarray(hd_f, dtype=float)
 hd_psd_mat = hd_psd_df.iloc[:, : len(hd_freqs)].to_numpy(dtype=float)
 
-fg_hd = SpectralGroupModel(
-    peak_width_limits=[1, 8],
-    max_n_peaks=6,
-    peak_threshold=2.0,
-    min_peak_height=0.1,
-    aperiodic_mode="fixed",
-)
-fg_hd.fit(hd_freqs, hd_psd_mat, freq_range=list(HD_FREQ_RANGE), n_jobs=1)
-fg_hd.report()
+fg_hd_knee = SpectralGroupModel(**SPECPARAM_SETTINGS, aperiodic_mode="knee")
+fg_hd_knee.fit(hd_freqs, hd_psd_mat, freq_range=list(FREQ_RANGE), n_jobs=1)
+
+fg_hd_fixed = SpectralGroupModel(**SPECPARAM_SETTINGS, aperiodic_mode="fixed")
+fg_hd_fixed.fit(hd_freqs, hd_psd_mat, freq_range=list(FREQ_RANGE), n_jobs=1)
+
+fg_hd_knee.report()
+fg_hd_fixed.report()
 ```
 
 ```{python}
 #| label: hd-remove-aperiodic
-osc_freqs_hd, osc_mat_hd = remove_aperiodic(fg_hd, mode="log")
+osc_freqs_hd, osc_hd_knee = remove_aperiodic(fg_hd_knee, mode="log")
+_, osc_hd_fixed = remove_aperiodic(fg_hd_fixed, mode="log")
 
 meta_cols_hd = [c for c in hd_psd_df.columns if isinstance(c, str)]
-hd_osc = pd.DataFrame(
-    osc_mat_hd, index=hd_psd_df.index, columns=osc_freqs_hd
+hd_osc_knee = pd.DataFrame(
+    osc_hd_knee, index=hd_psd_df.index, columns=osc_freqs_hd
 ).join(hd_psd_df[meta_cols_hd])
-hd_osc
+hd_osc_fixed = pd.DataFrame(
+    osc_hd_fixed, index=hd_psd_df.index, columns=osc_freqs_hd
+).join(hd_psd_df[meta_cols_hd])
+hd_osc_knee
+```
+
+```{python}
+#| label: hd-knee-vs-fixed
+# Per-channel Pearson correlation between the knee- and fixed-mode
+# oscillatory residuals. r near 1 => the aperiodic-mode choice barely
+# affects the recovered oscillations for HD-EEG.
+r_knee_fixed = pd.Series(
+    [np.corrcoef(osc_hd_knee[i], osc_hd_fixed[i])[0, 1]
+     for i in range(len(osc_hd_knee))],
+    index=hd_psd_df.index, name="r_knee_vs_fixed",
+)
+r_knee_fixed.describe()
 ```
 
 ```{python}
 p = plot_regions_per_lobe(
-    hd_osc, osc_freqs_hd, y_label="$L_{osc}$ (HD-EEG)", log_y=False
+    hd_osc_knee, osc_freqs_hd, y_label="$L_{osc}$ (HD-EEG, knee)", log_y=False
 )
-p.save(fig_dir / "regions_per_lobe_osc_hd.svg", width=10, height=8, dpi=300)
+p.save(fig_dir / "regions_per_lobe_osc_hd_knee.svg", width=10, height=8, dpi=300)
 p
 ```
 
-For each region in each dataset, the primary aperiodic parameters of interest were the exponent ($\chi$) and offset ($b$). Oscillatory peaks were characterised by their centre frequency, power, and bandwidth. Model fits were evaluated using $R^2$ and mean absolute error; fits with $R^2$ below 0.90 were flagged for inspection.
+![HD-EEG oscillatory residual $L_\text{osc}$ per region, faceted by lobe (knee aperiodic model).](figures/chapter2/regions_per_lobe_osc_hd_knee.svg){#fig-hd-osc-knee}
 
-exponents extracted from knee and fixed mode are not directly comparable, so for direct comaprison we thought about using the extraction with the sam setings .
+```{python}
+p = plot_regions_per_lobe(
+    hd_osc_fixed, osc_freqs_hd, y_label="$L_{osc}$ (HD-EEG, fixed)", log_y=False
+)
+p.save(fig_dir / "regions_per_lobe_osc_hd_fixed.svg", width=10, height=8, dpi=300)
+p
+```
+
+![HD-EEG oscillatory residual $L_\text{osc}$ per region, faceted by lobe (fixed aperiodic model).](figures/chapter2/regions_per_lobe_osc_hd_fixed.svg){#fig-hd-osc-fixed}
+
+For each region in each dataset, the primary aperiodic parameters of interest were the exponent ($\chi$) and offset ($b$). Oscillatory peaks were characterised by their centre frequency, power, and bandwidth. Model fits were evaluated using $R^2$ and mean absolute error; fits with $R^2$ below 0.90 were flagged for inspection.
 
 ### Aperiodic estimation: IRASA
 
-As a complementary approach to specparam, the aperiodic component of each regional time course was estimated using Irregular Resampling Auto-Spectral Analysis (IRASA; @wen2016SeparatingFractalOscillatory). IRASA exploits the self-similar properties of fractal processes: the power spectrum is computed at multiple resampling factors ($h$ = 1.1 to 1.9 in steps of 0.05), and for each factor, the geometric mean of the up-sampled and down-sampled spectra is taken. The median across resampling factors yields the fractal (aperiodic) component, and the oscillatory residual is obtained by subtraction from the original spectrum.
+As a complementary approach to specparam, the aperiodic component of the HD-EEG source data was estimated using Irregular Resampling Auto-Spectral Analysis (IRASA; @wen2016SeparatingFractalOscillatory). IRASA exploits the self-similar properties of fractal processes: the power spectrum is computed at multiple resampling factors ($h$ = 1.05 to 2.0 in steps of 0.05), and for each factor the geometric mean of the up-sampled and down-sampled spectra is taken. The median across resampling factors yields the fractal (aperiodic) component, and the oscillatory residual is obtained by subtraction from the original spectrum.
 
-The fractal exponent was estimated by fitting a line in log-log space to the IRASA-derived aperiodic spectrum over the 1-40 Hz range, matching the specparam fitting range. The slope (with sign reversed) provides an IRASA-based estimate of the aperiodic exponent.
+Because IRASA up-samples the signal by up to $h_\text{max} = 2$, the analysed band is bounded by the Nyquist limit, $h_\text{max} \cdot f_\text{hi} < f_s / 2$. With $f_s = 200$ Hz this restricts the upper edge to below 50 Hz, so the IRASA decomposition was run over 2-40 Hz — a narrower range than the 0.5-80 Hz specparam fit. The fractal exponent was obtained by fitting a line in log-log space to the IRASA aperiodic spectrum; the slope, sign-reversed, gives the IRASA exponent.
+
+To compare the two parameterisations on equal footing, specparam was additionally refit in fixed aperiodic mode over the same 2-40 Hz band. The per-channel aperiodic exponents from specparam and IRASA are then compared by Pearson and Spearman correlation and a scatter against the identity line: close agreement indicates that the recovered aperiodic slope is method-independent, whereas a systematic offset would point to a method-specific bias.
+
+```{python}
+#| label: hd-irasa
+from pesco.irasa import irasa2pandas, run_irasa
+
+# IRASA upsamples by up to h_max=2, so the band is Nyquist-limited:
+# band_hi * h_max < fs/2. With fs=200 the usable range is 2-40 Hz.
+IRASA_BAND = (2.0, 40.0)
+irasa_hd = run_irasa(hd_data, fs=int(hd_fs), band=IRASA_BAND)
+irasa_hd_ch = (
+    irasa2pandas(irasa_hd, fit_func="fixed")
+    .drop_duplicates("ID")[["ID", "exponent", "gof_rsquared"]]
+    .rename(columns={"exponent": "exponent_irasa", "gof_rsquared": "r2_irasa"})
+)
+irasa_hd_ch
+```
+
+```{python}
+#| label: hd-specparam-irasa-band
+# Refit specparam (fixed mode) over the IRASA band so the two exponents
+# share the same frequency range and the same aperiodic model.
+fg_hd_irasaband = SpectralGroupModel(**SPECPARAM_SETTINGS, aperiodic_mode="fixed")
+fg_hd_irasaband.fit(hd_freqs, hd_psd_mat, freq_range=list(IRASA_BAND), n_jobs=1)
+
+sp_hd_ch = (
+    specparam2pandas(fg_hd_irasaband)
+    .drop_duplicates("ID")[["ID", "exponent"]]
+    .rename(columns={"exponent": "exponent_specparam"})
+)
+exp_cmp = sp_hd_ch.merge(irasa_hd_ch[["ID", "exponent_irasa"]], on="ID")
+exp_cmp
+```
+
+```{python}
+#| label: hd-irasa-vs-specparam
+r_pearson = exp_cmp["exponent_specparam"].corr(exp_cmp["exponent_irasa"])
+r_spearman = exp_cmp["exponent_specparam"].corr(
+    exp_cmp["exponent_irasa"], method="spearman"
+)
+print("HD-EEG aperiodic exponent - specparam vs IRASA (fixed, 2-40 Hz)")
+print(f"  Pearson r = {r_pearson:.3f}   Spearman rho = {r_spearman:.3f}")
+exp_cmp[["exponent_specparam", "exponent_irasa"]].describe()
+```
+
+```{python}
+from plotnine import aes, geom_abline, geom_point, ggplot, labs
+
+p = (
+    ggplot(exp_cmp, aes("exponent_specparam", "exponent_irasa"))
+    + geom_abline(slope=1, intercept=0, linetype="dashed", color="red")
+    + geom_point(alpha=0.3)
+    + labs(
+        x="specparam exponent",
+        y="IRASA exponent",
+        title="HD-EEG aperiodic exponent: specparam vs IRASA (fixed, 2-40 Hz)",
+    )
+)
+p.save(fig_dir / "hd_exponent_specparam_vs_irasa.svg", width=6, height=6, dpi=300)
+p
+```
+
+![HD-EEG aperiodic exponent estimated by specparam versus IRASA (fixed model, 2-40 Hz). The dashed line marks identity.](figures/chapter2/hd_exponent_specparam_vs_irasa.svg){#fig-hd-exp-specparam-irasa}
+
+### Comparing the oscillatory distributions
+
+The aperiodic-removed spectra ($L_\text{osc}$) of the two modalities are compared at two levels.
+
+As an *exploratory* step, the per-channel residual spectra within each dataset are clustered into a small number of spectral types, separating channels dominated by a single rhythm from those with no clear oscillatory peak. This clustering is purely descriptive: it summarises the range of oscillatory profiles present in each modality. The clusters are, however, estimated separately for each dataset and their identities are not shared across modalities, so comparing cluster solutions between iEEG and HD-EEG directly would confound genuine spectral differences with the instability of the clustering. The clustering is therefore not used to support the cross-modality claim.
+
+The *confirmatory* comparison instead follows @afnan2023ValidatingMEGSource and operates directly on the spectra, with no intervening clustering step. Because $L_\text{osc}$ is scale-free, this comparison remains valid despite the differing physical units of intracranial potentials and reconstructed source activity.
+
+Channels are first pooled across hemispheres: the iEEG atlas and the source montage both label channels with a hemisphere-agnostic region name, so grouping by that label collapses the left/right ROIs into the 38 bilateral regions of the MICCAI atlas, exactly as in @afnan2023ValidatingMEGSource. Within each region $r$, the iEEG atlas is taken as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median of $L_\text{osc}$ across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding standard deviation in the HD-EEG modality. The bin-wise overlap is
+
+$$\text{overlap}_r(f) = \begin{cases} 1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f)\bigr\rvert}{\text{SD}^{\,\text{HD}}_r(f)}, & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f)\bigr\rvert \le \text{SD}^{\,\text{HD}}_r(f) \\[3mm] 0, & \text{otherwise.} \end{cases}$$
+
+The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and decreases linearly to 0 once the two medians differ by one HD-EEG standard deviation, so it measures whether the reference spectrum falls within the spread of the estimated modality. The overlap is averaged across the frequency bins of each canonical band ($\delta$ 0.5-4, $\theta$ 4-8, $\alpha$ 8-13, $\beta$ 13-30, $\gamma$ 30-80 Hz), yielding one value per region per band. The aperiodic mode used for the HD-EEG fit is the knee model; the fixed-mode residual can be substituted to confirm that the comparison is insensitive to that choice (see the knee-vs-fixed correlation above).
+
+```{python}
+#| label: afnan-overlap
+# Afnan 2023 average overlap: iEEG (reference) vs HD-EEG (estimated),
+# per region per band, on the aperiodic-removed residual L_osc.
+# Channels are pooled across hemispheres by grouping on "Region name".
+overlap_knee = afnan_band_overlap(
+    ref_df=ieeg_osc, est_df=hd_osc_knee,
+    ref_freqs=osc_freqs, est_freqs=osc_freqs_hd,
+)
+overlap_knee
+```
+
+```{python}
+#| label: afnan-overlap-band-means
+# Mean overlap per band across all regions (Afnan-style summary).
+overlap_knee.mean().to_frame("mean overlap").T
+```
+
+```{python}
+p = plot_overlap_heatmap(
+    overlap_knee, title="iEEG vs HD-EEG overlap (knee, $L_{osc}$)"
+)
+p.save(fig_dir / "afnan_overlap_heatmap.svg", width=6, height=10, dpi=300)
+p
+```
+
+![Average spectral overlap between the iEEG atlas and source HD-EEG, per MICCAI region and frequency band, computed on the aperiodic-removed residual.](figures/chapter2/afnan_overlap_heatmap.svg){#fig-afnan-overlap}
 
 
 

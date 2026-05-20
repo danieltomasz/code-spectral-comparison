@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, Sequence, TypeAlias
 
 import pandas as pd
 import numpy as np
@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from numpy.typing import NDArray
+
+from pesco.experimental.clustering import EEG_BANDS, Band
 
 if TYPE_CHECKING:
     from specparam import SpectralGroupModel
@@ -138,6 +140,93 @@ def remove_aperiodic(
     if mode == "log":
         return freqs, log_psd - np.log10(psd_ap)
     return freqs, (psd - psd_ap) / psd.sum(axis=-1, keepdims=True)
+
+
+def afnan_band_overlap(
+    ref_df: pd.DataFrame,
+    est_df: pd.DataFrame,
+    ref_freqs: Sequence[float],
+    est_freqs: Sequence[float],
+    region_col: str = "Region name",
+    bands: Sequence[Band] = EEG_BANDS,
+) -> pd.DataFrame:
+    """Average spectral overlap between two modalities, per region and band.
+
+    Reproduces the validation metric of Afnan et al. (2023, sec. 2.11). For
+    each region the reference modality ``ref_df`` (treated as ground truth,
+    e.g. the iEEG atlas) is compared to the estimated modality ``est_df``
+    (e.g. source HD-EEG) frequency bin by frequency bin::
+
+        overlap(f) = 1 - |med_ref(f) - med_est(f)| / sd_est(f)
+
+    clamped to 0 whenever ``med_ref`` falls outside
+    ``[med_est - sd_est, med_est + sd_est]``. ``med_*`` are per-region
+    medians across channels; ``sd_est`` is the per-region standard deviation
+    of the estimated modality. The metric is 1 when the reference median
+    coincides with the estimated median and decreases linearly to 0 at one
+    estimated SD away. It is then averaged across the frequency bins of each
+    band.
+
+    Channels are pooled across hemispheres: every channel sharing a
+    ``region_col`` value contributes regardless of hemisphere, so the
+    hemisphere-specific ROIs collapse to bilateral regions (as in Afnan).
+
+    Parameters
+    ----------
+    ref_df, est_df : DataFrame
+        Channels x (frequency columns + ``region_col``). Frequency columns
+        are selected by ``ref_freqs`` / ``est_freqs``.
+    ref_freqs, est_freqs : sequence of float
+        Frequency column labels of ``ref_df`` / ``est_df``. The estimated
+        modality is interpolated onto ``ref_freqs`` before the comparison,
+        so the two grids need not match.
+    region_col : str, optional, default: "Region name"
+        Column holding the region label shared by both modalities.
+    bands : sequence of Band, optional
+        Frequency bands; defaults to the canonical EEG bands.
+
+    Returns
+    -------
+    DataFrame
+        Indexed by region, one column per band, values are the average
+        overlap in [0, 1]. Only regions present in both modalities appear.
+    """
+    ref_freqs = np.asarray(ref_freqs, dtype=float)
+    est_freqs = np.asarray(est_freqs, dtype=float)
+
+    ref_groups = ref_df.groupby(region_col)
+    est_groups = est_df.groupby(region_col)
+    common = sorted(set(ref_groups.groups) & set(est_groups.groups))
+    if not common:
+        raise ValueError(
+            f"No shared {region_col!r} values between the two modalities."
+        )
+
+    n_bands = len(bands)
+    rows: dict[object, dict[str, float]] = {}
+    for region in common:
+        ref = ref_groups.get_group(region)[list(ref_freqs)].to_numpy(dtype=float)
+        est = est_groups.get_group(region)[list(est_freqs)].to_numpy(dtype=float)
+
+        med_ref = np.median(ref, axis=0)
+        med_est = np.interp(ref_freqs, est_freqs, np.median(est, axis=0))
+        sd_est = np.interp(ref_freqs, est_freqs, np.std(est, axis=0))
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            overlap = 1.0 - np.abs(med_ref - med_est) / sd_est
+        # sd_est == 0 (e.g. a single channel) -> no spread -> overlap 0
+        overlap = np.clip(np.where(sd_est > 0, overlap, 0.0), 0.0, 1.0)
+
+        band_overlap: dict[str, float] = {}
+        for i, b in enumerate(bands):
+            within_hi = ref_freqs <= b.hi if i == n_bands - 1 else ref_freqs < b.hi
+            mask = (ref_freqs >= b.lo) & within_hi
+            band_overlap[b.name] = (
+                float(np.mean(overlap[mask])) if mask.any() else np.nan
+            )
+        rows[region] = band_overlap
+
+    return pd.DataFrame.from_dict(rows, orient="index")
 
 
 def _extract_fit_metric(

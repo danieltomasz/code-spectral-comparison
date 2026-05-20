@@ -1238,3 +1238,49 @@ def plot_regions_per_lobe(
         plot = plot + scale_y_log10()
 
     return plot
+
+
+def plot_overlap_heatmap(
+    overlap_df: pd.DataFrame,
+    title: str = "Spectral overlap",
+):
+    """Heatmap of per-region, per-band spectral overlap (plotnine).
+
+    Parameters
+    ----------
+    overlap_df : DataFrame
+        Regions x bands, values in [0, 1] -- the output of
+        ``pesco.spectral.afnan_band_overlap``.
+    title : str, optional, default: "Spectral overlap"
+        Plot title.
+
+    Returns
+    -------
+    plotnine.ggplot
+    """
+    from plotnine import (
+        aes,
+        element_text,
+        geom_text,
+        geom_tile,
+        ggplot,
+        labs,
+        scale_fill_gradient,
+        theme,
+    )
+
+    bands = list(overlap_df.columns)
+    long = overlap_df.reset_index(names="region").melt(
+        id_vars="region", var_name="band", value_name="overlap"
+    )
+    long["band"] = pd.Categorical(long["band"], categories=bands, ordered=True)
+    long["label"] = long["overlap"].round(2)
+
+    return (
+        ggplot(long, aes("band", "region", fill="overlap"))
+        + geom_tile()
+        + geom_text(aes(label="label"), size=7)
+        + scale_fill_gradient(low="white", high="#1f6feb", limits=[0, 1])
+        + labs(x="Frequency band", y="Region", fill="Overlap", title=title)
+        + theme(figure_size=(6, 10), axis_text_y=element_text(size=7))
+    )
