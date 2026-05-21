@@ -1,0 +1,4 @@
+# Agent Execution Rules
+- **Strict Planning Requirement:** You must never make edits, create new files, or run command executions directly. You must always enter Planning Mode first.
+- **Write-level Approvals:** Before making any code changes, you must create a detailed implementation plan (`implementation_plan.md`) describing exactly what you intend to do, set `request_feedback = true` in the metadata, and explicitly stop to ask for my approval.
+- **Wait for Permission:** Do not invoke any write tools (e.g., `write_to_file`, `replace_file_content`, `run_command`) until I have read your plan and given explicit approval in the chat.
