@@ -537,3 +537,14 @@ You can use the **Fit Range (Hz)** slider in that unified dashboard to explore h
 When analyzing biological power spectra:
 1. **Biological Meaning**: The transition represented by the knee frequency ($f_k$) is not just a fitting parameter, it corresponds directly to a **neural timescale (time constant $\tau$)**. Shifting this transition marks changes in how long synaptic and circuit inputs are integrated.
 2. **Methodological Rigor**: If your power spectrum spans lower frequencies (e.g., $< 20$ Hz) and shows any sign of bending, **always use the Knee mode** in SpecParam. As demonstrated above, fitting a Fixed model will lead to a **downward bias** in the calculated aperiodic exponent, which might obscure true biological differences or create artificial ones!
+
+---
+
+### 🌐 Shareable WebAssembly Dashboard
+
+We have compiled this interactive widget as a standalone, serverless web application powered by **WebAssembly (Pyodide & Stlite)**. 
+
+Once pushed to GitHub and hosted on **GitHub Pages**, anyone can open the dashboard directly in their mobile or desktop browser (e.g., via a **QR code** on your conference poster, presentation slides, or research papers) without needing any backend server or Python installation!
+
+- The compiled application is located in the [docs/index.html](file:///Users/daniel/PhD/spectral-comparison/code/docs/index.html) file.
+- See the [docs/README.md](file:///Users/daniel/PhD/spectral-comparison/code/docs/README.md) file for step-by-step instructions on deploying the live page on GitHub Pages and generating a high-quality vector QR code.

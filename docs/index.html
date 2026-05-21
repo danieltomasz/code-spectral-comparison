@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>SpecParam Knee Simulation Dashboard (WASM)</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="https://img.icons8.com/external-flaticons-flat-flat-icons/64/external-neural-biology-flaticons-flat-flat-icons.png" />
+    <!-- Stlite styling -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.55.0/build/style.css" />
+    <style>
+      /* Splash screen styles while WASM and packages are loading */
+      #loading {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        z-index: 9999;
+        transition: opacity 0.5s ease;
+      }
+      .spinner {
+        width: 60px;
+        height: 60px;
+        border: 5px solid rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        border-top-color: #0d9488;
+        animation: spin 1s ease-in-out infinite;
+        margin-bottom: 24px;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+      .loading-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+        letter-spacing: -0.025em;
+        background: linear-gradient(to right, #2dd4bf, #38bdf8);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .loading-subtitle {
+        color: #94a3b8;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Premium loading splash screen -->
+    <div id="loading">
+      <div class="spinner"></div>
+      <div class="loading-title">Initializing WebAssembly Kernel...</div>
+      <div class="loading-subtitle">Downloading Pyodide, NumPy, SciPy, Matplotlib & SpecParam (approx. 15-20MB, cached on subsequent loads)</div>
+    </div>
+
+    <div id="root"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.55.0/build/stlite.js"></script>
+    <script>
+      stlite.mount(
+        {
+          requirements: ["numpy", "scipy", "matplotlib", "specparam"],
+          entrypoint: "app.py",
+          files: {
+            "app.py": `
+import streamlit as st
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+from specparam import SpectralModel
+
+# Set nice matplotlib defaults
+plt.rcParams['font.size'] = 11
+plt.rcParams['axes.spines.top'] = False
+plt.rcParams['axes.spines.right'] = False
+plt.rcParams['figure.dpi'] = 100
+
+st.set_page_config(
+    page_title="SpecParam Knee Fitting Dashboard",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom premium styling injected directly
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+html, body, [class*="css"] {
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+code, pre {
+    font-family: 'JetBrains Mono', monospace !important;
+}
+.main-title {
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #0d9488 0%, #0369a1 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.5rem;
+}
+.tagline {
+    color: #475569;
+    font-size: 1.1rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 1rem;
+}
+.stat-card {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Remove splash screen once app loaded
+js = """
+<script>
+const loader = window.parent.document.getElementById('loading');
+if (loader) {
+    loader.style.opacity = '0';
+    setTimeout(() => loader.remove(), 500);
+}
+</script>
+"""
+st.markdown(js, unsafe_allow_html=True)
+
+st.markdown('<div class="main-title">🧠 SpecParam Knee Simulation & Fitting Dashboard</div>', unsafe_allow_html=True)
+st.markdown('<div class="tagline"><b>Powered by WebAssembly (Pyodide & Stlite)</b> • Explore neural aperiodic modeling serverless in your browser</div>', unsafe_allow_html=True)
+
+# Sidebar controls
+st.sidebar.markdown("### 🔧 Ground-Truth Parameters")
+b = st.sidebar.slider("Offset (b)", min_value=0.5, max_value=5.0, value=3.0, step=0.1, help="Vertical position of the power spectrum")
+chi = st.sidebar.slider("Exponent (χ)", min_value=0.5, max_value=4.0, value=2.0, step=0.1, help="Slope at high frequencies")
+
+# Dynamic restriction for k to keep knee frequency <= 100 Hz
+max_k = 100.0 ** chi
+k = st.sidebar.slider("Knee Parameter (k)", min_value=0.1, max_value=float(max_k), value=min(15.0, max_k), step=0.5, help="Controls the bend/transition frequency")
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🎯 Fitting Parameters")
+fit_range = st.sidebar.slider("Fit Range (Hz)", min_value=1.0, max_value=100.0, value=(1.0, 100.0), step=1.0, help="Frequency range to fit the specparam models")
+
+# Mathematical calculations
+f_k = k**(1 / chi)
+tau_ms = (1 / (2 * np.pi * f_k)) * 1000  # in ms
+plateau_height = b - np.log10(k)
+
+def specparam_knee_func(f, b, k, chi):
+    return b - np.log10(k + f**chi)
+
+# Generate noisy spectrum
+np.random.seed(42)
+sim_freqs = np.linspace(1, 100, 200)
+true_aperiodic = specparam_knee_func(sim_freqs, b, k, chi)
+noise = np.random.normal(0, 0.04, len(sim_freqs))
+sim_power = true_aperiodic + noise
+
+# Add alpha peak
+alpha_peak = 0.3 * norm.pdf(sim_freqs, loc=10, scale=1.5)
+sim_power += alpha_peak
+
+# Fit models dynamically
+min_f, max_f = fit_range
+fm_k = SpectralModel(aperiodic_mode='knee', verbose=False)
+fm_k.fit(sim_freqs, 10**sim_power, [min_f, max_f])
+
+fm_f = SpectralModel(aperiodic_mode='fixed', max_n_peaks=0, verbose=False)
+fm_f.fit(sim_freqs, 10**sim_power, [min_f, max_f])
+
+# Get fits
+k_res = fm_k.results.model.get_component('aperiodic')
+f_res = fm_f.results.model.get_component('aperiodic')
+mask = (sim_freqs >= min_f) & (sim_freqs <= max_f)
+fit_freqs = sim_freqs[mask]
+
+# Extract parameters safely
+fit_k_offset = fm_k.get_params('aperiodic', 'offset')
+fit_k_knee = fm_k.get_params('aperiodic', 'knee')
+fit_k_exponent = fm_k.get_params('aperiodic', 'exponent')
+
+fit_f_offset = fm_f.get_params('aperiodic', 'offset')
+fit_f_exponent = fm_f.get_params('aperiodic', 'exponent')
+
+# Layout columns for plotting
+col1, col2 = st.columns(2)
+
+with col1:
+    fig1, ax1 = plt.subplots(figsize=(7, 4.5))
+    ax1.scatter(np.log10(sim_freqs[~mask]), sim_power[~mask], color='#e2e8f0', s=15, alpha=0.6, label='Data (outside fit)')
+    ax1.scatter(np.log10(sim_freqs[mask]), sim_power[mask], color='#94a3b8', s=20, alpha=0.8, label='Data (inside fit)')
+    ax1.plot(np.log10(sim_freqs), true_aperiodic, color='#64748b', linestyle=':', linewidth=2, label='True Aperiodic (Ground Truth)')
+    
+    if len(k_res) > 0 and len(fit_freqs) == len(k_res):
+        ax1.plot(np.log10(fit_freqs), k_res, color='#0f766e', linewidth=3, label=f'Knee Fit (χ = {fit_k_exponent:.2f})')
+    if len(f_res) > 0 and len(fit_freqs) == len(f_res):
+        ax1.plot(np.log10(fit_freqs), f_res, color='#ea580c', linestyle='--', linewidth=2.5, label=f'Fixed Fit (χ = {fit_f_exponent:.2f})')
+        
+    ax1.axvline(np.log10(min_f), color='#94a3b8', linestyle=':', linewidth=1.5)
+    ax1.axvline(np.log10(max_f), color='#94a3b8', linestyle=':', linewidth=1.5)
+    
+    ax1.axvline(np.log10(f_k), color='#e11d48', linestyle='-.', linewidth=1.5, label=f'True fk ({f_k:.1f} Hz)')
+    ax1.scatter(np.log10(f_k), specparam_knee_func(f_k, b, k, chi), color='#e11d48', s=70, zorder=10)
+    
+    if fit_k_knee is not None and fit_k_knee > 0 and fit_k_exponent > 0:
+        fit_f_k = fit_k_knee**(1 / fit_k_exponent)
+        if min_f <= fit_f_k <= max_f:
+            ax1.axvline(np.log10(fit_f_k), color='#0f766e', linestyle='--', linewidth=1.5, label=f'Fit fk ({fit_f_k:.1f} Hz)')
+            fit_y_k = fit_k_offset - np.log10(fit_k_knee + fit_f_k**fit_k_exponent)
+            ax1.scatter(np.log10(fit_f_k), fit_y_k, color='#0f766e', s=70, zorder=10)
+            
+    ax1.set_xlabel('log10(Frequency)')
+    ax1.set_ylabel('log10(Power)')
+    ax1.set_title('Log-Log Representation')
+    ax1.grid(True, linestyle=':', alpha=0.5)
+    ax1.set_xlim(np.log10(1), np.log10(100))
+    ax1.legend(fontsize=9, loc='lower left')
+    st.pyplot(fig1)
+
+with col2:
+    fig2, ax2 = plt.subplots(figsize=(7, 4.5))
+    ax2.scatter(sim_freqs[~mask], sim_power[~mask], color='#e2e8f0', s=15, alpha=0.6, label='Data (outside fit)')
+    ax2.scatter(sim_freqs[mask], sim_power[mask], color='#94a3b8', s=20, alpha=0.8, label='Data (inside fit)')
+    ax2.semilogx(sim_freqs, true_aperiodic, color='#64748b', linestyle=':', linewidth=2, label='True Aperiodic (Ground Truth)')
+    
+    if len(k_res) > 0 and len(fit_freqs) == len(k_res):
+        ax2.semilogx(fit_freqs, k_res, color='#0f766e', linewidth=3, label=f'Knee Fit (χ = {fit_k_exponent:.2f})')
+    if len(f_res) > 0 and len(fit_freqs) == len(f_res):
+        ax2.semilogx(fit_freqs, f_res, color='#ea580c', linestyle='--', linewidth=2.5, label=f'Fixed Fit (χ = {fit_f_exponent:.2f})')
+        
+    ax2.axvline(min_f, color='#94a3b8', linestyle=':', linewidth=1.5)
+    ax2.axvline(max_f, color='#94a3b8', linestyle=':', linewidth=1.5)
+    
+    ax2.axvline(f_k, color='#e11d48', linestyle='-.', linewidth=1.5, label=f'True fk ({f_k:.1f} Hz)')
+    ax2.scatter(f_k, specparam_knee_func(f_k, b, k, chi), color='#e11d48', s=70, zorder=10)
+    
+    if fit_k_knee is not None and fit_k_knee > 0 and fit_k_exponent > 0:
+        fit_f_k = fit_k_knee**(1 / fit_k_exponent)
+        if min_f <= fit_f_k <= max_f:
+            ax2.axvline(fit_f_k, color='#0f766e', linestyle='--', linewidth=1.5, label=f'Fit fk ({fit_f_k:.1f} Hz)')
+            fit_y_k = fit_k_offset - np.log10(fit_k_knee + fit_f_k**fit_k_exponent)
+            ax2.scatter(fit_f_k, fit_y_k, color='#0f766e', s=70, zorder=10)
+            
+    ticks = [1, 2, 5, 10, 20, 50, 100]
+    ax2.set_xticks(ticks)
+    ax2.set_xticklabels([str(t) for t in ticks])
+    ax2.set_xlabel('Frequency (Hz, log scale)')
+    ax2.set_ylabel('log10(Power)')
+    ax2.set_title('Semilog Representation (Physical Hz)')
+    ax2.grid(True, which='both', linestyle=':', alpha=0.5)
+    ax2.set_xlim(1, 100)
+    ax2.legend(fontsize=9, loc='lower left')
+    st.pyplot(fig2)
+
+# Parameters comparison table
+st.subheader("📊 Parameters & Fits Comparison")
+
+err_k_b = fit_k_offset - b if fit_k_offset is not None else 0.0
+err_k_k = fit_k_knee - k if fit_k_knee is not None else 0.0
+err_k_chi = fit_k_exponent - chi if fit_k_exponent is not None else 0.0
+
+err_f_b = fit_f_offset - b if fit_f_offset is not None else 0.0
+err_f_chi = fit_f_exponent - chi if fit_f_exponent is not None else 0.0
+
+r2_k = fm_k.get_metrics('gof_rsquared') if fm_k.get_metrics('gof_rsquared') is not None else 0.0
+r2_f = fm_f.get_metrics('gof_rsquared') if fm_f.get_metrics('gof_rsquared') is not None else 0.0
+
+# Display calculations card
+metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
+with metrics_col1:
+    st.metric(label="True Knee Frequency (fk)", value=f"{f_k:.2f} Hz", delta=None)
+with metrics_col2:
+    st.metric(label="True Time Constant (τ)", value=f"{tau_ms:.1f} ms", delta=None)
+with metrics_col3:
+    st.metric(label="True Plateau Height", value=f"{plateau_height:.2f} log units", delta=None)
+
+st.code(f"""
+【 GROUND TRUTH 】  Offset (b): {b:.2f} | Knee (k): {k:.1f} | Exponent (χ): {chi:.2f} | fk: {f_k:.2f} Hz | τ: {tau_ms:.1f} ms
+【 KNEE FIT 】      Offset (b): {fit_k_offset:.2f} (err: {err_k_b:+.2f}) | Knee (k): {fit_k_knee:.1f} (err: {err_k_k:+.1f}) | Exponent (χ): {fit_k_exponent:.2f} (err: {err_k_chi:+.2f}) | R²: {r2_k:.3f}
+【 FIXED FIT 】     Offset (b): {fit_f_offset:.2f} (err: {err_f_b:+.2f}) | Exponent (χ): {fit_f_exponent:.2f} (err: {err_f_chi:+.2f}) | R²: {r2_f:.3f}
+""", language="text")
+
+st.info("""
+💡 **Methodological Insight**: 
+1. When the **Fit Range** spans the entire **1–100 Hz** range (covering the low-frequency knee plateau), the **Fixed model** (which forces a straight line) is heavily biased: it under-estimates the aperiodic exponent $\chi$ (estimating ~1.5 instead of the true 2.0). 
+2. If you restrict the **Fit Range** to high frequencies only (e.g., **30–100 Hz**), the Fixed model correctly recovers the true exponent ($\chi \\approx 2.0$), but the low-frequency knee plateau and its physiological implications (like the integration timescale $\\tau$) are completely lost.
+3. Only the **Knee model** is mathematically capable of recovering both the correct exponent and the knee parameters across the entire spectrum!
+""")
+`
+          }
+        },
+        document.getElementById("root")
+      );
+    </script>
+  </body>
+</html>
