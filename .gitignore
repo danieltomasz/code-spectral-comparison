@@ -100,3 +100,5 @@ _freeze/
 
 *_quarto_ipynb*
 *.ipynb
+slides/
+!slides/*.qmd
