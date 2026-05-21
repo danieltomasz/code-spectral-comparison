@@ -540,13 +540,13 @@ When analyzing biological power spectra:
 
 ---
 
-### 🌐 Shareable Instant Python-Powered Web Dashboard
+### 🌐 Shareable Serverless Python Shiny Web Dashboard
 
-We have compiled this interactive widget as a standalone, serverless web application powered by a hybrid **WebAssembly Python (Pyodide) & Chart.js** architecture. 
+We have compiled this interactive analysis as a standalone, serverless web application powered by **Shiny for Python running in WebAssembly (Shinylive)**.
 
-This completely replaces the slow, heavy Streamlit (stlite) prototype while **retaining the official Python SpecParam library under the hood**! By stripping away heavy frameworks (like Streamlit, PyArrow, Pandas, and Matplotlib) and utilizing native HTML/CSS and hardware-accelerated Canvas charts (`Chart.js`), we cut the initial download size in half (~15MB instead of 30MB+) and reduce the startup loading time by **over 90%**. Once loaded, all wheels are automatically cached by the browser for instant future opens. 
+This beautiful dashboard is styled with a modern, publication-grade Bootstrap theme (`minty`) and uses **official Python packages (SpecParam, SciPy, NumPy, and Matplotlib) under the hood**! It compiles your exact Python reactives and fitting routines into a static, client-side package. Once opened, the browser's Pyodide engine downloads and caches these wheels. **Subsequent visits will load instantly (<400ms)** with complete offline support.
 
 Once pushed to GitHub and hosted on **GitHub Pages**, anyone can open the dashboard directly in their browser (e.g., via a **QR code** on your poster, slides, or paper) and interact with your actual Python mathematical fits in real-time!
 
-- The compiled application is located in the [docs/index.html](file:///Users/daniel/PhD/spectral-comparison/code/docs/index.html) file.
-- See the [docs/README.md](file:///Users/daniel/PhD/spectral-comparison/code/docs/README.md) file for step-by-step instructions on deploying the live page on GitHub Pages and generating a high-quality vector QR code.
+* The compiled application entrypoint is located in [docs/index.html](file:///Users/daniel/PhD/spectral-comparison/code/docs/index.html) and defined in [dashboard/app.py](file:///Users/daniel/PhD/spectral-comparison/code/dashboard/app.py).
+* See [docs/README.md](file:///Users/daniel/PhD/spectral-comparison/code/docs/README.md) for step-by-step instructions on compiling local changes, deploying to GitHub Pages, and generating high-quality vector QR codes.
