@@ -62,9 +62,8 @@ for f in freqs:
     aperiodic_fit.append((f, ap))
 
 # Panel B: log(Frequency) vs log(Power)
-# log(f) ranges from 0.0 (1 Hz) to 1.6 (40 Hz)
-# Let's plot from 0.05 to 1.55 to have a nice margin from the axes
-log_freqs = [0.05 + 1.5 * i / 49 for i in range(50)]
+# log10(f) spans ~1.8 Hz (0.25) to ~80 Hz (1.90), log-spaced
+log_freqs = [0.25 + 1.65 * i / 49 for i in range(50)]
 pivot_x = 0.75
 pivot_y = 1.25
 
@@ -107,7 +106,10 @@ def map_coords(x, y, x_min, x_max, y_min, y_max, panel_x_offset, panel_y_offset)
 # Ranges
 y_min_a, y_max_a = 0.2, 2.7
 y_min_bc, y_max_bc = 0.0, 2.5
-log_f_min, log_f_max = 0.0, 1.6
+log_f_min, log_f_max = 0.2, 1.95
+
+# Log-spaced frequency ticks (Hz labels at log10 positions) for Panels B and C
+ticks_x_bc = [(0.301, "2"), (1.0, "10"), (1.301, "20"), (1.602, "40"), (1.903, "80")]
 
 # Start building the SVG
 svg = []
@@ -126,8 +128,8 @@ svg.append('''  <defs>
       .annotation-subtext { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 500; }
       .formula-title { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 700; fill: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
       .formula-text { font-family: "Georgia", "Times New Roman", serif; font-size: 13px; font-style: italic; fill: #0f172a; }
-      .subscript { font-size: 9px; font-style: normal; }
-      .superscript { font-size: 9px; font-style: normal; }
+      .subscript { font-size: 9px; font-style: normal; baseline-shift: sub; }
+      .superscript { font-size: 9px; font-style: normal; baseline-shift: super; }
       .math-symbol { font-family: "Georgia", serif; font-style: normal; }
       
       /* Grid and tick styles */
@@ -269,7 +271,7 @@ svg.append(f'  <text x="{x_a - 48}" y="{panel_y + panel_height/2}" class="axis-l
 # Feature Labels
 # Periodic Activity
 peak_x, peak_y = map_coords(10.5, aperiodic_a(10.5) + peak_a(10.5), 1, 40, y_min_a, y_max_a, x_a, panel_y)
-peak_lbl_x, peak_lbl_y = map_coords(14.5, 2.15, 1, 40, y_min_a, y_max_a, x_a, panel_y)
+peak_lbl_x, peak_lbl_y = map_coords(4.5, 2.45, 1, 40, y_min_a, y_max_a, x_a, panel_y)
 svg.append(f'  <text x="{peak_lbl_x:.1f}" y="{peak_lbl_y - 6:.1f}" class="annotation-text" fill="#0f766e" text-anchor="start">Periodic Activity</text>')
 svg.append(f'  <text x="{peak_lbl_x:.1f}" y="{peak_lbl_y + 6:.1f}" class="annotation-subtext" fill="#0f766e" text-anchor="start">(Gaussian Peaks, G<tspan class="subscript">n</tspan>)</text>')
 svg.append(f'  <path d="M {(peak_lbl_x - 5):.1f} {peak_lbl_y:.1f} Q {(peak_x + 12):.1f} {(peak_y - 25):.1f} {peak_x:.1f} {(peak_y - 6):.1f}" fill="none" stroke="#0d9488" stroke-width="1.2" marker-end="url(#arrow-teal)" />')
@@ -291,8 +293,8 @@ form_box_x = x_a + 175
 form_box_y = panel_y + 15
 svg.append(f'  <rect x="{form_box_x}" y="{form_box_y}" width="175" height="72" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.2" />')
 svg.append(f'  <text x="{form_box_x + 12}" y="{form_box_y + 18}" class="formula-title">SpecParam Model</text>')
-svg.append(f'  <text x="{form_box_x + 12}" y="{form_box_y + 38}" class="formula-text">P(f) = L(f) + <tspan class="math-symbol">∑</tspan>G<tspan class="subscript">n</tspan>(f)</text>')
-svg.append(f'  <text x="{form_box_x + 12}" y="{form_box_y + 57}" class="formula-text" font-size="12.5">L(f) = b <tspan class="math-symbol">−</tspan> log(k + f<tspan class="superscript">χ</tspan>)</text>')
+svg.append(f'  <text x="{form_box_x + 12}" y="{form_box_y + 38}" class="formula-text">P(f) = L(f) + <tspan class="math-symbol">∑</tspan><tspan class="subscript">n</tspan> G<tspan class="subscript">n</tspan>(f)</text>')
+svg.append(f'  <text x="{form_box_x + 12}" y="{form_box_y + 57}" class="formula-text" font-size="12.5">L(f) = b <tspan class="math-symbol">−</tspan> <tspan class="math-symbol">log</tspan><tspan class="subscript">10</tspan>(k + f<tspan class="superscript">χ</tspan>)</text>')
 
 # 7. Legend Box
 leg_x = x_a + 175
@@ -342,8 +344,8 @@ for val in [0.5, 1.0, 1.5, 2.0]:
     _, gy = map_coords(0, val, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
     svg.append(f'  <line x1="{x_b}" y1="{gy:.1f}" x2="{x_b + panel_width}" y2="{gy:.1f}" class="grid-line" />')
 
-for val in [0.4, 0.8, 1.2]:
-    gx, _ = map_coords(val, y_min_bc, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
+for tick_lf, _ in ticks_x_bc:
+    gx, _ = map_coords(tick_lf, y_min_bc, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
     svg.append(f'  <line x1="{gx:.1f}" y1="{panel_y}" x2="{gx:.1f}" y2="{panel_y + panel_height}" class="grid-line" />')
 
 # Axes in B
@@ -351,14 +353,14 @@ svg.append(f'  <line x1="{x_b}" y1="{panel_y}" x2="{x_b}" y2="{panel_y + panel_h
 svg.append(f'  <line x1="{x_b}" y1="{panel_y + panel_height}" x2="{x_b + panel_width}" y2="{panel_y + panel_height}" class="axis-line" />')
 
 # Ticks and tick labels (X)
-for tick_lf in [0.0, 0.4, 0.8, 1.2, 1.6]:
+for tick_lf, tick_lbl in ticks_x_bc:
     tx, ty = map_coords(tick_lf, y_min_bc, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
     svg.append(f'  <line x1="{tx:.1f}" y1="{ty:.1f}" x2="{tx:.1f}" y2="{(ty + 5):.1f}" class="tick-line" />')
-    svg.append(f'  <text x="{tx:.1f}" y="{(ty + 18):.1f}" class="axis-tick-label" text-anchor="middle">{tick_lf:.1f}</text>')
+    svg.append(f'  <text x="{tx:.1f}" y="{(ty + 18):.1f}" class="axis-tick-label" text-anchor="middle">{tick_lbl}</text>')
 
 # Ticks and tick labels (Y)
 for tick_y in [0.5, 1.0, 1.5, 2.0]:
-    tx, ty = map_coords(0, tick_y, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
+    tx, ty = map_coords(log_f_min, tick_y, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
     svg.append(f'  <line x1="{tx:.1f}" y1="{ty:.1f}" x2="{(tx - 5):.1f}" y2="{ty:.1f}" class="tick-line" />')
     svg.append(f'  <text x="{(tx - 8):.1f}" y="{(ty + 4):.1f}" class="axis-tick-label" text-anchor="end">{tick_y:.1f}</text>')
 
@@ -378,12 +380,12 @@ piv_x, piv_y_scr = map_coords(pivot_x, pivot_y, log_f_min, log_f_max, y_min_bc, 
 svg.append(f'  <circle cx="{piv_x:.1f}" cy="{piv_y_scr:.1f}" r="4.5" fill="#0f172a" stroke="#ffffff" stroke-width="1.5" />')
 
 # Dynamic rotation arrows in B
-# Left of pivot (low frequency, e.g. log_f = 0.2)
+# Left of pivot (low frequency, e.g. log_f = 0.4)
 # Here, steeper curve is HIGHER than reference. The arrow points UP from reference to steep.
-ref_val_left = pivot_y - chi_ref * (0.2 - pivot_x)
-steep_val_left = pivot_y - chi_steep * (0.2 - pivot_x)
-ar1_x, ar1_y_start = map_coords(0.2, ref_val_left, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
-ar1_x, ar1_y_end = map_coords(0.2, steep_val_left, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
+ref_val_left = pivot_y - chi_ref * (0.4 - pivot_x)
+steep_val_left = pivot_y - chi_steep * (0.4 - pivot_x)
+ar1_x, ar1_y_start = map_coords(0.4, ref_val_left, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
+ar1_x, ar1_y_end = map_coords(0.4, steep_val_left, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
 # Let's shift arrow slightly to avoid overlaps
 svg.append(f'  <path d="M {ar1_x:.1f} {ar1_y_start:.1f} Q {(ar1_x - 12):.1f} {((ar1_y_start + ar1_y_end)/2):.1f} {ar1_x:.1f} {ar1_y_end:.1f}" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow-grey)" />')
 
@@ -400,12 +402,12 @@ svg.append(f'  <text x="{x_b}" y="{panel_y - 25}" class="panel-letter">B</text>'
 svg.append(f'  <text x="{x_b + 25}" y="{panel_y - 25}" class="panel-title">Exponent Variation (Slope, <tspan class="math-symbol">χ</tspan>)</text>')
 
 # Axis Labels
-svg.append(f'  <text x="{x_b + panel_width/2}" y="{panel_y + panel_height + 42}" class="axis-label" text-anchor="middle">log(Frequency)</text>')
+svg.append(f'  <text x="{x_b + panel_width/2}" y="{panel_y + panel_height + 42}" class="axis-label" text-anchor="middle">Frequency (Hz, log scale)</text>')
 svg.append(f'  <text x="{x_b - 48}" y="{panel_y + panel_height/2}" class="axis-label" text-anchor="middle" transform="rotate(-90, {x_b - 48}, {panel_y + panel_height/2})">log(Power)</text>')
 
 # Annotations for B
 # Steeper Spectrum (Increment)
-st_lbl_x, st_lbl_y = map_coords(0.15, 2.42, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
+st_lbl_x, st_lbl_y = map_coords(0.3, 2.42, log_f_min, log_f_max, y_min_bc, y_max_bc, x_b, panel_y)
 svg.append(f'  <text x="{st_lbl_x:.1f}" y="{st_lbl_y - 12:.1f}" class="annotation-text" fill="#1e3a8a" text-anchor="start">Exponent Increment (Steeper)</text>')
 svg.append(f'  <text x="{st_lbl_x:.1f}" y="{st_lbl_y:.1f}" class="annotation-subtext" fill="#1e3a8a" text-anchor="start">↑ Exponent (<tspan class="math-symbol">χ</tspan>)</text>')
 
@@ -419,7 +421,7 @@ formula_b_x = x_b + 180
 formula_b_y = panel_y + 35
 svg.append(f'  <rect x="{formula_b_x}" y="{formula_b_y}" width="165" height="42" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />')
 svg.append(f'  <text x="{formula_b_x + 10}" y="{formula_b_y + 16}" class="formula-title">Aperiodic Component (k=0)</text>')
-svg.append(f'  <text x="{formula_b_x + 10}" y="{formula_b_y + 33}" class="formula-text" font-size="12">L(f) = b <tspan class="math-symbol">−</tspan> <tspan font-weight="bold" fill="#ea580c">χ</tspan> log(f)</text>')
+svg.append(f'  <text x="{formula_b_x + 10}" y="{formula_b_y + 33}" class="formula-text" font-size="12">L(f) = b <tspan class="math-symbol">−</tspan> <tspan font-weight="bold">χ</tspan> <tspan class="math-symbol">log</tspan><tspan class="subscript">10</tspan>(f)</text>')
 
 
 # ==========================================
@@ -447,8 +449,8 @@ for val in [0.5, 1.0, 1.5, 2.0, 2.5]:
     _, gy = map_coords(0, val, log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
     svg.append(f'  <line x1="{x_c}" y1="{gy:.1f}" x2="{x_c + panel_width}" y2="{gy:.1f}" class="grid-line" />')
 
-for val in [0.4, 0.8, 1.2]:
-    gx, _ = map_coords(val, y_min_bc, log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
+for tick_lf, _ in ticks_x_bc:
+    gx, _ = map_coords(tick_lf, y_min_bc, log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
     svg.append(f'  <line x1="{gx:.1f}" y1="{panel_y}" x2="{gx:.1f}" y2="{panel_y + panel_height}" class="grid-line" />')
 
 # Axes in C
@@ -456,14 +458,14 @@ svg.append(f'  <line x1="{x_c}" y1="{panel_y}" x2="{x_c}" y2="{panel_y + panel_h
 svg.append(f'  <line x1="{x_c}" y1="{panel_y + panel_height}" x2="{x_c + panel_width}" y2="{panel_y + panel_height}" class="axis-line" />')
 
 # Ticks and tick labels (X)
-for tick_lf in [0.0, 0.4, 0.8, 1.2, 1.6]:
+for tick_lf, tick_lbl in ticks_x_bc:
     tx, ty = map_coords(tick_lf, y_min_bc, log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
     svg.append(f'  <line x1="{tx:.1f}" y1="{ty:.1f}" x2="{tx:.1f}" y2="{(ty + 5):.1f}" class="tick-line" />')
-    svg.append(f'  <text x="{tx:.1f}" y="{(ty + 18):.1f}" class="axis-tick-label" text-anchor="middle">{tick_lf:.1f}</text>')
+    svg.append(f'  <text x="{tx:.1f}" y="{(ty + 18):.1f}" class="axis-tick-label" text-anchor="middle">{tick_lbl}</text>')
 
 # Ticks and tick labels (Y)
 for tick_y in [0.5, 1.0, 1.5, 2.0, 2.5]:
-    tx, ty = map_coords(0, tick_y, log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
+    tx, ty = map_coords(log_f_min, tick_y, log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
     svg.append(f'  <line x1="{tx:.1f}" y1="{ty:.1f}" x2="{(tx - 5):.1f}" y2="{ty:.1f}" class="tick-line" />')
     svg.append(f'  <text x="{(tx - 8):.1f}" y="{(ty + 4):.1f}" class="axis-tick-label" text-anchor="end">{tick_y:.1f}</text>')
 
@@ -478,10 +480,10 @@ svg.append(f'    <path d="{high_path_c}" fill="none" stroke="#c2410c" stroke-wid
 svg.append(f'    <path d="{low_path_c}" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="6,4" />')
 svg.append(f'  </g>')
 
-# Vertical indicators at log_freq = 0.05 (for offsets)
-c_off_ref_x, c_off_ref_y = map_coords(0.05, offset_ref - chi_ref * (0.05 - pivot_x), log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
-c_off_high_x, c_off_high_y = map_coords(0.05, offset_high - chi_ref * (0.05 - pivot_x), log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
-c_off_low_x, c_off_low_y = map_coords(0.05, offset_low - chi_ref * (0.05 - pivot_x), log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
+# Vertical indicators at log_freq = 0.25 (for offsets)
+c_off_ref_x, c_off_ref_y = map_coords(0.25, offset_ref - chi_ref * (0.25 - pivot_x), log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
+c_off_high_x, c_off_high_y = map_coords(0.25, offset_high - chi_ref * (0.25 - pivot_x), log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
+c_off_low_x, c_off_low_y = map_coords(0.25, offset_low - chi_ref * (0.25 - pivot_x), log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
 
 # Orange dotted vertical lines for offsets
 svg.append(f'  <line x1="{c_off_ref_x:.1f}" y1="{c_off_ref_y:.1f}" x2="{c_off_ref_x:.1f}" y2="{panel_y + panel_height:.1f}" stroke="#ea580c" stroke-width="1.2" stroke-dasharray="2,2" />')
@@ -509,12 +511,12 @@ svg.append(f'  <text x="{x_c}" y="{panel_y - 25}" class="panel-letter">C</text>'
 svg.append(f'  <text x="{x_c + 25}" y="{panel_y - 25}" class="panel-title">Offset Variation (Shift, <tspan class="math-symbol">b</tspan>)</text>')
 
 # Axis Labels
-svg.append(f'  <text x="{x_c + panel_width/2}" y="{panel_y + panel_height + 42}" class="axis-label" text-anchor="middle">log(Frequency)</text>')
+svg.append(f'  <text x="{x_c + panel_width/2}" y="{panel_y + panel_height + 42}" class="axis-label" text-anchor="middle">Frequency (Hz, log scale)</text>')
 svg.append(f'  <text x="{x_c - 48}" y="{panel_y + panel_height/2}" class="axis-label" text-anchor="middle" transform="rotate(-90, {x_c - 48}, {panel_y + panel_height/2})">log(Power)</text>')
 
 # Annotations for C
 # Increment Label
-c_inc_lbl_x, c_inc_lbl_y = map_coords(0.52, 2.22, log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
+c_inc_lbl_x, c_inc_lbl_y = map_coords(0.25, 2.35, log_f_min, log_f_max, y_min_bc, y_max_bc, x_c, panel_y)
 svg.append(f'  <text x="{c_inc_lbl_x:.1f}" y="{c_inc_lbl_y - 5:.1f}" class="annotation-text" fill="#c2410c" text-anchor="start">Offset Increment</text>')
 svg.append(f'  <text x="{c_inc_lbl_x:.1f}" y="{c_inc_lbl_y + 7:.1f}" class="annotation-subtext" fill="#c2410c" text-anchor="start">↑ Offset (b) / ↑ Broadband Power</text>')
 
@@ -528,7 +530,7 @@ formula_c_x = x_c + 180
 formula_c_y = panel_y + 35
 svg.append(f'  <rect x="{formula_c_x}" y="{formula_c_y}" width="165" height="42" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />')
 svg.append(f'  <text x="{formula_c_x + 10}" y="{formula_c_y + 16}" class="formula-title">Aperiodic Component (k=0)</text>')
-svg.append(f'  <text x="{formula_c_x + 10}" y="{formula_c_y + 33}" class="formula-text" font-size="12">L(f) = <tspan font-weight="bold" fill="#ea580c">b</tspan> <tspan class="math-symbol">−</tspan> χ log(f)</text>')
+svg.append(f'  <text x="{formula_c_x + 10}" y="{formula_c_y + 33}" class="formula-text" font-size="12">L(f) = <tspan font-weight="bold">b</tspan> <tspan class="math-symbol">−</tspan> χ <tspan class="math-symbol">log</tspan><tspan class="subscript">10</tspan>(f)</text>')
 
 svg.append('</svg>')
 

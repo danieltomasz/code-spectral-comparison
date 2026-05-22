@@ -104,8 +104,8 @@ svg.append('''  <defs>
       .annotation-subtext { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 500; }
       .formula-title { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 700; fill: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
       .formula-text { font-family: "Georgia", "Times New Roman", serif; font-size: 13px; font-style: italic; fill: #0f172a; }
-      .subscript { font-size: 9px; font-style: normal; }
-      .superscript { font-size: 9px; font-style: normal; }
+      .subscript { font-size: 9px; font-style: normal; baseline-shift: sub; }
+      .superscript { font-size: 9px; font-style: normal; baseline-shift: super; }
       .math-symbol { font-family: "Georgia", serif; font-style: normal; }
       
       /* Grid and tick styles */
@@ -238,7 +238,7 @@ svg.append(f'  <text x="{kx + 10}" y="{panel_y + 262}" class="annotation-subtext
 # Plateau label (teal)
 plat_x, plat_y = map_coords(0.12, 2.1, log_f_min, log_f_max, y_min, y_max, x_a, panel_y)
 svg.append(f'  <text x="{plat_x:.1f}" y="{plat_y - 20:.1f}" class="annotation-text" fill="#0f766e" text-anchor="start">Low-Frequency Plateau</text>')
-svg.append(f'  <text x="{plat_x:.1f}" y="{plat_y - 8:.1f}" class="annotation-subtext" fill="#0f766e" text-anchor="start">Flat region: L(f) ≈ b - log(k)</text>')
+svg.append(f'  <text x="{plat_x:.1f}" y="{plat_y - 8:.1f}" class="annotation-subtext" fill="#0f766e" text-anchor="start">Flat region: L(f) ≈ b − log<tspan class="subscript">10</tspan>(k)</text>')
 svg.append(f'  <path d="M {plat_x + 60:.1f} {plat_y - 3:.1f} Q {plat_x + 40:.1f} {plat_y + 8:.1f} {plat_x + 10:.1f} {plat_y + 15:.1f}" fill="none" stroke="#0d9488" stroke-width="1" marker-end="url(#arrow-teal)" />')
 
 # Formula Display Box
@@ -246,7 +246,7 @@ form_box_x = x_a + 175
 form_box_y = panel_y + 15
 svg.append(f'  <rect x="{form_box_x}" y="{form_box_y}" width="175" height="58" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.2" />')
 svg.append(f'  <text x="{form_box_x + 10}" y="{form_box_y + 18}" class="formula-title">Aperiodic Component</text>')
-svg.append(f'  <text x="{form_box_x + 10}" y="{form_box_y + 36}" class="formula-text" font-size="12.5">L(f) = b <tspan class="math-symbol">−</tspan> log(<tspan fill="#ea580c" font-weight="bold">k</tspan> + f<tspan class="superscript">χ</tspan>)</text>')
+svg.append(f'  <text x="{form_box_x + 10}" y="{form_box_y + 36}" class="formula-text" font-size="12.5">L(f) = b <tspan class="math-symbol">−</tspan> <tspan class="math-symbol">log</tspan><tspan class="subscript">10</tspan>(<tspan font-weight="bold">k</tspan> + f<tspan class="superscript">χ</tspan>)</text>')
 
 
 # ==========================================
@@ -305,6 +305,16 @@ svg.append(f'    <path d="{ref_path_b}" fill="none" stroke="#64748b" stroke-widt
 svg.append(f'    <path d="{high_path_b}" fill="none" stroke="#3b82f6" stroke-width="2.2" stroke-linecap="round" />')
 svg.append(f'  </g>')
 
+# Knee frequency markers (f_k = k^(1/chi)) for the low-k and high-k curves
+for k_val, mk_color in [(k_low, "#15803d"), (k_high, "#1d4ed8")]:
+    lf_k = math.log10(k_val) / chi_ref
+    y_k = b - math.log10(2 * k_val)
+    mkx, mky = map_coords(lf_k, y_k, log_f_min, log_f_max, y_min, y_max, x_b, panel_y)
+    _, mk_axis = map_coords(lf_k, y_min, log_f_min, log_f_max, y_min, y_max, x_b, panel_y)
+    svg.append(f'  <line x1="{mkx:.1f}" y1="{mky:.1f}" x2="{mkx:.1f}" y2="{mk_axis:.1f}" stroke="{mk_color}" stroke-width="1.3" stroke-dasharray="2.5,2.5" />')
+    svg.append(f'  <circle cx="{mkx:.1f}" cy="{mky:.1f}" r="3.5" fill="{mk_color}" stroke="#ffffff" stroke-width="1" />')
+    svg.append(f'  <text x="{mkx + 6:.1f}" y="{mky - 5:.1f}" class="annotation-subtext" fill="{mk_color}" text-anchor="start">f<tspan class="subscript">k</tspan></text>')
+
 # B Titles
 svg.append(f'  <text x="{x_b}" y="{panel_y - 25}" class="panel-letter">B</text>')
 svg.append(f'  <text x="{x_b + 25}" y="{panel_y - 25}" class="panel-title">Knee Parameter Variation (k)</text>')
@@ -333,7 +343,7 @@ svg.append(f'  <line x1="{ar_b_high_x:.1f}" y1="{ar_b_high_y_start:.1f}" x2="{ar
 
 # Convergence Label at high frequencies
 svg.append(f'  <text x="{x_b + 348}" y="{panel_y + 295}" class="annotation-text" fill="#64748b" text-anchor="end">Asymptotic Convergence</text>')
-svg.append(f'  <text x="{x_b + 348}" y="{panel_y + 307}" class="annotation-subtext" fill="#64748b" text-anchor="end">Identical Slope (-χ)</text>')
+svg.append(f'  <text x="{x_b + 348}" y="{panel_y + 307}" class="annotation-subtext" fill="#64748b" text-anchor="end">Identical Slope (−χ)</text>')
 
 
 # ==========================================
@@ -415,9 +425,9 @@ svg.append(f'  <text x="{x_c + 348}" y="{panel_y + 270}" class="annotation-text"
 svg.append(f'  <text x="{x_c + 348}" y="{panel_y + 282}" class="annotation-subtext" fill="#0369a1" text-anchor="end">↑ Exponent (χ)</text>')
 
 # Rotation Arrow at high-frequency to show fan-out
-ar_c_ref_x, ar_c_ref_y = map_coords(1.6, b - math.log10(k_ref + (10**1.6)**chi_ref), log_f_min, log_f_max, y_min, y_max, x_c, panel_y)
-ar_c_low_x, ar_c_low_y = map_coords(1.6, b - math.log10(k_ref + (10**1.6)**chi_low), log_f_min, log_f_max, y_min, y_max, x_c, panel_y)
-ar_c_high_x, ar_c_high_y = map_coords(1.6, b - math.log10(k_ref + (10**1.6)**chi_high), log_f_min, log_f_max, y_min, y_max, x_c, panel_y)
+ar_c_ref_x, ar_c_ref_y = map_coords(1.1, b - math.log10(k_ref + (10**1.1)**chi_ref), log_f_min, log_f_max, y_min, y_max, x_c, panel_y)
+ar_c_low_x, ar_c_low_y = map_coords(1.1, b - math.log10(k_ref + (10**1.1)**chi_low), log_f_min, log_f_max, y_min, y_max, x_c, panel_y)
+ar_c_high_x, ar_c_high_y = map_coords(1.1, b - math.log10(k_ref + (10**1.1)**chi_high), log_f_min, log_f_max, y_min, y_max, x_c, panel_y)
 
 svg.append(f'  <path d="M {ar_c_ref_x:.1f} {ar_c_ref_y:.1f} Q {(ar_c_ref_x + 12):.1f} {((ar_c_ref_y + ar_c_low_y)/2):.1f} {ar_c_low_x:.1f} {ar_c_low_y:.1f}" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow-grey)" />')
 svg.append(f'  <path d="M {ar_c_ref_x:.1f} {ar_c_ref_y:.1f} Q {(ar_c_ref_x - 12):.1f} {((ar_c_ref_y + ar_c_high_y)/2):.1f} {ar_c_high_x:.1f} {ar_c_high_y:.1f}" fill="none" stroke="#475569" stroke-width="1.2" marker-end="url(#arrow-grey)" />')
