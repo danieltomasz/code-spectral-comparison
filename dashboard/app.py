@@ -31,7 +31,7 @@ app_ui = ui.page_fluid(
             #plot_semilog {
                 width: 100% !important;
                 height: auto !important;
-                aspect-ratio: 10 / 4.2 !important;
+                aspect-ratio: 8 / 5.2 !important;
             }
             aside.sidebar {
                 background-color: #f8fafc !important;
@@ -104,7 +104,7 @@ app_ui = ui.page_fluid(
 
             /* Custom mobile/desktop responsive layout for parameters & results */
             @media (min-width: 768px) {
-                .mobile-tabs {
+                ul#mobileTab.mobile-tabs {
                     display: none !important;
                 }
                 .mobile-tab-content {
@@ -247,7 +247,7 @@ app_ui = ui.page_fluid(
         ui.div(
             # Sphinx-style Note Admonition
             ui.div(
-                ui.div("Note: Aperiodic Spectral Theory", class_="sphinx-admonition-title"),
+                ui.div("Note: SpecParam Parametrisation", class_="sphinx-admonition-title"),
                 ui.div(
                     ui.p(
                         "Electrophysiological neural power spectra exhibit an aperiodic component modeled as: "
@@ -258,12 +258,24 @@ app_ui = ui.page_fluid(
                     ),
                     ui.p(
                         "Where \\(b\\) is the offset, \\(\\chi\\) is the exponent, and \\(k\\) is the knee parameter. "
-                        "In this formulation (Donoghue et al., 2020), the knee parameter controls the low-frequency plateau. "
-                        "The mathematical knee frequency is defined as \\(f_k = k^{1/\\chi}\\), representing the transition point where the curve "
-                        "bends and power begins to fall off. In log-log representation, this transition appears as a gradual bend rather "
-                        "than a sharp corner; the exact visual bend frequency depends on both the knee parameter \\(k\\) and the exponent \\(\\chi\\). "
-                        "Methodologically, these represent statistical parameters of the curve fit and should be interpreted carefully "
-                        "as descriptive features of the spectral shape rather than a direct physical proof of isolated synaptic time constants."
+                        "To understand the role and mathematical behavior of the knee parameter \\(k\\), we can examine its limits at low and high frequencies:"
+                    ),
+                    ui.tags.ul(
+                        ui.tags.li(
+                            ui.tags.strong("Low Frequency Plateau (\\(f \\ll k^{1/\\chi}\\)): "),
+                            "When the frequency \\(f\\) is small enough such that \\(f^{\\chi}\\) is much smaller than \\(k\\), the term becomes negligible. "
+                            "This yields a flat, horizontal plateau of height \\(b - \\log_{10}(k)\\), jointly determined by the offset and knee."
+                        ),
+                        ui.tags.li(
+                            ui.tags.strong("High Frequency Power-Law (\\(f \\gg k^{1/\\chi}\\)): "),
+                            "When \\(f\\) is large, \\(k\\) becomes negligible, yielding a straight line with a constant negative slope of \\(-\\chi\\) in log-log space."
+                        ),
+                        ui.tags.li(
+                            ui.tags.strong("Knee Frequency (\\(f_k\\)): "),
+                            "The Knee Frequency \\(f_k = k^{1/\\chi}\\) marks the transition point (bend) where the power drops by \\(\\log_{10}(2) \\approx 0.3\\) log units (3 dB) "
+                            "below the low-frequency plateau. A larger knee parameter \\(k\\) corresponds to a higher knee frequency, shifting the bend to the right."
+                        ),
+                        style="margin-bottom: 1rem;"
                     ),
                     class_="sphinx-admonition-body"
                 ),
@@ -276,7 +288,7 @@ app_ui = ui.page_fluid(
                     ui.h6("Semilog Representation (Physical Hz)", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
                     ui.div(
                         ui.div(
-                            ui.output_plot("plot_semilog", height="400px"),
+                            ui.output_plot("plot_semilog", height="480px"),
                             class_="plot-min-width-wrapper"
                         ),
                         class_="plot-scroll-container"
@@ -546,16 +558,31 @@ def server(input, output, session):
         
         model_type = input.model_type()
         add_peak = input.add_peak()
+        chi_val = input.chi()
+        b_val = input.b()
         
         min_f_val = input.min_f()
         max_f_val = input.max_f()
         
-        # Calculate dynamic y limits from the noisy raw spectrum to prevent clipping
-        ymin = np.min(sim_power) - 0.25
-        ymax = np.max(sim_power) + 0.35
+        # Calculate dynamic y limits depending on the maximum values in the fitting range
+        mask_in = (sim_freqs >= min_f_val) & (sim_freqs <= max_f_val)
         
-        # Academic light-theme figure (spacious full-width sizing)
-        fig, ax = plt.subplots(figsize=(10, 4.2), dpi=100, facecolor='#ffffff')
+        all_y_fit = [sim_power[mask_in], true_aperiodic[mask_in]]
+        if add_peak:
+            all_y_fit.append(true_power[mask_in])
+        if len(k_res) > 0:
+            all_y_fit.append(k_res)
+        if len(f_res) > 0:
+            all_y_fit.append(f_res)
+            
+        plot_max = max(np.max(y) for y in all_y_fit)
+        plot_min = min(np.min(y) for y in all_y_fit)
+        
+        ymin = plot_min - 0.25
+        ymax = plot_max + 0.35
+        
+        # Academic light-theme figure (standard academic 8:5.2 ratio)
+        fig, ax = plt.subplots(figsize=(8, 5.2), dpi=100, facecolor='#ffffff')
         ax.set_facecolor('#ffffff')
         
         # Clean academic axes lines (remove top/right borders)
@@ -587,13 +614,19 @@ def server(input, output, session):
             
         # Vertical True Knee line (only if simulated signal has a knee)
         if model_type == "knee":
-            ax.axvline(res["true_fk"], color='#e11d48', linestyle='--', alpha=0.75, label=f'True Knee ({res["true_fk"]:.2f} Hz)')
+            true_fk = res["true_fk"]
+            y_true_fk = b_val - np.log10(res["true_k"] + true_fk**chi_val)
+            ax.vlines(true_fk, ymin, y_true_fk, colors='#e11d48', linestyles='--', alpha=0.75, label=f'True Knee ({true_fk:.2f} Hz)')
         
         # Fitted Knee Line
         if len(k_res) > 0 and res["fit_k_fk"] > 0:
             fit_fk = res["fit_k_fk"]
             if min_f_val <= fit_fk <= max_f_val:
-                ax.axvline(fit_fk, color='#0f766e', linestyle=':', alpha=0.8, label=f'Fitted Knee ({fit_fk:.2f} Hz)')
+                fit_k_offset = res["fit_k_offset"]
+                fit_k_knee = res["fit_k_knee"]
+                fit_k_exponent = res["fit_k_exponent"]
+                y_fit_fk = fit_k_offset - np.log10(fit_k_knee + fit_fk**fit_k_exponent)
+                ax.vlines(fit_fk, ymin, y_fit_fk, colors='#0f766e', linestyles=':', alpha=0.8, label=f'Fitted Knee ({fit_fk:.2f} Hz)')
                     
         ax.set_xscale('log')
         ax.set_xlabel('Frequency (Hz, log scale)', color='#2c3e50', fontsize=10, fontweight='medium')
@@ -605,7 +638,7 @@ def server(input, output, session):
         ax.set_xticks([1, 2, 5, 10, 20, 50, 100])
         ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
 
-        ax.legend(loc='lower left', fontsize=8.5, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0')
+        ax.legend(loc='upper right', fontsize=8.5, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0')
         ax.grid(True, which='both', linestyle='--', linewidth=0.5, color='#e2e8f0', alpha=0.7)
         plt.tight_layout()
         return fig
