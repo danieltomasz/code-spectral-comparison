@@ -1,0 +1,55 @@
+flowchart TD
+    %% Custom styling using distinct, harmonious palettes
+    classDef ieeg fill:#f0f9ff,stroke:#0284c7,stroke-width:1.5px,color:#0369a1;
+    classDef hdeeg fill:#fff5f5,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef common fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#334155;
+    classDef step fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef highlight fill:#fffbeb,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+
+    subgraph Inputs ["Inputs (Eyes Closed vs. Open)"]
+        A1["iEEG Reference Atlas<br>(106 Patients, 1772 Channels)"]:::ieeg
+        A2["HD-EEG Dataset<br>(19 Subjects, 256 Channels)"]:::hdeeg
+    end
+
+    subgraph Prep ["Preprocessing & Welch PSD"]
+        B1["eLORETA Source Reconstruction<br>(Mapped to 38 MICCAI Regions)"]:::hdeeg
+        B2["Welch PSD Estimation<br>(2s windows, 50% overlap, 0.5Hz res)"]:::common
+        B3["Unit-Power Normalization"]:::common
+    end
+
+    subgraph Anal1 ["Analysis 1: Raw Oscillatory Profiles"]
+        C1["Data-Driven k-Means Clustering<br>(Identifies natural peak frequencies)"]:::step
+        C2["Specparam Peak Prevalence<br>(Canonical band assignment)"]:::step
+    end
+
+    subgraph Anal2 ["Analysis 2: Raw Correspondence"]
+        D1["Raw Afnan-Style Overlap<br>(Baseline cross-modal match)"]:::highlight
+    end
+
+    subgraph Anal3 ["Analysis 3: Aperiodic Removal"]
+        E1["Specparam Fitting (BIC Selected)<br>- iEEG: Knee Model<br>- HD-EEG: Fixed Model"]:::common
+        E2["Linear-Space Aperiodic Subtraction<br>PSD_osc = PSD - PSD_ap"]:::common
+        E3["Residual Afnan-Style Overlap<br>(Theta improves, Alpha drops)"]:::highlight
+    end
+
+    subgraph Anal4 ["Analysis 4: Aperiodic Stability"]
+        F1["Fitting Range Sensitivity<br>(1-80 Hz vs. 1-45 Hz)"]:::step
+        F2["Decomposition Comparison<br>(Specparam vs. IRASA)"]:::step
+        F3["Hierarchical Bayesian Regression<br>(ROI & Subject random effects)"]:::highlight
+    end
+
+    %% Routing
+    A1 --> B2
+    A2 --> B1 --> B2
+    B2 --> B3
+    
+    B3 --> C1
+    B3 --> C2
+    B3 --> D1
+    
+    B3 --> E1 --> E2
+    E2 --> E3
+    
+    E1 --> F1
+    E1 --> F2
+    F1 & F2 --> F3

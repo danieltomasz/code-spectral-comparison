@@ -1,0 +1,31 @@
+flowchart TD
+    %% Custom styling using distinct, harmonious palettes
+    classDef ieeg fill:#f0f9ff,stroke:#0284c7,stroke-width:1.5px,color:#0369a1;
+    classDef hdeeg fill:#fff5f5,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
+    classDef step fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#334155;
+    classDef highlight fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
+    classDef stability fill:#fffbeb,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+
+    subgraph Inputs ["Modality Inputs"]
+        A1["iEEG Reference Atlas<br>(106 Patients, eyes-closed)"]:::ieeg
+        A2["HD-EEG Dataset<br>(19 Subjects, eyes-open)"]:::hdeeg
+    end
+
+    subgraph Prep ["Data Preparation"]
+        B1["eLORETA Source Localization<br>(Mapped to 38 MICCAI regions)"]:::hdeeg
+        B2["Welch PSD & Unit Normalization<br>(Identical Welch settings)"]:::step
+    end
+
+    subgraph Analysis ["Comparison Pipeline"]
+        C["1. Raw Spectra Comparison<br>- k-means clustering of profiles<br>- Baseline cross-modal overlap"]:::step
+        D["2. Aperiodic Fitting & Removal<br>- Specparam fitting (Knee / Fixed)<br>- Subtract 1/f background"]:::step
+        E["3. Residual Spectra Comparison<br>- Oscillatory overlap after 1/f removal"]:::highlight
+        F["4. Stability Assessments<br>- Exponent vs. range & method choices<br>- Hierarchical Bayesian regression"]:::stability
+    end
+
+    A1 --> B2
+    A2 --> B1 --> B2
+    B2 --> C
+    C --> D
+    D --> E
+    D --> F

@@ -51,3 +51,35 @@ dashboard:
 # Serve the exported bundle locally to verify before committing
 dashboard-serve:
 	uv run python -m http.server --directory docs 8008
+
+MMDC_DIR := .cache/mmdc
+MMDC_BIN := $(MMDC_DIR)/node_modules/.bin/mmdc
+MMD_SRC  := $(wildcard diagrams/*.mmd)
+MMD_PNG  := $(MMD_SRC:.mmd=.png)
+MMD_SVG  := $(MMD_SRC:.mmd=.svg)
+
+$(MMDC_BIN):
+	@set -e; \
+	echo "→ Installing @mermaid-js/mermaid-cli + puppeteer into $(MMDC_DIR)/ ..."; \
+	mkdir -p $(MMDC_DIR); \
+	cd $(MMDC_DIR); \
+	[ -f package.json ] || npm init -y >/dev/null; \
+	npm install --no-audit --no-fund @mermaid-js/mermaid-cli puppeteer
+
+diagrams/%.png: diagrams/%.mmd $(MMDC_BIN)
+	@set -e; \
+	echo "→ Rendering $< -> $@"; \
+	$(MMDC_BIN) -i $< -o $@ -b white -w 1600
+
+diagrams/%.svg: diagrams/%.mmd $(MMDC_BIN)
+	@set -e; \
+	echo "→ Rendering $< -> $@"; \
+	$(MMDC_BIN) -i $< -o $@ -b transparent
+
+render-diagrams: $(MMD_PNG) $(MMD_SVG)
+	@set -e; \
+	if [ -z "$(MMD_SRC)" ]; then \
+		echo "No diagrams/*.mmd files found."; \
+	else \
+		echo "✓ Rendered: $(MMD_PNG) $(MMD_SVG)"; \
+	fi
