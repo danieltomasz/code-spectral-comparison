@@ -5,113 +5,115 @@ from specparam import SpectralModel
 from shiny import App, ui, render, reactive
 import shinyswatch
 
-# Define beautiful, modern Bootstrap UI
-app_ui = ui.page_fluid(
-    shinyswatch.theme.minty(),
+# Define modern, responsive Bootstrap page_sidebar layout
+app_ui = ui.page_sidebar(
+    ui.sidebar(
+        ui.h5("🔧 Ground-Truth Parameters", class_="mb-3 border-bottom pb-1 text-primary"),
+        ui.input_slider("b", "Offset (b)", min=0.5, max=5.0, value=3.0, step=0.1),
+        ui.input_slider("chi", "Exponent (\u03c7)", min=0.5, max=4.0, value=2.0, step=0.1),
+        ui.input_slider("k", "Knee Parameter (k)", min=0.1, max=100.0, value=15.0, step=0.5),
+        ui.p("Transitions knee plateau (restricted dynamically: fk \u2264 100 Hz)", class_="text-muted small mb-4"),
+        
+        ui.h5("🎯 Fitting Boundaries", class_="mb-3 border-bottom pb-1 text-primary"),
+        ui.input_slider("min_f", "Min Fit Frequency (Hz)", min=1, max=50, value=1, step=1),
+        ui.input_slider("max_f", "Max Fit Frequency (Hz)", min=50, max=100, value=100, step=1),
+        ui.p("Adjust bounds to see how the Fixed model is biased by low frequencies, while the Knee model recovers true parameters.", class_="text-muted small"),
+        width=320
+    ),
+    
+    # Main panel content
     ui.div(
-        ui.h2("🧠 SpecParam Knee Simulation & Fitting Dashboard", class_="text-center mt-3 mb-1 font-weight-bold"),
+        ui.h2("🧠 SpecParam Knee Simulation & Fitting Dashboard", class_="text-center mt-2 mb-1 font-weight-bold"),
         ui.p("Explore aperiodic power spectra models and fitting bias in real-time with Python WebAssembly.", class_="text-center text-muted mb-4"),
         class_="container-fluid"
     ),
-    ui.layout_sidebar(
-        ui.panel_sidebar(
-            ui.h5("🔧 Ground-Truth Parameters", class_="mb-3 border-bottom pb-1 text-primary"),
-            ui.input_slider("b", "Offset (b)", min=0.5, max=5.0, value=3.0, step=0.1),
-            ui.input_slider("chi", "Exponent (\u03c7)", min=0.5, max=4.0, value=2.0, step=0.1),
-            ui.input_slider("k", "Knee Parameter (k)", min=0.1, max=100.0, value=15.0, step=0.5),
-            ui.p("Transitions knee plateau (restricted dynamically: fk \u2264 100 Hz)", class_="text-muted small mb-4"),
-            
-            ui.h5("🎯 Fitting Boundaries", class_="mb-3 border-bottom pb-1 text-primary"),
-            ui.input_slider("min_f", "Min Fit Frequency (Hz)", min=1, max=50, value=1, step=1),
-            ui.input_slider("max_f", "Max Fit Frequency (Hz)", min=50, max=100, value=100, step=1),
-            ui.p("Adjust bounds to see how the Fixed model is biased by low frequencies, while the Knee model recovers true parameters.", class_="text-muted small")
+    
+    # Top row: Quick Stat Cards
+    ui.row(
+        ui.column(
+            4,
+            ui.div(
+                ui.div(
+                    ui.h6("True Knee Frequency (fk)", class_="card-title text-uppercase text-muted mb-1 small"),
+                    ui.h3(ui.output_text("val_fk"), class_="card-text font-weight-bold text-teal"),
+                    class_="card-body p-3"
+                ),
+                class_="card shadow-sm border-light mb-3"
+            )
         ),
-        ui.panel_main(
-            # Top row: Quick Stat Cards
-            ui.row(
-                ui.column(
-                    4,
-                    ui.div(
-                        ui.div(
-                            ui.h6("True Knee Frequency (fk)", class_="card-title text-uppercase text-muted mb-1 small"),
-                            ui.h3(ui.output_text("val_fk"), class_="card-text font-weight-bold text-teal"),
-                            class_="card-body p-3"
-                        ),
-                        class_="card shadow-sm border-light mb-3"
-                    )
+        ui.column(
+            4,
+            ui.div(
+                ui.div(
+                    ui.h6("True Time Constant (\u03c4)", class_="card-title text-uppercase text-muted mb-1 small"),
+                    ui.h3(ui.output_text("val_tau"), class_="card-text font-weight-bold text-teal"),
+                    class_="card-body p-3"
                 ),
-                ui.column(
-                    4,
-                    ui.div(
-                        ui.div(
-                            ui.h6("True Time Constant (\u03c4)", class_="card-title text-uppercase text-muted mb-1 small"),
-                            ui.h3(ui.output_text("val_tau"), class_="card-text font-weight-bold text-teal"),
-                            class_="card-body p-3"
-                        ),
-                        class_="card shadow-sm border-light mb-3"
-                    )
+                class_="card shadow-sm border-light mb-3"
+            )
+        ),
+        ui.column(
+            4,
+            ui.div(
+                ui.div(
+                    ui.h6("True Plateau Height", class_="card-title text-uppercase text-muted mb-1 small"),
+                    ui.h3(ui.output_text("val_plateau"), class_="card-text font-weight-bold text-teal"),
+                    class_="card-body p-3"
                 ),
-                ui.column(
-                    4,
-                    ui.div(
-                        ui.div(
-                            ui.h6("True Plateau Height", class_="card-title text-uppercase text-muted mb-1 small"),
-                            ui.h3(ui.output_text("val_plateau"), class_="card-text font-weight-bold text-teal"),
-                            class_="card-body p-3"
-                        ),
-                        class_="card shadow-sm border-light mb-3"
-                    )
+                class_="card shadow-sm border-light mb-3"
+            )
+        )
+    ),
+    
+    # Middle row: Plots side-by-side
+    ui.row(
+        ui.column(
+            6,
+            ui.div(
+                ui.div(
+                    ui.h6("Log-Log Representation", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
+                    ui.output_plot("plot_loglog", height="350px"),
+                    class_="card shadow-sm border-light mb-3"
                 )
-            ),
-            
-            # Middle row: Plots side-by-side
-            ui.row(
-                ui.column(
-                    6,
-                    ui.div(
-                        ui.div(
-                            ui.h6("Log-Log Representation", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
-                            ui.output_plot("plot_loglog", height="350px"),
-                            class_="card shadow-sm border-light mb-3"
-                        )
-                    )
-                ),
-                ui.column(
-                    6,
-                    ui.div(
-                        ui.div(
-                            ui.h6("Semilog Representation (Physical Hz)", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
-                            ui.output_plot("plot_semilog", height="350px"),
-                            class_="card shadow-sm border-light mb-3"
-                        )
-                    )
-                )
-            ),
-            
-            # Bottom row: Comparison table
-            ui.row(
-                ui.column(
-                    12,
-                    ui.div(
-                        ui.div(
-                            ui.h6("📊 Dynamic Parameter Fitting Comparison Table (SpecParam v2 Python)", class_="card-header bg-dark text-white font-weight-bold"),
-                            ui.div(
-                                ui.output_text_verbatim("table_text"),
-                                class_="card-body bg-black text-success p-3 m-0",
-                                style="font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; font-size: 0.85rem;"
-                            ),
-                            class_="card shadow-sm border-dark mb-4"
-                        )
-                    )
+            )
+        ),
+        ui.column(
+            6,
+            ui.div(
+                ui.div(
+                    ui.h6("Semilog Representation (Physical Hz)", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
+                    ui.output_plot("plot_semilog", height="350px"),
+                    class_="card shadow-sm border-light mb-3"
                 )
             )
         )
     ),
+    
+    # Bottom row: Comparison table
+    ui.row(
+        ui.column(
+            12,
+            ui.div(
+                ui.div(
+                    ui.h6("📊 Dynamic Parameter Fitting Comparison Table (SpecParam v2 Python)", class_="card-header bg-dark text-white font-weight-bold"),
+                    ui.div(
+                        ui.output_text_verbatim("table_text"),
+                        class_="card-body bg-black text-success p-3 m-0",
+                        style="font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; font-size: 0.85rem;"
+                    ),
+                    class_="card shadow-sm border-dark mb-4"
+                        )
+                    )
+                ),
+    
     ui.div(
         ui.hr(),
         ui.p("© 2026 Daniel Borek. PhD Research Tool.", class_="text-center text-muted small"),
         class_="container-fluid mt-4"
-    )
+    ),
+    
+    title="🧠 SpecParam Knee Simulation & Fitting Dashboard",
+    theme=shinyswatch.theme.minty()
 )
 
 def server(input, output, session):
@@ -184,15 +186,12 @@ def server(input, output, session):
         f_res = np.array([])
         
         if fm_k.results.model:
-            # Reconstruct the fit over the exact fitting frequency range
-            # Reconstruct aperiodic: offset - log10(knee + freqs^exponent)
             k_off = fm_k.get_params('aperiodic', 'offset')
             k_kn = fm_k.get_params('aperiodic', 'knee')
             k_exp = fm_k.get_params('aperiodic', 'exponent')
             k_res = k_off - np.log10(k_kn + fit_freqs**k_exp)
             
         if fm_f.results.model:
-            # Reconstruct fixed: offset - log10(freqs^exponent)
             f_off = fm_f.get_params('aperiodic', 'offset')
             f_exp = fm_f.get_params('aperiodic', 'exponent')
             f_res = f_off - np.log10(fit_freqs**f_exp)
