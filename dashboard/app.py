@@ -206,7 +206,24 @@ app_ui = ui.page_sidebar(
             )
         )
     ),
-    
+
+    # Periodic peak comparison: simulated vs fitted
+    ui.row(
+        ui.column(
+            12,
+            ui.div(
+                ui.div(
+                    ui.h6("Periodic Peak Comparison (Simulated vs Fitted)", class_="card-header"),
+                    ui.div(
+                        ui.output_ui("peak_table"),
+                        class_="card-body p-0"
+                    ),
+                    class_="card mb-4"
+                )
+            )
+        )
+    ),
+
     ui.div(
         ui.hr(),
         ui.p("BAPS annual meeting 2026 | NEUROPHYSIOLOGY AND BRAIN MEASUREMENT METHODS session", class_="text-center text-muted small"),
@@ -383,7 +400,24 @@ def server(input, output, session):
             fit_k_fk = fit_k_knee**(1 / fit_k_exponent)
         else:
             fit_k_fk = 0.0
-        
+
+        # Extract estimated periodic peaks (CF, PW, BW rows) from each fit
+        def extract_peaks(fm):
+            if not fm.results.model:
+                return []
+            try:
+                pk = np.atleast_2d(np.asarray(fm.get_params('peak'), dtype=float))
+            except Exception:
+                return []
+            return [
+                (float(r[0]), float(r[1]), float(r[2]))
+                for r in pk
+                if r.size >= 3 and not np.any(np.isnan(r[:3]))
+            ]
+
+        k_peaks = extract_peaks(fm_k)
+        f_peaks = extract_peaks(fm_f)
+
         return {
             "sim_freqs": sim_freqs,
             "sim_power": sim_power,
@@ -403,7 +437,9 @@ def server(input, output, session):
             "r2_k": r2_k,
             "r2_f": r2_f,
             "mae_k": mae_k,
-            "mae_f": mae_f
+            "mae_f": mae_f,
+            "k_peaks": k_peaks,
+            "f_peaks": f_peaks
         }
 
     # Helper function to plot clean continuous curves
@@ -498,7 +534,7 @@ def server(input, output, session):
         
         b_val = input.b()
         chi_val = input.chi()
-        
+
         # Ground Truth formats
         if model_type == "knee":
             k_val_str = f"{res['true_k']:.1f}"
@@ -580,6 +616,70 @@ def server(input, output, session):
                             <td style="font-weight: 600; color: #0f766e;">{res['mae_k']:.3f}</td>
                             <td style="font-weight: 600; color: #ea580c;">{res['mae_f']:.3f}</td>
                         </tr>
+                    </tbody>
+                </table>
+            </div>
+        """)
+
+    # 7. Output: Periodic peak comparison (simulated vs fitted)
+    @output
+    @render.ui
+    def peak_table():
+        res = run_simulation_and_fit()
+        add_peak = input.add_peak()
+
+        def peak_row(label, color, peaks):
+            if not peaks:
+                return f"""
+                    <tr>
+                        <td style="font-weight: 500; color: {color};">{label}</td>
+                        <td colspan="3" class="text-muted">No peak estimated</td>
+                    </tr>"""
+            cf, pw, bw = peaks[0]
+            return f"""
+                    <tr>
+                        <td style="font-weight: 500; color: {color};">{label}</td>
+                        <td>{cf:.2f}</td>
+                        <td>{pw:.3f}</td>
+                        <td>{bw:.2f}</td>
+                    </tr>"""
+
+        # Simulated peak: convert injected Gaussian to specparam-equivalent
+        # PW (height above aperiodic) and BW (2 * std). Sim uses scale = width/2.
+        if add_peak:
+            cf_t = input.peak_freq()
+            bw_t = input.peak_width()
+            std_t = bw_t / 2.0
+            pw_t = input.peak_amp() / (std_t * np.sqrt(2 * np.pi))
+            sim_row = f"""
+                    <tr style="background-color: #f8fafc;">
+                        <td style="font-weight: 600;">Simulated (ground truth)</td>
+                        <td>{cf_t:.2f}</td>
+                        <td>{pw_t:.3f}</td>
+                        <td>{bw_t:.2f}</td>
+                    </tr>"""
+        else:
+            sim_row = """
+                    <tr style="background-color: #f8fafc;">
+                        <td style="font-weight: 600;">Simulated (ground truth)</td>
+                        <td colspan="3" class="text-muted">No peak simulated</td>
+                    </tr>"""
+
+        return ui.HTML(f"""
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered mb-0" style="font-size: 0.9rem; border-color: #e2e8f0;">
+                    <thead>
+                        <tr>
+                            <th scope="col" style="font-weight: 600; width: 40%;">Source</th>
+                            <th scope="col" style="font-weight: 600; width: 20%;">Center Freq (Hz)</th>
+                            <th scope="col" style="font-weight: 600; width: 20%;">Power (PW)</th>
+                            <th scope="col" style="font-weight: 600; width: 20%;">Bandwidth (Hz)</th>
+                        </tr>
+                    </thead>
+                    <tbody style="color: #334155; background-color: #ffffff;">
+                        {sim_row}
+                        {peak_row("Knee Model — estimated", "#0f766e", res['k_peaks'])}
+                        {peak_row("Fixed Model — estimated", "#ea580c", res['f_peaks'])}
                     </tbody>
                 </table>
             </div>
