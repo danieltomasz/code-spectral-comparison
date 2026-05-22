@@ -472,8 +472,8 @@ fg_hd_fixed.report()
 
 ```{python}
 #| label: hd-remove-aperiodic
-osc_freqs_hd, osc_hd_knee = remove_aperiodic(fg_hd_knee, mode="log")
-_, osc_hd_fixed = remove_aperiodic(fg_hd_fixed, mode="log")
+osc_freqs_hd, osc_hd_knee = remove_aperiodic(fg_hd_knee, mode="linear")
+_, osc_hd_fixed = remove_aperiodic(fg_hd_fixed, mode="linear")
 
 meta_cols_hd = [c for c in hd_psd_df.columns if isinstance(c, str)]
 hd_osc_knee = pd.DataFrame(
