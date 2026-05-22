@@ -2388,7 +2388,7 @@ window.Quarto = {
 <h3 class="anchored" data-anchor-id="parameter-sweep-varying-the-knee-parameter-k">3.1 Parameter Sweep: Varying the Knee Parameter (<span class="math inline">\(k\)</span>)</h3>
 <p>Here, we keep the offset (<span class="math inline">\(b=3.0\)</span>) and exponent (<span class="math inline">\(\chi=1.5\)</span>) constant, and vary <span class="math inline">\(k\)</span> from <span class="math inline">\(2.0\)</span> to <span class="math inline">\(50.0\)</span>.</p>
 <p>Notice how: 1. A larger <span class="math inline">\(k\)</span> shifts the low-frequency plateau downwards. 2. A larger <span class="math inline">\(k\)</span> pushes the knee (bend) frequency further to the right. 3. At high frequencies, all curves converge asymptotically to the same slope (<span class="math inline">\(-\chi = -1.5\)</span>).</p>
-<div id="4634b6c3" class="cell" data-execution_count="4">
+<div id="519949c7" class="cell" data-execution_count="4">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -2403,7 +2403,7 @@ window.Quarto = {
 <h3 class="anchored" data-anchor-id="parameter-sweep-varying-the-exponent-chi">3.2 Parameter Sweep: Varying the Exponent (<span class="math inline">\(\chi\)</span>)</h3>
 <p>Now we keep the offset (<span class="math inline">\(b=3.0\)</span>) and the knee parameter (<span class="math inline">\(k=10.0\)</span>) constant, and vary <span class="math inline">\(\chi\)</span> from <span class="math inline">\(1.0\)</span> to <span class="math inline">\(2.0\)</span>.</p>
 <p>Notice how: 1. At low frequencies, all curves start at the <em>exact same plateau height</em> (<span class="math inline">\(b - \log_{10}(k) = 3.0 - \log_{10}(10) = 2.0\)</span>). 2. As the exponent increases, the high-frequency slope becomes steeper. 3. The knee frequency (<span class="math inline">\(f_k = k^{1/\chi}\)</span>) shifts to the left as <span class="math inline">\(\chi\)</span> increases (since <span class="math inline">\(10^{1.0} = 10\)</span> Hz, but <span class="math inline">\(10^{1/2} = 3.16\)</span> Hz).</p>
-<div id="ad07caff" class="cell" data-execution_count="5">
+<div id="36202e96" class="cell" data-execution_count="5">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -2474,14 +2474,14 @@ Goodness of fit (R^2)     | N/A        | 0.999      | 0.981
 <h2 class="anchored" data-anchor-id="summary-of-key-insights">6. Summary of Key Insights</h2>
 <p>When analyzing biological power spectra: 1. <strong>Biological Meaning</strong>: The transition represented by the knee frequency (<span class="math inline">\(f_k\)</span>) is not just a fitting parameter, it corresponds directly to a <strong>neural timescale (time constant <span class="math inline">\(\tau\)</span>)</strong>. Shifting this transition marks changes in how long synaptic and circuit inputs are integrated. 2. <strong>Methodological Rigor</strong>: If your power spectrum spans lower frequencies (e.g., <span class="math inline">\(&lt; 20\)</span> Hz) and shows any sign of bending, <strong>always use the Knee mode</strong> in SpecParam. As demonstrated above, fitting a Fixed model will lead to a <strong>downward bias</strong> in the calculated aperiodic exponent, which might obscure true biological differences or create artificial ones!</p>
 <hr>
-<section id="shareable-instant-python-powered-web-dashboard" class="level3">
-<h3 class="anchored" data-anchor-id="shareable-instant-python-powered-web-dashboard">🌐 Shareable Instant Python-Powered Web Dashboard</h3>
-<p>We have compiled this interactive widget as a standalone, serverless web application powered by a hybrid <strong>WebAssembly Python (Pyodide) &amp; Chart.js</strong> architecture.</p>
-<p>This completely replaces the slow, heavy Streamlit (stlite) prototype while <strong>retaining the official Python SpecParam library under the hood</strong>! By stripping away heavy frameworks (like Streamlit, PyArrow, Pandas, and Matplotlib) and utilizing native HTML/CSS and hardware-accelerated Canvas charts (<code>Chart.js</code>), we cut the initial download size in half (~15MB instead of 30MB+) and reduce the startup loading time by <strong>over 90%</strong>. Once loaded, all wheels are automatically cached by the browser for instant future opens.</p>
+<section id="shareable-serverless-python-shiny-web-dashboard" class="level3">
+<h3 class="anchored" data-anchor-id="shareable-serverless-python-shiny-web-dashboard">🌐 Shareable Serverless Python Shiny Web Dashboard</h3>
+<p>We have compiled this interactive analysis as a standalone, serverless web application powered by <strong>Shiny for Python running in WebAssembly (Shinylive)</strong>.</p>
+<p>This beautiful dashboard is styled with a modern, publication-grade Bootstrap theme (<code>minty</code>) and uses <strong>official Python packages (SpecParam, SciPy, NumPy, and Matplotlib) under the hood</strong>! It compiles your exact Python reactives and fitting routines into a static, client-side package. Once opened, the browser’s Pyodide engine downloads and caches these wheels. <strong>Subsequent visits will load instantly (&lt;400ms)</strong> with complete offline support.</p>
 <p>Once pushed to GitHub and hosted on <strong>GitHub Pages</strong>, anyone can open the dashboard directly in their browser (e.g., via a <strong>QR code</strong> on your poster, slides, or paper) and interact with your actual Python mathematical fits in real-time!</p>
 <ul>
-<li>The compiled application is located in the <a href="file:///Users/daniel/PhD/spectral-comparison/code/docs/index.html">docs/index.html</a> file.</li>
-<li>See the <a href="file:///Users/daniel/PhD/spectral-comparison/code/docs/README.md">docs/README.md</a> file for step-by-step instructions on deploying the live page on GitHub Pages and generating a high-quality vector QR code.</li>
+<li>The compiled application entrypoint is located in <a href="file:///Users/daniel/PhD/spectral-comparison/code/docs/index.html">docs/index.html</a> and defined in <a href="file:///Users/daniel/PhD/spectral-comparison/code/dashboard/app.py">dashboard/app.py</a>.</li>
+<li>See <a href="file:///Users/daniel/PhD/spectral-comparison/code/docs/README.md">docs/README.md</a> for step-by-step instructions on compiling local changes, deploying to GitHub Pages, and generating high-quality vector QR codes.</li>
 </ul>
 </section>
 </section>

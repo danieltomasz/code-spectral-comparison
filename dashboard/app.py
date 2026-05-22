@@ -6,48 +6,7 @@ from shiny import App, ui, render, reactive
 import shinyswatch
 
 # Define Sphinx-like document layout aligned with specparam-tools.github.io
-app_ui = ui.page_sidebar(
-    ui.sidebar(
-        ui.h5("Simulation Configuration", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
-        ui.input_radio_buttons(
-            "model_type",
-            "Simulated Model Type",
-            {"knee": "Knee (Plateau)", "fixed": "Fixed (1/f)"},
-            selected="knee"
-        ),
-        ui.hr(style="margin: 0.75rem 0; border-color: #e2e8f0;"),
-        
-        ui.input_slider("b", "Offset (b)", min=0.5, max=5.0, value=3.0, step=0.1),
-        ui.input_slider("chi", "Exponent (exponent)", min=0.5, max=4.0, value=2.0, step=0.1),
-        
-        # Conditional Knee Parameter Sliders - only visible when simulating a Knee model
-        ui.panel_conditional(
-            "input.model_type === 'knee'",
-            ui.input_slider("fk", "Knee Frequency (Hz)", min=1.0, max=100.0, value=10.0, step=0.5),
-            ui.input_slider("k", "Knee Parameter (k)", min=0.1, max=1000.0, value=100.0, step=0.5),
-            ui.p("Defines the bending knee frequency and corresponding parameter", class_="text-muted small mb-3")
-        ),
-        
-        ui.h5("Peak Configuration", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
-        ui.input_checkbox("add_peak", "Add Simulated Peak", value=True),
-        
-        # Conditional Peak Sliders - only visible when peak is checked
-        ui.panel_conditional(
-            "input.add_peak",
-            ui.input_slider("peak_freq", "Peak Frequency (Hz)", min=2, max=50, value=10, step=1),
-            ui.input_slider("peak_amp", "Peak Amplitude (log units)", min=0.05, max=14.5, value=0.35, step=0.05),
-            ui.input_slider("peak_width", "Peak Bandwidth (Hz)", min=0.5, max=5.0, value=1.8, step=0.1)
-        ),
-        
-        ui.h5("Noise Configuration", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
-        ui.input_slider("noise_level", "Spectral Noise Level (SD)", min=0.0, max=1.6, value=0.04, step=0.01),
-        
-        ui.h5("Fitting Boundaries", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
-        ui.input_slider("min_f", "Min Fit Frequency (Hz)", min=1, max=50, value=1, step=1),
-        ui.input_slider("max_f", "Max Fit Frequency (Hz)", min=50, max=100, value=100, step=1),
-        width=320
-    ),
-    
+app_ui = ui.page_fluid(
     # Custom CSS head content for PyData/Sphinx documentation aesthetic
     ui.head_content(
         # Load MathJax CDN for LaTeX mathematical rendering
@@ -114,6 +73,7 @@ app_ui = ui.page_sidebar(
                 font-size: 0.9rem;
                 text-transform: uppercase;
                 letter-spacing: 0.05em;
+                display: block;
             }
             .sphinx-admonition-body {
                 color: #21618c;
@@ -141,59 +101,191 @@ app_ui = ui.page_sidebar(
             table.table td {
                 vertical-align: middle !important;
             }
+
+            /* Custom mobile/desktop responsive layout for parameters & results */
+            @media (min-width: 768px) {
+                .mobile-tabs {
+                    display: none !important;
+                }
+                .mobile-tab-content {
+                    display: flex !important;
+                }
+                .mobile-tab-pane {
+                    display: block !important;
+                    opacity: 1 !important;
+                }
+                #params-panel {
+                    background-color: #f8fafc !important;
+                    border-right: 1px solid #e2e8f0 !important;
+                    min-height: calc(100vh - 120px);
+                    padding-top: 1rem;
+                    padding-bottom: 2rem;
+                }
+                #results-panel {
+                    padding-top: 1rem;
+                    padding-bottom: 2rem;
+                }
+            }
+
+            @media (max-width: 767.98px) {
+                .mobile-tabs {
+                    display: flex !important;
+                    margin-bottom: 1.5rem;
+                    border-bottom: 1px solid #cbd5e1;
+                }
+                .mobile-tabs .nav-link {
+                    color: #475569;
+                    font-weight: 600;
+                    border: none;
+                    border-bottom: 3px solid transparent;
+                    border-radius: 0;
+                    padding: 0.75rem 1rem;
+                }
+                .mobile-tabs .nav-link.active {
+                    color: #0f766e !important;
+                    border-bottom-color: #0f766e !important;
+                    background: transparent !important;
+                }
+                #params-panel, #results-panel {
+                    padding-left: 0.5rem !important;
+                    padding-right: 0.5rem !important;
+                    border-right: none !important;
+                }
+                .tab-content > .mobile-tab-pane:not(.active) {
+                    display: none !important;
+                }
+            }
+
+            /* Plot Scrolling & Min-Width Styles */
+            .plot-scroll-container {
+                width: 100%;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                border-radius: 4px;
+            }
+            .plot-min-width-wrapper {
+                min-width: 750px;
+            }
         """)
     ),
     
-    # Main panel content
+    # Header Area
     ui.div(
         ui.h2("SpecParam Knee Simulation & Fitting Dashboard", class_="mt-3 mb-1 font-weight-bold", style="color: #2c3e50;"),
         ui.p("Interactive simulation and fitting bias analysis for neurophysiological power spectra.", class_="text-muted mb-4", style="font-size: 1.05rem;"),
-        
-        # Sphinx-style Note Admonition
-        ui.div(
-            ui.div("Note: Aperiodic Spectral Theory", class_="sphinx-admonition-title"),
-            ui.div(
-                ui.p(
-                    "Electrophysiological neural power spectra exhibit an aperiodic component modeled as: "
-                ),
-                ui.div(
-                    "$$S(f) = b - \\log_{10}(k + f^{\\chi})$$",
-                    style="text-align: center; margin: 1rem 0;"
-                ),
-                ui.p(
-                    "Where \\(b\\) is the offset, \\(\\chi\\) is the exponent, and \\(k\\) is the knee parameter. "
-                    "In this formulation (Donoghue et al., 2020), the knee parameter controls the low-frequency plateau. "
-                    "The mathematical knee frequency is defined as \\(f_k = k^{1/\\chi}\\), representing the transition point where the curve "
-                    "bends and power begins to fall off. In log-log representation, this transition appears as a gradual bend rather "
-                    "than a sharp corner; the exact visual bend frequency depends on both the knee parameter \\(k\\) and the exponent \\(\\chi\\). "
-                    "Methodologically, these represent statistical parameters of the curve fit and should be interpreted carefully "
-                    "as descriptive features of the spectral shape rather than a direct physical proof of isolated synaptic time constants."
-                ),
-                class_="sphinx-admonition-body"
-            ),
-            class_="sphinx-admonition"
-        ),
-        class_="container-fluid p-0"
+        class_="container-fluid p-0 pt-2"
     ),
     
-    # Middle row: Elegant full-width plot (clean continuous lines, highlighted fit ranges)
+    # Mobile Tabs Navigation (rendered ONLY on mobile)
+    ui.HTML("""
+        <ul class="nav nav-tabs mobile-tabs d-md-none" id="mobileTab" role="tablist">
+            <li class="nav-item" role="presentation" style="flex: 1;">
+                <button class="nav-link active w-100" id="params-tab" data-bs-toggle="tab" data-bs-target="#params-panel" type="button" role="tab" aria-controls="params-panel" aria-selected="true">
+                    Parameters
+                </button>
+            </li>
+            <li class="nav-item" role="presentation" style="flex: 1;">
+                <button class="nav-link w-100" id="results-tab" data-bs-toggle="tab" data-bs-target="#results-panel" type="button" role="tab" aria-controls="results-panel" aria-selected="false">
+                    Results
+                </button>
+            </li>
+        </ul>
+    """),
+    
+    # Main Content Container
     ui.row(
-        ui.column(
-            12,
+        # Parameter Sidebar (desktop: left column, mobile: active tab panel)
+        ui.div(
+            ui.div(
+                ui.h5("Simulation Configuration", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
+                ui.input_radio_buttons(
+                    "model_type",
+                    "Simulated Model Type",
+                    {"knee": "Knee (Plateau)", "fixed": "Fixed (1/f)"},
+                    selected="knee"
+                ),
+                ui.hr(style="margin: 0.75rem 0; border-color: #e2e8f0;"),
+                
+                ui.input_slider("b", "Offset (b)", min=0.5, max=5.0, value=3.0, step=0.1),
+                ui.input_slider("chi", "Exponent (exponent)", min=0.5, max=4.0, value=2.0, step=0.1),
+                
+                # Conditional Knee Parameter Sliders - only visible when simulating a Knee model
+                ui.panel_conditional(
+                    "input.model_type === 'knee'",
+                    ui.input_slider("fk", "Knee Frequency (Hz)", min=1.0, max=100.0, value=10.0, step=0.5),
+                    ui.input_slider("k", "Knee Parameter (k)", min=0.1, max=1000.0, value=100.0, step=0.5),
+                    ui.p("Defines the bending knee frequency and corresponding parameter", class_="text-muted small mb-3")
+                ),
+                
+                ui.h5("Peak Configuration", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
+                ui.input_checkbox("add_peak", "Add Simulated Peak", value=True),
+                
+                # Conditional Peak Sliders - only visible when peak is checked
+                ui.panel_conditional(
+                    "input.add_peak",
+                    ui.input_slider("peak_freq", "Peak Frequency (Hz)", min=2, max=50, value=10, step=1),
+                    ui.input_slider("peak_amp", "Peak Amplitude (log units)", min=0.05, max=14.5, value=0.35, step=0.05),
+                    ui.input_slider("peak_width", "Peak Bandwidth (Hz)", min=0.5, max=5.0, value=1.8, step=0.1)
+                ),
+                
+                ui.h5("Noise Configuration", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
+                ui.input_slider("noise_level", "Spectral Noise Level (SD)", min=0.0, max=1.6, value=0.04, step=0.01),
+                
+                ui.h5("Fitting Boundaries", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
+                ui.input_slider("min_f", "Min Fit Frequency (Hz)", min=1, max=50, value=1, step=1),
+                ui.input_slider("max_f", "Max Fit Frequency (Hz)", min=50, max=100, value=100, step=1),
+                class_="p-3 rounded",
+                style="background-color: #f8fafc; border: 1px solid #e2e8f0;"
+            ),
+            id="params-panel",
+            class_="tab-pane fade show active mobile-tab-pane col-md-4 col-lg-3 pe-md-4",
+            role="tabpanel",
+            aria_labelledby="params-tab"
+        ),
+        
+        # Results Content (desktop: right column, mobile: tab panel)
+        ui.div(
+            # Sphinx-style Note Admonition
+            ui.div(
+                ui.div("Note: Aperiodic Spectral Theory", class_="sphinx-admonition-title"),
+                ui.div(
+                    ui.p(
+                        "Electrophysiological neural power spectra exhibit an aperiodic component modeled as: "
+                    ),
+                    ui.div(
+                        "$$S(f) = b - \\log_{10}(k + f^{\\chi})$$",
+                        style="text-align: center; margin: 1rem 0;"
+                    ),
+                    ui.p(
+                        "Where \\(b\\) is the offset, \\(\\chi\\) is the exponent, and \\(k\\) is the knee parameter. "
+                        "In this formulation (Donoghue et al., 2020), the knee parameter controls the low-frequency plateau. "
+                        "The mathematical knee frequency is defined as \\(f_k = k^{1/\\chi}\\), representing the transition point where the curve "
+                        "bends and power begins to fall off. In log-log representation, this transition appears as a gradual bend rather "
+                        "than a sharp corner; the exact visual bend frequency depends on both the knee parameter \\(k\\) and the exponent \\(\\chi\\). "
+                        "Methodologically, these represent statistical parameters of the curve fit and should be interpreted carefully "
+                        "as descriptive features of the spectral shape rather than a direct physical proof of isolated synaptic time constants."
+                    ),
+                    class_="sphinx-admonition-body"
+                ),
+                class_="sphinx-admonition"
+            ),
+            
+            # Middle row: Elegant full-width plot with scroll wrapper
             ui.div(
                 ui.div(
                     ui.h6("Semilog Representation (Physical Hz)", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
-                    ui.output_plot("plot_semilog", height="400px"),
+                    ui.div(
+                        ui.div(
+                            ui.output_plot("plot_semilog", height="400px"),
+                            class_="plot-min-width-wrapper"
+                        ),
+                        class_="plot-scroll-container"
+                    ),
                     class_="card mb-3"
                 )
-            )
-        )
-    ),
-    
-    # Bottom row: Clean HTML table comparison replacing verbatim terminal block
-    ui.row(
-        ui.column(
-            12,
+            ),
+            
+            # Bottom row: Clean HTML table comparison
             ui.div(
                 ui.div(
                     ui.h6("Model Parameter Fitting Comparison Table", class_="card-header"),
@@ -203,14 +295,9 @@ app_ui = ui.page_sidebar(
                     ),
                     class_="card mb-4"
                 )
-            )
-        )
-    ),
-
-    # Periodic peak comparison: simulated vs fitted
-    ui.row(
-        ui.column(
-            12,
+            ),
+            
+            # Periodic peak comparison
             ui.div(
                 ui.div(
                     ui.h6("Periodic Peak Comparison (Simulated vs Fitted)", class_="card-header"),
@@ -220,16 +307,20 @@ app_ui = ui.page_sidebar(
                     ),
                     class_="card mb-4"
                 )
-            )
-        )
+            ),
+            
+            ui.div(
+                ui.hr(),
+                ui.p("BAPS annual meeting 2026 | NEUROPHYSIOLOGY AND BRAIN MEASUREMENT METHODS session", class_="text-center text-muted small"),
+                class_="mt-4"
+            ),
+            id="results-panel",
+            class_="tab-pane fade mobile-tab-pane col-md-8 col-lg-9 ps-md-4",
+            role="tabpanel",
+            aria_labelledby="results-tab"
+        ),
+        class_="tab-content mobile-tab-content pt-2"
     ),
-
-    ui.div(
-        ui.hr(),
-        ui.p("BAPS annual meeting 2026 | NEUROPHYSIOLOGY AND BRAIN MEASUREMENT METHODS session", class_="text-center text-muted small"),
-        class_="container-fluid mt-4"
-    ),
-    
     title="SpecParam Knee Simulation & Fitting Dashboard",
     theme=shinyswatch.theme.minty()
 )
