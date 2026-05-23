@@ -46,6 +46,8 @@ dashboard:
 	uv run shinylive export dashboard docs
 	@echo "Stripping in-browser editor (no --no-editor flag in shinylive 0.8.8)"
 	rm -rf docs/edit docs/shinylive/Editor.css docs/shinylive/Editor.js docs/shinylive/pyright
+	@echo "Updating page title in docs/index.html"
+	uv run python -c "p = 'docs/index.html'; c = open(p).read().replace('<title>Shiny App</title>', '<title>SpecParam Knee Simulation & Fitting Dashboard</title>'); open(p, 'w').write(c)"
 	@echo "Done. Stage with: git add docs && git commit -m 'rebuild dashboard'"
 
 # Serve the exported bundle locally to verify before committing
