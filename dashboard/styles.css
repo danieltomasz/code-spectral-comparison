@@ -1,0 +1,154 @@
+/* Sphinx / PyData Documentation Theme Styles */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    background-color: #ffffff !important;
+    color: #2c3e50 !important;
+}
+.container-fluid {
+    padding-left: 1.0rem !important;
+    padding-right: 1.0rem !important;
+}
+@media (min-width: 768px) {
+    .container-fluid {
+        padding-left: 2.5rem !important;
+        padding-right: 2.5rem !important;
+    }
+}
+#plot_semilog {
+    width: 100% !important;
+    height: auto !important;
+    aspect-ratio: 8 / 5.2 !important;
+}
+aside.sidebar {
+    background-color: #f8fafc !important;
+    border-right: 1px solid #e2e8f0 !important;
+}
+.card {
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+    border-radius: 6px !important;
+    background-color: #ffffff !important;
+    margin-bottom: 1.5rem;
+}
+.card-header {
+    border-bottom: 1px solid #e2e8f0 !important;
+    background-color: #f8fafc !important;
+    font-weight: 600 !important;
+    color: #2c3e50 !important;
+    font-size: 0.95rem;
+}
+.card-body {
+    background-color: #ffffff !important;
+}
+
+/* Sphinx Note Admonition Directive Style */
+.sphinx-admonition {
+    border-left: 4px solid #2980b9 !important;
+    background-color: #ebf5fb !important;
+    border-radius: 4px;
+    padding: 1.25rem;
+    margin-bottom: 2rem;
+    border-top: 1px solid #d4e6f1;
+    border-right: 1px solid #d4e6f1;
+    border-bottom: 1px solid #d4e6f1;
+}
+.sphinx-admonition-title {
+    font-weight: bold;
+    color: #1b4f72;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: block;
+}
+.sphinx-admonition-body {
+    color: #21618c;
+    font-size: 0.875rem;
+    line-height: 1.6;
+}
+
+h2, h3, h5, h6 {
+    color: #1a365d !important;
+}
+hr {
+    border-top: 1px solid #e2e8f0 !important;
+    opacity: 1 !important;
+}
+
+/* Styled Tables matching Sphinx outputs */
+table.table {
+    border-color: #e2e8f0 !important;
+}
+table.table th {
+    border-bottom: 2px solid #cbd5e1 !important;
+    background-color: #f8fafc !important;
+    color: #1e293b !important;
+}
+table.table td {
+    vertical-align: middle !important;
+}
+
+/* Custom mobile/desktop responsive layout for parameters & results */
+@media (min-width: 768px) {
+    ul#mobileTab.mobile-tabs {
+        display: none !important;
+    }
+    .mobile-tab-content {
+        display: flex !important;
+    }
+    .mobile-tab-pane {
+        display: block !important;
+        opacity: 1 !important;
+    }
+    #params-panel {
+        background-color: #f8fafc !important;
+        border-right: 1px solid #e2e8f0 !important;
+        min-height: calc(100vh - 120px);
+        padding-top: 1rem;
+        padding-bottom: 2rem;
+    }
+    #results-panel {
+        padding-top: 1rem;
+        padding-bottom: 2rem;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .mobile-tabs {
+        display: flex !important;
+        margin-bottom: 1.5rem;
+        border-bottom: 1px solid #cbd5e1;
+    }
+    .mobile-tabs .nav-link {
+        color: #475569;
+        font-weight: 600;
+        border: none;
+        border-bottom: 3px solid transparent;
+        border-radius: 0;
+        padding: 0.75rem 1rem;
+    }
+    .mobile-tabs .nav-link.active {
+        color: #0f766e !important;
+        border-bottom-color: #0f766e !important;
+        background: transparent !important;
+    }
+    #params-panel, #results-panel {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        border-right: none !important;
+    }
+    .tab-content > .mobile-tab-pane:not(.active) {
+        display: none !important;
+    }
+}
+
+/* Plot Scrolling & Min-Width Styles */
+.plot-scroll-container {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 4px;
+}
+.plot-min-width-wrapper {
+    min-width: 750px;
+}

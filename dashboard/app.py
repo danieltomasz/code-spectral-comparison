@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
@@ -5,173 +6,109 @@ from specparam import SpectralModel
 from shiny import App, ui, render, reactive
 import shinyswatch
 
+
+def simulate_power_spectrum(freqs, model_type, b, chi, k, add_peak, peak_freq, peak_amp, peak_width, noise_level):
+    """
+    Simulate a neurophysiological power spectrum.
+    
+    Returns:
+        sim_power (np.ndarray): 1D array of simulated log10 power (with noise)
+        true_power (np.ndarray): 1D array of true log10 power (no noise)
+        true_aperiodic (np.ndarray): 1D array of true log10 aperiodic component
+    """
+    # 1/f aperiodic component (with optional knee)
+    if model_type == "knee":
+        true_aperiodic = b - np.log10(k + freqs**chi)
+    else:
+        true_aperiodic = b - np.log10(freqs**chi)
+        
+    true_power = true_aperiodic.copy()
+    if add_peak:
+        # Gaussian peak: standard deviation scaled to width/2.0
+        peak_signal = peak_amp * norm.pdf(freqs, loc=peak_freq, scale=peak_width / 2.0)
+        true_power += peak_signal
+        
+    # Replicable pseudo-random experimental noise
+    np.random.seed(42)
+    noise = np.random.normal(0, noise_level, len(freqs)) if noise_level > 0 else np.zeros(len(freqs))
+    sim_power = true_power + noise
+    
+    return sim_power, true_power, true_aperiodic
+
+
+def fit_spectral_model(freqs, power_spectrum, mode, fit_range, max_n_peaks, peak_threshold, min_peak_height, peak_width_limits, gauss_overlap_thresh):
+    """
+    Initialize and fit a specparam SpectralModel to a power spectrum.
+    """
+    fm = SpectralModel(
+        aperiodic_mode=mode,
+        max_n_peaks=max_n_peaks,
+        peak_threshold=peak_threshold,
+        min_peak_height=min_peak_height,
+        peak_width_limits=peak_width_limits,
+        gauss_overlap_thresh=gauss_overlap_thresh,
+        verbose=False
+    )
+    # SpectralModel fits power values in linear space (10**log_power)
+    fm.fit(freqs, 10**power_spectrum, fit_range)
+    return fm
+
+
+def extract_fit_results(fm, fit_freqs, mask, sim_power):
+    """
+    Extract fitted curve coordinates, metrics, and parameters from a SpectralModel.
+    """
+    if not hasattr(fm, 'results') or fm.results is None or not fm.results.has_model:
+        return np.array([]), 0.0, 0.0, 0.0, 0.0, 0.0, []
+        
+    res = fm.results
+    mode = fm.modes.aperiodic.name
+    
+    offset = float(res.params.aperiodic.params[0])
+    exponent = float(res.params.aperiodic.params[-1])
+    
+    if mode == 'knee':
+        knee = float(res.params.aperiodic.params[1])
+        # Avoid log of zero/negative values
+        res_curve = offset - np.log10(max(1e-5, knee) + fit_freqs**exponent)
+    else:
+        knee = 0.0
+        res_curve = offset - np.log10(fit_freqs**exponent)
+        
+    # Goodness-of-fit metrics
+    r2 = float(res.metrics.results['gof_rsquared'])
+    mae = float(res.metrics.results['error_mae'])
+    
+    # Safely extract periodic peaks list: [(cf, pw, bw), ...]
+    try:
+        pk_params = res.params.periodic.params
+        if pk_params is not None and len(pk_params) > 0:
+            pk = np.atleast_2d(np.asarray(pk_params, dtype=float))
+            peaks = [
+                (float(r[0]), float(r[1]), float(r[2]))
+                for r in pk
+                if r.size >= 3 and not np.any(np.isnan(r[:3]))
+            ]
+        else:
+            peaks = []
+    except Exception:
+        peaks = []
+        
+    return res_curve, offset, knee, exponent, r2, mae, peaks
+
 # Define Sphinx-like document layout aligned with specparam-tools.github.io
 app_ui = ui.page_fluid(
     # Custom CSS head content for PyData/Sphinx documentation aesthetic
     ui.head_content(
         # Load MathJax CDN for LaTeX mathematical rendering
         ui.tags.script(src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"),
-        ui.tags.style("""
-            /* Sphinx / PyData Documentation Theme Styles */
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-                background-color: #ffffff !important;
-                color: #2c3e50 !important;
-            }
-            .container-fluid {
-                padding-left: 1.0rem !important;
-                padding-right: 1.0rem !important;
-            }
-            @media (min-width: 768px) {
-                .container-fluid {
-                    padding-left: 2.5rem !important;
-                    padding-right: 2.5rem !important;
-                }
-            }
-            #plot_semilog {
-                width: 100% !important;
-                height: auto !important;
-                aspect-ratio: 8 / 5.2 !important;
-            }
-            aside.sidebar {
-                background-color: #f8fafc !important;
-                border-right: 1px solid #e2e8f0 !important;
-            }
-            .card {
-                border: 1px solid #e2e8f0 !important;
-                box-shadow: none !important;
-                border-radius: 6px !important;
-                background-color: #ffffff !important;
-                margin-bottom: 1.5rem;
-            }
-            .card-header {
-                border-bottom: 1px solid #e2e8f0 !important;
-                background-color: #f8fafc !important;
-                font-weight: 600 !important;
-                color: #2c3e50 !important;
-                font-size: 0.95rem;
-            }
-            .card-body {
-                background-color: #ffffff !important;
-            }
-            
-            /* Sphinx Note Admonition Directive Style */
-            .sphinx-admonition {
-                border-left: 4px solid #2980b9 !important;
-                background-color: #ebf5fb !important;
-                border-radius: 4px;
-                padding: 1.25rem;
-                margin-bottom: 2rem;
-                border-top: 1px solid #d4e6f1;
-                border-right: 1px solid #d4e6f1;
-                border-bottom: 1px solid #d4e6f1;
-            }
-            .sphinx-admonition-title {
-                font-weight: bold;
-                color: #1b4f72;
-                margin-bottom: 0.5rem;
-                font-size: 0.9rem;
-                text-transform: uppercase;
-                letter-spacing: 0.05em;
-                display: block;
-            }
-            .sphinx-admonition-body {
-                color: #21618c;
-                font-size: 0.875rem;
-                line-height: 1.6;
-            }
-            
-            h2, h3, h5, h6 {
-                color: #1a365d !important;
-            }
-            hr {
-                border-top: 1px solid #e2e8f0 !important;
-                opacity: 1 !important;
-            }
-            
-            /* Styled Tables matching Sphinx outputs */
-            table.table {
-                border-color: #e2e8f0 !important;
-            }
-            table.table th {
-                border-bottom: 2px solid #cbd5e1 !important;
-                background-color: #f8fafc !important;
-                color: #1e293b !important;
-            }
-            table.table td {
-                vertical-align: middle !important;
-            }
-
-            /* Custom mobile/desktop responsive layout for parameters & results */
-            @media (min-width: 768px) {
-                ul#mobileTab.mobile-tabs {
-                    display: none !important;
-                }
-                .mobile-tab-content {
-                    display: flex !important;
-                }
-                .mobile-tab-pane {
-                    display: block !important;
-                    opacity: 1 !important;
-                }
-                #params-panel {
-                    background-color: #f8fafc !important;
-                    border-right: 1px solid #e2e8f0 !important;
-                    min-height: calc(100vh - 120px);
-                    padding-top: 1rem;
-                    padding-bottom: 2rem;
-                }
-                #results-panel {
-                    padding-top: 1rem;
-                    padding-bottom: 2rem;
-                }
-            }
-
-            @media (max-width: 767.98px) {
-                .mobile-tabs {
-                    display: flex !important;
-                    margin-bottom: 1.5rem;
-                    border-bottom: 1px solid #cbd5e1;
-                }
-                .mobile-tabs .nav-link {
-                    color: #475569;
-                    font-weight: 600;
-                    border: none;
-                    border-bottom: 3px solid transparent;
-                    border-radius: 0;
-                    padding: 0.75rem 1rem;
-                }
-                .mobile-tabs .nav-link.active {
-                    color: #0f766e !important;
-                    border-bottom-color: #0f766e !important;
-                    background: transparent !important;
-                }
-                #params-panel, #results-panel {
-                    padding-left: 0.5rem !important;
-                    padding-right: 0.5rem !important;
-                    border-right: none !important;
-                }
-                .tab-content > .mobile-tab-pane:not(.active) {
-                    display: none !important;
-                }
-            }
-
-            /* Plot Scrolling & Min-Width Styles */
-            .plot-scroll-container {
-                width: 100%;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-                border-radius: 4px;
-            }
-            .plot-min-width-wrapper {
-                min-width: 750px;
-            }
-        """)
+        # Load custom Sphinx stylesheet
+        ui.include_css(Path(__file__).parent / "styles.css")
     ),
     
     # Header Area
     ui.div(
-        ui.h2("SpecParam Knee Simulation & Fitting Dashboard", class_="mt-3 mb-1 font-weight-bold", style="color: #2c3e50;"),
+        ui.h2("SpecParam Simulation & Fitting", class_="mt-3 mb-1 font-weight-bold", style="color: #2c3e50;"),
         ui.p("Interactive simulation and fitting bias analysis for neurophysiological power spectra.", class_="text-muted mb-4", style="font-size: 1.05rem;"),
         class_="container-fluid p-0 pt-2"
     ),
@@ -224,8 +161,8 @@ app_ui = ui.page_fluid(
                 ui.panel_conditional(
                     "input.add_peak",
                     ui.input_slider("peak_freq", "Peak Frequency (Hz)", min=2, max=50, value=10, step=1),
-                    ui.input_slider("peak_amp", "Peak Amplitude (log units)", min=0.05, max=14.5, value=0.35, step=0.05),
-                    ui.input_slider("peak_width", "Peak Bandwidth (Hz)", min=0.5, max=5.0, value=1.8, step=0.1)
+                    ui.input_slider("peak_amp", "Peak Amplitude (log units)", min=0.05, max=10.5, value=0.35, step=0.05),
+                    ui.input_slider("peak_width", "Peak Bandwidth (Hz)", min=0.5, max=10.0, value=1.8, step=0.1)
                 ),
                 
                 ui.h5("Noise Configuration", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
@@ -292,13 +229,17 @@ app_ui = ui.page_fluid(
             # Middle row: Elegant full-width plot with scroll wrapper
             ui.div(
                 ui.div(
-                    ui.h6("Log-Log Spectral Representation", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
+                    ui.h6(ui.output_text("plot_title"), class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
                     ui.div(
                         ui.div(
                             ui.output_plot("plot_semilog", height="480px"),
                             class_="plot-min-width-wrapper"
                         ),
                         class_="plot-scroll-container"
+                    ),
+                    ui.div(
+                        ui.input_switch("x_log", "Logarithmic Frequency Scale (X-axis)", value=True),
+                        style="display: flex; justify-content: center; padding: 0.75rem; border-top: 1px solid #e2e8f0; background-color: #f8fafc;"
                     ),
                     class_="card mb-3"
                 )
@@ -413,12 +354,12 @@ def server(input, output, session):
     # 3. Reactive simulation and fit runner
     @reactive.calc
     def run_simulation_and_fit():
-        # Get inputs
+        # 1. Fetch user inputs from the UI panel
         model_type = input.model_type()
         b_val = input.b()
         chi_val = input.chi()
-        add_peak_val = input.add_peak()
         
+        add_peak_val = input.add_peak()
         peak_freq_val = input.peak_freq() if add_peak_val else 10.0
         peak_amp_val = input.peak_amp() if add_peak_val else 0.35
         peak_width_val = input.peak_width() if add_peak_val else 1.8
@@ -427,7 +368,7 @@ def server(input, output, session):
         min_f_val = input.min_f()
         max_f_val = input.max_f()
         
-        # specparam fitting parameters
+        # Specparam algorithm settings
         max_n_peaks_val = input.max_n_peaks()
         peak_threshold_val = input.peak_threshold()
         min_peak_height_val = input.min_peak_height()
@@ -435,122 +376,47 @@ def server(input, output, session):
         gauss_overlap_thresh_val = input.gauss_overlap_thresh()
         
         if model_type == "knee":
-            fk_val = input.fk()
-            k_val = input.k()
-            if fk_val is None:
-                fk_val = 10.0
-            if k_val is None:
-                k_val = fk_val ** chi_val
+            fk_val = input.fk() or 10.0
+            k_val = input.k() or (fk_val ** chi_val)
         else:
-            fk_val = 0.0
-            k_val = 0.0
+            fk_val, k_val = 0.0, 0.0
             
-        # Generate raw clean aperiodic spectrum
+        # 2. Run simulation
         sim_freqs = np.linspace(1, 100, 200)
-        if model_type == "knee":
-            true_aperiodic = b_val - np.log10(k_val + sim_freqs**chi_val)
-        else:
-            true_aperiodic = b_val - np.log10(sim_freqs**chi_val)
-            
-        true_power = true_aperiodic.copy()
-        if add_peak_val:
-            # Inject realistic peak (Gaussian shape centered on custom parameters)
-            # Standard deviation scaled to width/2.0 to match peak bandwidth definition
-            peak_signal = peak_amp_val * norm.pdf(sim_freqs, loc=peak_freq_val, scale=peak_width_val / 2.0)
-            true_power += peak_signal
-            
-        # Add realistic experimental noise for fitting
-        np.random.seed(42)
-        noise = np.random.normal(0, noise_level_val, len(sim_freqs)) if noise_level_val > 0 else np.zeros(len(sim_freqs))
-        sim_power = true_power + noise
-        
-        # Fit Knee model on the noisy signal
-        fm_k = SpectralModel(
-            aperiodic_mode='knee',
-            max_n_peaks=max_n_peaks_val,
-            peak_threshold=peak_threshold_val,
-            min_peak_height=min_peak_height_val,
-            peak_width_limits=peak_width_limits_val,
-            gauss_overlap_thresh=gauss_overlap_thresh_val,
-            verbose=False
+        sim_power, true_power, true_aperiodic = simulate_power_spectrum(
+            sim_freqs, model_type, b_val, chi_val, k_val,
+            add_peak_val, peak_freq_val, peak_amp_val, peak_width_val, noise_level_val
         )
-        fm_k.fit(sim_freqs, 10**sim_power, [min_f_val, max_f_val])
         
-        # Fit Fixed model on the noisy signal
-        fm_f = SpectralModel(
-            aperiodic_mode='fixed',
-            max_n_peaks=max_n_peaks_val,
-            peak_threshold=peak_threshold_val,
-            min_peak_height=min_peak_height_val,
-            peak_width_limits=peak_width_limits_val,
-            gauss_overlap_thresh=gauss_overlap_thresh_val,
-            verbose=False
+        # 3. Fit both spectral model variants (Knee vs. Fixed)
+        fm_k = fit_spectral_model(
+            sim_freqs, sim_power, 'knee', [min_f_val, max_f_val],
+            max_n_peaks_val, peak_threshold_val, min_peak_height_val,
+            peak_width_limits_val, gauss_overlap_thresh_val
         )
-        fm_f.fit(sim_freqs, 10**sim_power, [min_f_val, max_f_val])
+        fm_f = fit_spectral_model(
+            sim_freqs, sim_power, 'fixed', [min_f_val, max_f_val],
+            max_n_peaks_val, peak_threshold_val, min_peak_height_val,
+            peak_width_limits_val, gauss_overlap_thresh_val
+        )
         
-        # Get fit results coordinates over the fitting range
+        # 4. Extract fit coordinates and model metrics
         mask = (sim_freqs >= min_f_val) & (sim_freqs <= max_f_val)
         fit_freqs = sim_freqs[mask]
         
-        k_res = np.array([])
-        f_res = np.array([])
+        k_res, fit_k_offset, fit_k_knee, fit_k_exponent, r2_k, mae_k, k_peaks = extract_fit_results(
+            fm_k, fit_freqs, mask, sim_power
+        )
+        f_res, fit_f_offset, _, fit_f_exponent, r2_f, mae_f, f_peaks = extract_fit_results(
+            fm_f, fit_freqs, mask, sim_power
+        )
         
-        if fm_k.results.model:
-            k_off = fm_k.get_params('aperiodic', 'offset')
-            k_kn = fm_k.get_params('aperiodic', 'knee')
-            k_exp = fm_k.get_params('aperiodic', 'exponent')
-            # Avoid log of zero/negative
-            k_res = k_off - np.log10(max(1e-5, k_kn) + fit_freqs**k_exp)
-            
-        if fm_f.results.model:
-            f_off = fm_f.get_params('aperiodic', 'offset')
-            f_exp = fm_f.get_params('aperiodic', 'exponent')
-            f_res = f_off - np.log10(fit_freqs**f_exp)
+        # True knee frequency calculation (for simulated ground truth)
+        true_fk = fk_val if model_type == "knee" else 0.0
         
-        # Extracts params safely
-        fit_k_offset = float(fm_k.get_params('aperiodic', 'offset')) if fm_k.results.model else 0.0
-        fit_k_knee = float(fm_k.get_params('aperiodic', 'knee')) if fm_k.results.model else 0.0
-        fit_k_exponent = float(fm_k.get_params('aperiodic', 'exponent')) if fm_k.results.model else 0.0
+        # Fitted knee frequency calculation
+        fit_k_fk = fit_k_knee**(1 / fit_k_exponent) if (fit_k_knee > 0 and fit_k_exponent > 0) else 0.0
         
-        fit_f_offset = float(fm_f.get_params('aperiodic', 'offset')) if fm_f.results.model else 0.0
-        fit_f_exponent = float(fm_f.get_params('aperiodic', 'exponent')) if fm_f.results.model else 0.0
-        
-        r2_k = float(fm_k.get_metrics('gof_rsquared')) if fm_k.results.model else 0.0
-        r2_f = float(fm_f.get_metrics('gof_rsquared')) if fm_f.results.model else 0.0
-        
-        # Calculate Mean Absolute Error (MAE)
-        mae_k = float(np.mean(np.abs(sim_power[mask] - k_res))) if len(k_res) > 0 else 0.0
-        mae_f = float(np.mean(np.abs(sim_power[mask] - f_res))) if len(f_res) > 0 else 0.0
-        
-        # Calculate true knee parameter metrics for knee model
-        if model_type == "knee":
-            true_fk = fk_val
-        else:
-            true_fk = 0.0
-            
-        # Calculate fitted knee frequency
-        if fit_k_knee > 0 and fit_k_exponent > 0:
-            fit_k_fk = fit_k_knee**(1 / fit_k_exponent)
-        else:
-            fit_k_fk = 0.0
-
-        # Extract estimated periodic peaks (CF, PW, BW rows) from each fit
-        def extract_peaks(fm):
-            if not fm.results.model:
-                return []
-            try:
-                pk = np.atleast_2d(np.asarray(fm.get_params('peak'), dtype=float))
-            except Exception:
-                return []
-            return [
-                (float(r[0]), float(r[1]), float(r[2]))
-                for r in pk
-                if r.size >= 3 and not np.any(np.isnan(r[:3]))
-            ]
-
-        k_peaks = extract_peaks(fm_k)
-        f_peaks = extract_peaks(fm_f)
-
         return {
             "sim_freqs": sim_freqs,
             "sim_power": sim_power,
@@ -638,7 +504,7 @@ def server(input, output, session):
             ax.plot(sim_freqs, true_power, color='#475569', linestyle='-', linewidth=1.2, alpha=0.8, label='True Power Spectrum')
         
         if len(k_res) > 0:
-            ax.plot(fit_freqs, k_res, color='#0f766e', linewidth=2.5, label='Knee Model Fit')
+            ax.plot(fit_freqs, k_res, color='#0f766e', linewidth=2.0, label='Knee Model Fit')
         if len(f_res) > 0:
             ax.plot(fit_freqs, f_res, color='#ea580c', linestyle='--', linewidth=2.0, label='Fixed Model Fit')
             
@@ -658,15 +524,18 @@ def server(input, output, session):
                 y_fit_fk = fit_k_offset - np.log10(fit_k_knee + fit_fk**fit_k_exponent)
                 ax.vlines(fit_fk, ymin, y_fit_fk, colors='#0f766e', linestyles=':', alpha=0.8, label=f'Fitted Knee ({fit_fk:.2f} Hz)')
                     
-        ax.set_xscale('log')
-        ax.set_xlabel('Frequency (Hz, log scale)', color='#2c3e50', fontsize=10, fontweight='medium')
+        if input.x_log():
+            ax.set_xscale('log')
+            ax.set_xlabel('Frequency (Hz, log scale)', color='#2c3e50', fontsize=10, fontweight='medium')
+            ax.set_xticks([1, 2, 5, 10, 20, 50, 100])
+            ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+        else:
+            ax.set_xscale('linear')
+            ax.set_xlabel('Frequency (Hz, linear scale)', color='#2c3e50', fontsize=10, fontweight='medium')
+            
         ax.set_ylabel('log10(Power)', color='#2c3e50', fontsize=10, fontweight='medium')
         ax.set_xlim(1, 100)
         ax.set_ylim(ymin, ymax)
-        
-        # Format x-axis nicely for log ticks
-        ax.set_xticks([1, 2, 5, 10, 20, 50, 100])
-        ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
 
         ax.legend(loc='upper right', fontsize=8.5, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0')
         ax.grid(True, which='both', linestyle='--', linewidth=0.5, color='#e2e8f0', alpha=0.7)
@@ -678,6 +547,15 @@ def server(input, output, session):
     @render.plot
     def plot_semilog():
         return build_plot()
+
+    # 5. Output: Dynamic Plot Title
+    @output
+    @render.text
+    def plot_title():
+        if input.x_log():
+            return "Log-Log Spectral Representation"
+        else:
+            return "Semilog Spectral Representation"
 
     # 6. Output: Structured Sphinx HTML comparison table
     @output
