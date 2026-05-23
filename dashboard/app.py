@@ -292,7 +292,7 @@ app_ui = ui.page_fluid(
             # Middle row: Elegant full-width plot with scroll wrapper
             ui.div(
                 ui.div(
-                    ui.h6("Semilog Representation (Physical Hz)", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
+                    ui.h6("Log-Log Spectral Representation", class_="card-header bg-transparent text-center font-weight-bold text-secondary"),
                     ui.div(
                         ui.div(
                             ui.output_plot("plot_semilog", height="480px"),
