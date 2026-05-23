@@ -50,6 +50,10 @@ dashboard:
 
 # Serve the exported bundle locally to verify before committing
 dashboard-serve:
+	@echo "Ensuring port 8008 is free..."
+	@lsof -ti :8008 | xargs kill -9 2>/dev/null || true
+	@echo "Opening Shiny app in your browser..."
+	@(sleep 1 && open http://localhost:8008/) &
 	uv run python -m http.server --directory docs 8008
 
 MMDC_DIR := .cache/mmdc

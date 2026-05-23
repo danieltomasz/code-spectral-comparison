@@ -234,6 +234,13 @@ app_ui = ui.page_fluid(
                 ui.h5("Fitting Boundaries", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
                 ui.input_slider("min_f", "Min Fit Frequency (Hz)", min=1, max=50, value=1, step=1),
                 ui.input_slider("max_f", "Max Fit Frequency (Hz)", min=50, max=100, value=100, step=1),
+                
+                ui.h5("specparam Fit Settings", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
+                ui.input_slider("max_n_peaks", "Max Number of Peaks", min=0, max=5, value=2, step=1),
+                ui.input_slider("peak_threshold", "Peak Threshold (SD)", min=1.0, max=5.0, value=2.0, step=0.1),
+                ui.input_slider("min_peak_height", "Min Peak Height (log units)", min=0.0, max=1.0, value=0.0, step=0.05),
+                ui.input_slider("peak_width_limits", "Peak Bandwidth Limits (Hz)", min=0.5, max=15.0, value=[0.5, 12.0], step=0.5),
+                ui.input_slider("gauss_overlap_thresh", "Overlap Threshold (SD)", min=0.0, max=2.0, value=0.75, step=0.05),
                 class_="p-3 rounded",
                 style="background-color: #f8fafc; border: 1px solid #e2e8f0;"
             ),
@@ -420,6 +427,13 @@ def server(input, output, session):
         min_f_val = input.min_f()
         max_f_val = input.max_f()
         
+        # specparam fitting parameters
+        max_n_peaks_val = input.max_n_peaks()
+        peak_threshold_val = input.peak_threshold()
+        min_peak_height_val = input.min_peak_height()
+        peak_width_limits_val = list(input.peak_width_limits())
+        gauss_overlap_thresh_val = input.gauss_overlap_thresh()
+        
         if model_type == "knee":
             fk_val = input.fk()
             k_val = input.k()
@@ -451,11 +465,27 @@ def server(input, output, session):
         sim_power = true_power + noise
         
         # Fit Knee model on the noisy signal
-        fm_k = SpectralModel(aperiodic_mode='knee', max_n_peaks=1 if add_peak_val else 0, verbose=False)
+        fm_k = SpectralModel(
+            aperiodic_mode='knee',
+            max_n_peaks=max_n_peaks_val,
+            peak_threshold=peak_threshold_val,
+            min_peak_height=min_peak_height_val,
+            peak_width_limits=peak_width_limits_val,
+            gauss_overlap_thresh=gauss_overlap_thresh_val,
+            verbose=False
+        )
         fm_k.fit(sim_freqs, 10**sim_power, [min_f_val, max_f_val])
         
         # Fit Fixed model on the noisy signal
-        fm_f = SpectralModel(aperiodic_mode='fixed', max_n_peaks=1 if add_peak_val else 0, verbose=False)
+        fm_f = SpectralModel(
+            aperiodic_mode='fixed',
+            max_n_peaks=max_n_peaks_val,
+            peak_threshold=peak_threshold_val,
+            min_peak_height=min_peak_height_val,
+            peak_width_limits=peak_width_limits_val,
+            gauss_overlap_thresh=gauss_overlap_thresh_val,
+            verbose=False
+        )
         fm_f.fit(sim_freqs, 10**sim_power, [min_f_val, max_f_val])
         
         # Get fit results coordinates over the fitting range
@@ -752,21 +782,24 @@ def server(input, output, session):
         res = run_simulation_and_fit()
         add_peak = input.add_peak()
 
-        def peak_row(label, color, peaks):
+        def peak_rows(label, color, peaks):
             if not peaks:
                 return f"""
                     <tr>
                         <td style="font-weight: 500; color: {color};">{label}</td>
                         <td colspan="3" class="text-muted">No peak estimated</td>
                     </tr>"""
-            cf, pw, bw = peaks[0]
-            return f"""
+            rows = []
+            for idx, (cf, pw, bw) in enumerate(peaks):
+                row_label = f"{label} (Peak {idx+1})" if len(peaks) > 1 else label
+                rows.append(f"""
                     <tr>
-                        <td style="font-weight: 500; color: {color};">{label}</td>
+                        <td style="font-weight: 500; color: {color};">{row_label}</td>
                         <td>{cf:.2f}</td>
                         <td>{pw:.3f}</td>
                         <td>{bw:.2f}</td>
-                    </tr>"""
+                    </tr>""")
+            return "\n".join(rows)
 
         # Simulated peak: convert injected Gaussian to specparam-equivalent
         # PW (height above aperiodic) and BW (2 * std). Sim uses scale = width/2.
@@ -802,8 +835,8 @@ def server(input, output, session):
                     </thead>
                     <tbody style="color: #334155; background-color: #ffffff;">
                         {sim_row}
-                        {peak_row("Knee Model — estimated", "#0f766e", res['k_peaks'])}
-                        {peak_row("Fixed Model — estimated", "#ea580c", res['f_peaks'])}
+                        {peak_rows("Knee Model — estimated", "#0f766e", res['k_peaks'])}
+                        {peak_rows("Fixed Model — estimated", "#ea580c", res['f_peaks'])}
                     </tbody>
                 </table>
             </div>
