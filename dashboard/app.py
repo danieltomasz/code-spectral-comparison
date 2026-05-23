@@ -133,6 +133,7 @@ app_ui = ui.page_fluid(
     ui.row(
         # Parameter Sidebar (desktop: left column, mobile: active tab panel)
         ui.div(
+            # Card 1: Simulation Settings Card (Teal 50 background with solid left teal accent)
             ui.div(
                 ui.h5("Simulation Configuration", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
                 ui.input_radio_buttons(
@@ -168,7 +169,15 @@ app_ui = ui.page_fluid(
                 ui.h5("Noise Configuration", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
                 ui.input_slider("noise_level", "Spectral Noise Level (SD)", min=0.0, max=1.6, value=0.04, step=0.01),
                 
-                ui.h5("Fitting Boundaries", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
+                class_="p-3 rounded mb-4",
+                style="background-color: #f0fdfa; border: 1px solid #cbd5e1; border-left: 4px solid #0f766e;"
+            ),
+            
+            # Card 2: Fitting Settings Card (Warm Coral 50 background with solid left coral accent)
+            ui.div(
+                ui.h5("Fitting Configuration", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
+                
+                ui.h5("Fitting Boundaries", class_="mt-3 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
                 ui.input_slider("min_f", "Min Fit Frequency (Hz)", min=1, max=50, value=1, step=1),
                 ui.input_slider("max_f", "Max Fit Frequency (Hz)", min=50, max=100, value=100, step=1),
                 
@@ -178,9 +187,11 @@ app_ui = ui.page_fluid(
                 ui.input_slider("min_peak_height", "Min Peak Height (log units)", min=0.0, max=1.0, value=0.0, step=0.05),
                 ui.input_slider("peak_width_limits", "Peak Bandwidth Limits (Hz)", min=0.5, max=15.0, value=[0.5, 12.0], step=0.5),
                 ui.input_slider("gauss_overlap_thresh", "Overlap Threshold (SD)", min=0.0, max=2.0, value=0.75, step=0.05),
+                
                 class_="p-3 rounded",
-                style="background-color: #f8fafc; border: 1px solid #e2e8f0;"
+                style="background-color: #fff8f5; border: 1px solid #cbd5e1; border-left: 4px solid #ea580c;"
             ),
+            
             id="params-panel",
             class_="tab-pane fade show active mobile-tab-pane col-md-4 col-lg-3 pe-md-4",
             role="tabpanel",
