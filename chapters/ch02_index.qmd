@@ -42,6 +42,9 @@ assumed aperiodic functional form, the fitting frequency range, and peak
 detection thresholds. Results should therefore be interpreted with caution
 [@donoghue2021MethodologicalConsiderationsStudying].
 
+- confound stemming  from the 1/f and lorentzian form of the aperiodic
+
+
 <!-- Additional caveats:
 - Frequency binning issue (4% condition not met for HD-EEG sources)
 - Different subjects, different conditions (EO vs EC)

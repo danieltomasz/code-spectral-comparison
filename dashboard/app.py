@@ -160,7 +160,7 @@ app_ui = ui.page_fluid(
                 
                 # Conditional Peak Sliders - only visible when peak is checked
                 ui.panel_conditional(
-                    "input.add_peak",
+                    "input.add_peak === true",
                     ui.input_slider("peak_freq", "Peak Frequency (Hz)", min=2, max=50, value=10, step=1),
                     ui.input_slider("peak_amp", "Peak Amplitude (log units)", min=0.05, max=10.5, value=0.35, step=0.05),
                     ui.input_slider("peak_width", "Peak Bandwidth (Hz)", min=0.5, max=10.0, value=1.8, step=0.1)
@@ -172,14 +172,23 @@ app_ui = ui.page_fluid(
                 class_="p-3 rounded mb-4",
                 style="background-color: #f0fdfa; border: 1px solid #cbd5e1; border-left: 4px solid #0f766e;"
             ),
+                        # Card 2: Butterworth Filter Configuration (Slate 50 background with solid Slate left border)
+            ui.div(
+                ui.h5("Butterworth Filter Options", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
+                ui.input_checkbox("apply_filter", "Apply Butterworth Filter", value=False),
+                
+                ui.output_ui("butterworth_filter_ui"),
+                class_="p-3 rounded mt-4",
+                style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #475569;"
+            ),
             
-            # Card 2: Fitting Settings Card (Warm Coral 50 background with solid left coral accent)
+            # Card 3: Fitting Settings Card (Warm Coral 50 background with solid left coral accent)
             ui.div(
                 ui.h5("Fitting Configuration", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
                 
                 ui.h5("Fitting Boundaries", class_="mt-3 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
                 ui.input_slider("min_f", "Min Fit Frequency (Hz)", min=1, max=50, value=1, step=1),
-                ui.input_slider("max_f", "Max Fit Frequency (Hz)", min=50, max=100, value=100, step=1),
+                ui.input_slider("max_f", "Max Fit Frequency (Hz)", min=2, max=100, value=100, step=1),
                 
                 ui.h5("specparam Fit Settings", class_="mt-4 mb-3 border-bottom pb-2 font-weight-bold", style="color: #2c3e50; font-size: 1.05rem;"),
                 ui.input_slider("max_n_peaks", "Max Number of Peaks", min=0, max=5, value=2, step=1),
@@ -191,6 +200,8 @@ app_ui = ui.page_fluid(
                 class_="p-3 rounded",
                 style="background-color: #fff8f5; border: 1px solid #cbd5e1; border-left: 4px solid #ea580c;"
             ),
+            
+
             
             id="params-panel",
             class_="tab-pane fade show active mobile-tab-pane col-md-4 col-lg-3 pe-md-4",
@@ -250,7 +261,8 @@ app_ui = ui.page_fluid(
                     ),
                     ui.div(
                         ui.input_switch("x_log", "Logarithmic Frequency Scale (X-axis)", value=True),
-                        style="display: flex; justify-content: center; padding: 0.75rem; border-top: 1px solid #e2e8f0; background-color: #f8fafc;"
+                        ui.input_switch("limit_fit_bounds", "Limit X-axis to fitting boundaries", value=False),
+                        style="display: flex; justify-content: center; gap: 2rem; padding: 0.75rem; border-top: 1px solid #e2e8f0; background-color: #f8fafc;"
                     ),
                     class_="card mb-3"
                 )
@@ -298,20 +310,58 @@ app_ui = ui.page_fluid(
 
 def server(input, output, session):
     
-    # 1. Prevent overlap between min_f and max_f
+    # Server-side reactive renderers for conditional UI
+    @output
+    @render.ui
+    def butterworth_filter_ui():
+        if not input.apply_filter():
+            return None
+            
+        filter_type = input.filter_type() if "filter_type" in input else "bandpass"
+        elements = [
+            ui.input_radio_buttons(
+                "filter_type",
+                "Filter Type",
+                {"lowpass": "Lowpass", "highpass": "Highpass", "bandpass": "Bandpass"},
+                selected=filter_type
+            ),
+            ui.input_slider("filter_order", "Filter Order (n)", min=1, max=10, value=input.filter_order() if "filter_order" in input else 7, step=1)
+        ]
+        
+        if filter_type == "lowpass":
+            elements.append(
+                ui.input_slider("cutoff_lp", "Lowpass Cutoff (Hz)", min=1, max=100, value=input.cutoff_lp() if "cutoff_lp" in input else 8, step=1)
+            )
+        elif filter_type == "highpass":
+            elements.append(
+                ui.input_slider("cutoff_hp", "Highpass Cutoff (Hz)", min=1, max=100, value=input.cutoff_hp() if "cutoff_hp" in input else 33, step=1)
+            )
+        elif filter_type == "bandpass":
+            use_fitting = input.use_fitting_bounds() if "use_fitting_bounds" in input else False
+            elements.append(
+                ui.input_checkbox("use_fitting_bounds", "Use same interval as fitting boundaries", value=use_fitting)
+            )
+            if not use_fitting:
+                elements.append(
+                    ui.input_slider("cutoff_bp", "Bandpass Cutoffs (Hz)", min=1, max=100, value=list(input.cutoff_bp()) if "cutoff_bp" in input else [33, 80], step=1)
+                )
+            else:
+                elements.append(
+                    ui.p(f"Filter frequencies match fitting boundaries: [{input.min_f()} Hz, {input.max_f()} Hz]", class_="text-muted small mt-2")
+                )
+            
+        return ui.TagList(*elements)
+
+    # 1. Prevent overlap between min_f and max_f by updating slider limits dynamically
     @reactive.Effect
     def _():
         min_f = input.min_f()
-        max_f = input.max_f()
-        if min_f >= max_f - 4:
-            ui.update_slider("min_f", value=max_f - 5)
+        ui.update_slider("max_f", min=min_f + 1)
             
     @reactive.Effect
     def _():
-        min_f = input.min_f()
         max_f = input.max_f()
-        if max_f <= min_f + 4:
-            ui.update_slider("max_f", value=min_f + 5)
+        ui.update_slider("min_f", max=max_f - 1)
 
     # 2. Synchronize Knee Parameter (k) and Knee Frequency (fk) reactively
     @reactive.Effect
@@ -386,6 +436,39 @@ def server(input, output, session):
         peak_width_limits_val = list(input.peak_width_limits())
         gauss_overlap_thresh_val = input.gauss_overlap_thresh()
         
+        # Extract Butterworth filter settings safely
+        apply_filter_val = input.apply_filter()
+        filter_type_val = "bandpass"
+        filter_order_val = 7
+        cutoff_lp_val = 8
+        cutoff_hp_val = 33
+        cutoff_bp_val = [33, 80]
+        
+        if apply_filter_val:
+            try:
+                filter_type_val = input.filter_type() or "bandpass"
+            except Exception:
+                pass
+            try:
+                filter_order_val = input.filter_order() or 7
+            except Exception:
+                pass
+            try:
+                cutoff_lp_val = input.cutoff_lp() or 8
+            except Exception:
+                pass
+            try:
+                cutoff_hp_val = input.cutoff_hp() or 33
+            except Exception:
+                pass
+            try:
+                if "use_fitting_bounds" in input and input.use_fitting_bounds():
+                    cutoff_bp_val = [min_f_val, max_f_val]
+                else:
+                    cutoff_bp_val = input.cutoff_bp() or [33, 80]
+            except Exception:
+                pass
+        
         if model_type == "knee":
             fk_val = input.fk() or 10.0
             k_val = input.k() or (fk_val ** chi_val)
@@ -398,6 +481,24 @@ def server(input, output, session):
             sim_freqs, model_type, b_val, chi_val, k_val,
             add_peak_val, peak_freq_val, peak_amp_val, peak_width_val, noise_level_val
         )
+        
+        # Apply Butterworth Filter to the analytical PSD
+        if apply_filter_val:
+            if filter_type_val == "lowpass":
+                fc = cutoff_lp_val
+                filt_resp = 1.0 / (1.0 + (sim_freqs / fc) ** (2 * filter_order_val))
+            elif filter_type_val == "highpass":
+                fc = cutoff_hp_val
+                filt_resp = 1.0 / (1.0 + (fc / sim_freqs) ** (2 * filter_order_val))
+            else:  # bandpass
+                f_low, f_high = cutoff_bp_val[0], cutoff_bp_val[1]
+                filt_resp = (1.0 / (1.0 + (f_low / sim_freqs) ** (2 * filter_order_val))) * \
+                            (1.0 / (1.0 + (sim_freqs / f_high) ** (2 * filter_order_val)))
+                            
+            # Multiply linear power by |H(f)|^2 and convert back to log10 space
+            sim_power = np.log10(np.maximum(1e-10, (10**sim_power) * filt_resp))
+            true_power = np.log10(np.maximum(1e-10, (10**true_power) * filt_resp))
+            true_aperiodic = np.log10(np.maximum(1e-10, (10**true_aperiodic) * filt_resp))
         
         # 3. Fit both spectral model variants (Knee vs. Fixed)
         fm_k = fit_spectral_model(
@@ -523,6 +624,30 @@ def server(input, output, session):
         if model_type == "knee":
             true_fk = res["true_fk"]
             y_true_fk = b_val - np.log10(res["true_k"] + true_fk**chi_val)
+            
+            # Apply filter response at true_fk if enabled
+            if input.apply_filter():
+                try:
+                    filt_type = input.filter_type() or "bandpass"
+                    filt_order = input.filter_order() or 7
+                    if filt_type == "lowpass":
+                        fc = input.cutoff_lp() or 8
+                        fk_resp = 1.0 / (1.0 + (true_fk / fc) ** (2 * filt_order))
+                    elif filt_type == "highpass":
+                        fc = input.cutoff_hp() or 33
+                        fk_resp = 1.0 / (1.0 + (fc / true_fk) ** (2 * filt_order))
+                    else:
+                        if "use_fitting_bounds" in input and input.use_fitting_bounds():
+                            f_low, f_high = input.min_f(), input.max_f()
+                        else:
+                            c_bp = input.cutoff_bp() or [33, 80]
+                            f_low, f_high = c_bp[0], c_bp[1]
+                        fk_resp = (1.0 / (1.0 + (f_low / true_fk) ** (2 * filt_order))) * \
+                                  (1.0 / (1.0 + (true_fk / f_high) ** (2 * filt_order)))
+                    y_true_fk = y_true_fk + np.log10(np.maximum(1e-10, fk_resp))
+                except Exception:
+                    pass
+                    
             ax.vlines(true_fk, ymin, y_true_fk, colors='#e11d48', linestyles='--', alpha=0.75, label=f'True Knee ({true_fk:.2f} Hz)')
         
         # Fitted Knee Line
@@ -535,17 +660,26 @@ def server(input, output, session):
                 y_fit_fk = fit_k_offset - np.log10(fit_k_knee + fit_fk**fit_k_exponent)
                 ax.vlines(fit_fk, ymin, y_fit_fk, colors='#0f766e', linestyles=':', alpha=0.8, label=f'Fitted Knee ({fit_fk:.2f} Hz)')
                     
+        if "limit_fit_bounds" in input and input.limit_fit_bounds():
+            xlim_low, xlim_high = min_f_val, max_f_val
+        else:
+            xlim_low, xlim_high = 1, 100
+
         if input.x_log():
             ax.set_xscale('log')
             ax.set_xlabel('Frequency (Hz, log scale)', color='#2c3e50', fontsize=10, fontweight='medium')
-            ax.set_xticks([1, 2, 5, 10, 20, 50, 100])
+            
+            # Filter log ticks to only those within current display limit
+            ticks = [t for t in [1, 2, 5, 10, 20, 50, 100] if xlim_low <= t <= xlim_high]
+            if len(ticks) >= 2:
+                ax.set_xticks(ticks)
             ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
         else:
             ax.set_xscale('linear')
             ax.set_xlabel('Frequency (Hz, linear scale)', color='#2c3e50', fontsize=10, fontweight='medium')
             
         ax.set_ylabel('log10(Power)', color='#2c3e50', fontsize=10, fontweight='medium')
-        ax.set_xlim(1, 100)
+        ax.set_xlim(xlim_low, xlim_high)
         ax.set_ylim(ymin, ymax)
 
         ax.legend(loc='upper right', fontsize=8.5, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0')

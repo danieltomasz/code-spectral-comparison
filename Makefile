@@ -1,7 +1,7 @@
 .ONESHELL:
 
 # dashboard target name collides with the dashboard/ directory; mark phony
-.PHONY: dashboard dashboard-serve
+.PHONY: dashboard dashboard-serve dashboard-clean
 
 PROJECT?=spectral-comparison
 VERSION?=3.14
@@ -49,6 +49,13 @@ dashboard:
 	@echo "Updating page title in docs/index.html"
 	uv run python -c "p = 'docs/index.html'; c = open(p).read().replace('<title>Shiny App</title>', '<title>SpecParam Knee Simulation & Fitting Dashboard</title>'); open(p, 'w').write(c)"
 	@echo "Done. Stage with: git add docs && git commit -m 'rebuild dashboard'"
+
+
+dashboard-clean:
+	@echo "Cleaning up generated Shinylive static files in docs/..."
+	rm -rf docs/shinylive docs/app.json docs/index.html docs/shinylive-sw.js docs/edit
+
+
 
 # Serve the exported bundle locally to verify before committing
 dashboard-serve:
