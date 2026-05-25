@@ -483,7 +483,9 @@ def server(input, output, session):
         )
         
         # Apply Butterworth Filter to the analytical PSD
+        unfiltered_power = None
         if apply_filter_val:
+            unfiltered_power = sim_power.copy()
             if filter_type_val == "lowpass":
                 fc = cutoff_lp_val
                 filt_resp = 1.0 / (1.0 + (sim_freqs / fc) ** (2 * filter_order_val))
@@ -532,6 +534,7 @@ def server(input, output, session):
         return {
             "sim_freqs": sim_freqs,
             "sim_power": sim_power,
+            "unfiltered_power": unfiltered_power,
             "true_power": true_power,
             "true_aperiodic": true_aperiodic,
             "fit_freqs": fit_freqs,
@@ -576,6 +579,8 @@ def server(input, output, session):
         mask_in = (sim_freqs >= min_f_val) & (sim_freqs <= max_f_val)
         
         all_y_fit = [sim_power[mask_in], true_aperiodic[mask_in]]
+        if input.apply_filter() and res.get("unfiltered_power") is not None:
+            all_y_fit.append(res["unfiltered_power"][mask_in])
         if add_peak:
             all_y_fit.append(true_power[mask_in])
         if len(k_res) > 0:
@@ -608,8 +613,14 @@ def server(input, output, session):
         mask_in = (sim_freqs >= min_f_val) & (sim_freqs <= max_f_val)
         
         # Semilog plot
-        ax.plot(sim_freqs, sim_power, color='#cbd5e1', linewidth=1.0, alpha=0.7, label='Raw Spectrum (outside fit)')
-        ax.plot(sim_freqs[mask_in], sim_power[mask_in], color='#94a3b8', linewidth=1.2, alpha=0.9, label='Raw Spectrum (inside fit)')
+        if input.apply_filter() and res.get("unfiltered_power") is not None:
+            unfilt = res["unfiltered_power"]
+            ax.plot(sim_freqs, unfilt, color='#94a3b8', linewidth=1.0, alpha=0.6, label='Unfiltered Spectrum')
+            ax.plot(sim_freqs, sim_power, color='#ef4444', linewidth=1.0, alpha=0.55, label='Filtered Spectrum (outside fit)')
+            ax.plot(sim_freqs[mask_in], sim_power[mask_in], color='#ef4444', linewidth=1.2, alpha=0.8, label='Filtered Spectrum (inside fit)')
+        else:
+            ax.plot(sim_freqs, sim_power, color='#cbd5e1', linewidth=1.0, alpha=0.7, label='Raw Spectrum (outside fit)')
+            ax.plot(sim_freqs[mask_in], sim_power[mask_in], color='#94a3b8', linewidth=1.2, alpha=0.9, label='Raw Spectrum (inside fit)')
         
         ax.plot(sim_freqs, true_aperiodic, color='#475569', linestyle=':', linewidth=1.2, alpha=0.8, label='True Aperiodic')
         if add_peak:
