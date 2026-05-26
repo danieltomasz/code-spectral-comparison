@@ -2,137 +2,118 @@ import os
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import welch
+from scipy.signal import welch, butter, sosfilt
 from shiny import App, ui, render, reactive
 import shinyswatch
 
-# Define sampling rate and default simulation values
-FS = 250.0  # Hz
+# Define simulation parameters
+FS_SIM = 1000.0  # Hz, standard temporal resolution (1 ms bins) for neural point processes
 
-def sample_damping_rates(n, w1, mu1, sigma1, mu2, sigma2):
+def generate_smooth_psp(t_vector, tau_decay_ms, tau_rise_ms):
     """
-    Sample n damping rates gamma from the bimodal truncated Gaussian mixture distribution.
+    Generate a double-exponential postsynaptic potential (PSP) waveform.
+    Normalized to have a peak height of 1.0 in the time domain.
     """
-    # Choose mode for each sample
-    modes = np.random.choice([1, 2], size=n, p=[w1, 1.0 - w1])
-    samples = np.zeros(n)
+    tau_d = tau_decay_ms / 1000.0  # Convert to seconds
+    tau_r = max(0.1, tau_rise_ms) / 1000.0  # Convert to seconds and avoid division by zero
     
-    for i in range(n):
-        if modes[i] == 1:
-            val = -1.0
-            while val < 0.05:  # Truncate at 0.05 to avoid zero/negative damping
-                val = np.random.normal(mu1, sigma1)
-        else:
-            val = -1.0
-            while val < 0.05:
-                val = np.random.normal(mu2, sigma2)
-        samples[i] = val
-    return samples
+    if abs(tau_d - tau_r) < 1e-5:
+        # Avoid singular case when rise = decay
+        tau_r = tau_d * 0.99
+        
+    # Calculate peak time
+    t_peak = (tau_d * tau_r / (tau_d - tau_r)) * np.log(tau_d / tau_r)
+    # Normalization constant
+    norm_const = 1.0 / (np.exp(-t_peak / tau_d) - np.exp(-t_peak / tau_r))
+    
+    # Calculate waveform
+    h = norm_const * (np.exp(-t_vector / tau_d) - np.exp(-t_vector / tau_r))
+    return h
 
-def simulate_oscillatory_poisson(T, fs, f0, lambda_rate, w1, mu1, sigma1, mu2, sigma2):
+def compute_psp_kernel(freqs, tau_decay_ms, tau_rise_ms):
     """
-    Simulate a filtered Poisson process of randomly timed, randomly damped oscillatory pulses.
-    Also returns the Rice decomposition components Xc(t) and Xs(t), and the envelope A(t).
+    Compute the magnitude-squared Fourier transform of the PSP filter: |H(f)|^2
     """
-    t = np.arange(0, T, 1.0 / fs)
-    X = np.zeros_like(t)
-    Xc = np.zeros_like(t)
-    Xs = np.zeros_like(t)
+    tau_d = tau_decay_ms / 1000.0
+    tau_r = max(0.1, tau_rise_ms) / 1000.0
     
-    # Generate Poisson arrival times in [0, T]
-    t_k = []
-    curr_t = 0.0
-    np.random.seed(42)  # Replicable Poisson arrivals for smooth slider experience
-    while True:
-        dt = np.random.exponential(1.0 / lambda_rate)
-        curr_t += dt
-        if curr_t > T:
-            break
-        t_k.append(curr_t)
+    if abs(tau_d - tau_r) < 1e-5:
+        tau_r = tau_d * 0.99
         
-    t_k = np.array(t_k)
-    num_pulses = len(t_k)
-    if num_pulses == 0:
-        return t, X, Xc, Xs, np.zeros_like(t)
-        
-    # Draw damping rates and amplitudes
-    gammas = sample_damping_rates(num_pulses, w1, mu1, sigma1, mu2, sigma2)
-    # Pulses have random zero-mean amplitudes
-    amplitudes = np.random.normal(0, 1.5, num_pulses)
+    t_peak = (tau_d * tau_r / (tau_d - tau_r)) * np.log(tau_d / tau_r)
+    norm_const = 1.0 / (np.exp(-t_peak / tau_d) - np.exp(-t_peak / tau_r))
     
-    omega0 = 2.0 * np.pi * f0
-    
-    # Sum the pulses
-    for tk, gamma, amp in zip(t_k, gammas, amplitudes):
-        start_idx = int(np.ceil(tk * fs))
-        if start_idx >= len(t):
-            continue
-        
-        # Truncate pulse after 5 / gamma seconds to speed up simulation significantly
-        duration = 5.0 / max(gamma, 0.05)
-        end_idx = min(len(t), int(np.ceil((tk + duration) * fs)))
-        
-        pulse_t = t[start_idx:end_idx] - tk
-        decay = amp * np.exp(-gamma * pulse_t)
-        
-        # Generative process pulse: amp * e^(-gamma*t) * cos(omega0*t)
-        X[start_idx:end_idx] += decay * np.cos(omega0 * pulse_t)
-        
-        # Rice decomposition components:
-        # Xc(t) = sum_k amp * cos(omega0 * tk) * e^(-gamma * (t - tk))
-        # Xs(t) = sum_k amp * sin(omega0 * tk) * e^(-gamma * (t - tk))
-        Xc[start_idx:end_idx] += decay * np.cos(omega0 * tk)
-        Xs[start_idx:end_idx] += decay * np.sin(omega0 * tk)
-        
-    # Calculate Rice envelope
-    envelope = np.sqrt(Xc**2 + Xs**2)
-    return t, X, Xc, Xs, envelope
+    # Analytical Fourier transform magnitude squared:
+    # |H(f)|^2 = C^2 * (tau_d - tau_r)^2 / [ (1 + (2*pi*f*tau_d)^2) * (1 + (2*pi*f*tau_r)^2) ]
+    numerator = (norm_const * (tau_d - tau_r)) ** 2
+    denominator = (1.0 + (2.0 * np.pi * freqs * tau_d) ** 2) * (1.0 + (2.0 * np.pi * freqs * tau_r) ** 2)
+    return numerator / denominator
 
-def compute_analytical_psd(freqs, f0, lambda_rate, w1, mu1, sigma1, mu2, sigma2):
+def simulate_fpp_eeg(T, fs_sim, lambda_0, f0, bw, modulation, tau_decay, tau_rise, noise_std, apply_medium_filter, tau_med):
     """
-    Compute the exact analytical PSD S(f) using the discretized Fredholm Lorentzian mixture
-    integrating over the bimodal damping distribution.
+    Simulate a Filtered Point Process EEG/LFP signal in the time domain.
+    Returns:
+        t: time vector
+        Y_noisy: the simulated voltage signal with noise
+        lambda_t: the time-varying intensity function (Cox rate)
+        event_raster: binary vector of event occurrences (point process)
+        Y_pure: pure signal without instrumentation noise
     """
-    # Create a dense grid of damping rates gamma for numerical integration
-    gamma_grid = np.linspace(0.01, 80.0, 300)
-    d_gamma = gamma_grid[1] - gamma_grid[0]
+    t = np.arange(0, T, 1.0 / fs_sim)
+    dt = 1.0 / fs_sim
     
-    # Truncated normal distribution for Mode 1
-    p1 = np.exp(-0.5 * ((gamma_grid - mu1) / sigma1) ** 2)
-    p1_sum = np.sum(p1) * d_gamma
-    if p1_sum > 0:
-        p1 /= p1_sum
+    # A. Generate the Cox intensity process lambda(t) = lambda_0 + r(t)
+    # Generate white noise and filter it to a narrowband bandpass centered at f0
+    np.random.seed(42)  # For replicable rate fluctuations across slider changes
+    white_noise = np.random.normal(0, 1.0, len(t))
+    
+    # Bandpass filter centered at f0 with bandwidth bw
+    f_low = max(0.1, f0 - bw / 2.0)
+    f_high = min(fs_sim / 2.0 - 0.1, f0 + bw / 2.0)
+    sos = butter(4, [f_low, f_high], btype='bandpass', fs=fs_sim, output='sos')
+    r = sosfilt(sos, white_noise)
+    
+    # Scale filtered noise to have standard deviation matching modulation depth * lambda_0
+    if np.std(r) > 0:
+        r = r / np.std(r) * (modulation * lambda_0)
     else:
-        p1 = np.zeros_like(gamma_grid)
+        r = np.zeros_like(t)
         
-    # Truncated normal distribution for Mode 2
-    p2 = np.exp(-0.5 * ((gamma_grid - mu2) / sigma2) ** 2)
-    p2_sum = np.sum(p2) * d_gamma
-    if p2_sum > 0:
-        p2 /= p2_sum
+    lambda_t = lambda_0 + r
+    # Ensure event rate is positive
+    lambda_t = np.maximum(0.01, lambda_t)
+    
+    # B. Generate events using inhomogeneous Poisson point process sampling
+    U = np.random.uniform(0.0, 1.0, len(t))
+    event_raster = (U < lambda_t * dt).astype(float)
+    
+    # C. Create smooth PSP waveform and convolve with events
+    # We truncate the PSP filter after 5 * tau_decay seconds to optimize convolution speed
+    max_filter_t = 5.0 * (tau_decay / 1000.0)
+    filter_t = np.arange(0, max_filter_t, dt)
+    h_psp = generate_smooth_psp(filter_t, tau_decay, tau_rise)
+    
+    # Convolve event raster with postsynaptic potential
+    Y_pure = np.convolve(event_raster, h_psp)[:len(t)]
+    
+    # D. Optionally apply extracellular low-pass medium filter
+    if apply_medium_filter:
+        tau_m = tau_med / 1000.0
+        h_med = np.exp(-filter_t / tau_m) / tau_m  # Normalized so integral is 1
+        Y_pure = np.convolve(Y_pure, h_med)[:len(t)] * dt
+        
+    # E. Add instrumentation white noise
+    np.random.seed(123)  # Replicable additive noise
+    if noise_std > 0:
+        Y_noisy = Y_pure + np.random.normal(0, noise_std, len(t))
     else:
-        p2 = np.zeros_like(gamma_grid)
+        Y_noisy = Y_pure.copy()
         
-    # Mixed PDF
-    p_gamma = w1 * p1 + (1.0 - w1) * p2
-    
-    # Compute PSD: S(f) = (lambda * <A^2>) / (8 * pi^2) * \int (p(gamma) / ((f-f0)^2 + (gamma/2pi)^2)) d_gamma
-    mean_a2 = 1.5**2  # Variance of standard amplitude distribution
-    const = (lambda_rate * mean_a2) / (8.0 * np.pi**2)
-    
-    psd = np.zeros_like(freqs)
-    # Vectorized computation for speed
-    for idx, f in enumerate(freqs):
-        # Lorentzian kernel
-        lorentzian = 1.0 / ((f - f0)**2 + (gamma_grid / (2.0 * np.pi))**2)
-        psd[idx] = const * np.sum(p_gamma * lorentzian * d_gamma)
-        
-    return psd, gamma_grid, p_gamma
+    return t, Y_noisy, lambda_t, event_raster, Y_pure
 
 def fit_aperiodic_slope(freqs, psd, fit_range):
     """
-    Fit a 1/f^beta line to the PSD in log-log space over fit_range.
-    Returns the fitted offset A and exponent beta.
+    Fit a 1/f^beta line to the PSD in log-log space.
     """
     mask = (freqs >= fit_range[0]) & (freqs <= fit_range[1])
     f_fit = freqs[mask]
@@ -144,7 +125,6 @@ def fit_aperiodic_slope(freqs, psd, fit_range):
     log_f = np.log10(f_fit)
     log_psd = np.log10(np.maximum(psd_fit, 1e-15))
     
-    # Fit line: log10(PSD) = offset - beta * log10(f)
     B, A = np.polyfit(log_f, log_psd, 1)
     beta = -B
     offset = A
@@ -164,8 +144,8 @@ app_ui = ui.page_fluid(
     
     # Header Area
     ui.div(
-        ui.h2("Damped Oscillator Poisson Mixture Dashboard", class_="mt-3 mb-1 font-weight-bold"),
-        ui.p("Simulating alpha oscillations and 1/f shoulders from a single physical generating process.", class_="text-muted mb-4", style="font-size: 1.05rem;"),
+        ui.h2("Filtered Point Process (FPP) EEG Dashboard", class_="mt-3 mb-1 font-weight-bold"),
+        ui.p("Simulating realistic EEG signals and 1/f power spectra from smooth postsynaptic potentials.", class_="text-muted mb-4", style="font-size: 1.05rem;"),
         class_="container-fluid p-0 pt-2"
     ),
     
@@ -189,39 +169,50 @@ app_ui = ui.page_fluid(
     ui.row(
         # Parameter Sidebar (Left)
         ui.div(
-            # Mixture mode 1: Weak Damping (Alpha Oscillation)
+            # Synaptic Filter Settings (exponents & knee)
             ui.div(
-                ui.h5("Mode 1: Weak Damping (Alpha Peak)", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #0f766e;"),
-                ui.input_slider("mu1", "Mean Damping (μ₁)", min=0.1, max=10.0, value=1.5, step=0.1),
-                ui.input_slider("sigma1", "Width (σ₁)", min=0.1, max=5.0, value=0.5, step=0.1),
-                ui.input_slider("w1", "Relative Mixture Weight (w₁)", min=0.0, max=1.0, value=0.25, step=0.05),
-                ui.p("Generates the sharp alpha oscillatory component around f₀.", class_="text-muted small mb-0"),
+                ui.h5("Synaptic PSP Filter", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #0f766e;"),
+                ui.input_slider("tau_decay", "Synaptic Decay Constant (τ_decay, ms)", min=5.0, max=50.0, value=15.0, step=1.0),
+                ui.input_slider("tau_rise", "Synaptic Rise Constant (τ_rise, ms)", min=0.5, max=5.0, value=1.5, step=0.1),
+                ui.p("Defines the smooth double-exponential post-synaptic current shape.", class_="text-muted small mb-0"),
                 class_="p-3 rounded mb-4",
                 style="background-color: #f0fdfa; border: 1px solid #cbd5e1; border-left: 4px solid #0f766e;"
             ),
             
-            # Mixture mode 2: Heavy Damping (1/f Background)
+            # Point Process Rate Settings (rhythmic alpha vs broadband height)
             ui.div(
-                ui.h5("Mode 2: Heavy Damping (1/f Shoulders)", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #1e293b;"),
-                ui.input_slider("mu2", "Mean Damping (μ₂)", min=10.0, max=80.0, value=30.0, step=1.0),
-                ui.input_slider("sigma2", "Width (σ₂)", min=2.0, max=30.0, value=10.0, step=1.0),
-                ui.output_ui("weight_mode2_text"),
-                ui.p("Generates the broad 1/f-like spectral shoulders around f₀.", class_="text-muted small mb-0"),
+                ui.h5("Timing & Firing Rates (Cox Process)", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #1e293b;"),
+                ui.input_slider("lambda_0", "Mean Firing Rate (λ₀, Hz)", min=50, max=1000, value=300, step=50),
+                ui.input_slider("f0", "Oscillation Center Freq (f₀, Hz)", min=4.0, max=20.0, value=10.0, step=0.5),
+                ui.input_slider("bw", "Oscillation Bandwidth (BW, Hz)", min=0.5, max=5.0, value=1.5, step=0.1),
+                ui.input_slider("modulation", "Alpha Modulation Depth (m)", min=0.0, max=1.0, value=0.5, step=0.05),
+                ui.p("Models rhythmic event rates to generate the alpha bump.", class_="text-muted small mb-0"),
                 class_="p-3 rounded mb-4",
                 style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #475569;"
             ),
             
-            # Global process parameters
+            # Additional Extracellular Filter
             ui.div(
-                ui.h5("Process & Simulation Settings", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #0f766e;"),
-                ui.input_slider("f0", "Alpha Center Frequency (f₀)", min=5.0, max=20.0, value=10.0, step=0.5),
-                ui.input_slider("lambda_rate", "Poisson Arrival Rate (λ)", min=5, max=100, value=25, step=5),
-                ui.input_slider("noise_std", "Additive White Noise (SD)", min=0.0, max=0.5, value=0.08, step=0.01),
-                ui.input_slider("sim_duration", "Simulation Duration (T)", min=1.0, max=10.0, value=5.0, step=0.5),
-                ui.input_slider("fit_min_f", "Fit Exponent Range Min (Hz)", min=12, max=25, value=15, step=1),
-                ui.input_slider("fit_max_f", "Fit Exponent Range Max (Hz)", min=26, max=60, value=40, step=1),
+                ui.h5("Extracellular Medium Options", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #7c3aed;"),
+                ui.input_checkbox("apply_medium_filter", "Apply Extracellular Low-pass", value=False),
+                ui.panel_conditional(
+                    "input.apply_medium_filter === true",
+                    ui.input_slider("tau_med", "Medium Decay Constant (τ_med, ms)", min=1.0, max=20.0, value=5.0, step=0.5),
+                    ui.p("Simulates diffusion filtering, adding another pole to the slope.", class_="text-muted small mb-0")
+                ),
+                class_="p-3 rounded mb-4",
+                style="background-color: #faf5ff; border: 1px solid #cbd5e1; border-left: 4px solid #7c3aed;"
+            ),
+            
+            # Global Simulation & Fitting Settings
+            ui.div(
+                ui.h5("Global Settings & Fitting", class_="mb-3 border-bottom pb-2 font-weight-bold", style="color: #d97706;"),
+                ui.input_slider("noise_std", "White Noise SD (Instrumentation)", min=0.0, max=0.5, value=0.08, step=0.01),
+                ui.input_slider("sim_duration", "Simulation Duration (T)", min=1.0, max=8.0, value=4.0, step=0.5),
+                ui.input_slider("fit_min_f", "Fit Exponent Range Min (Hz)", min=15, max=30, value=20, step=1),
+                ui.input_slider("fit_max_f", "Fit Exponent Range Max (Hz)", min=35, max=100, value=60, step=5),
                 class_="p-3 rounded",
-                style="background-color: #f5f3ff; border: 1px solid #cbd5e1; border-left: 4px solid #7c3aed;"
+                style="background-color: #fffbeb; border: 1px solid #cbd5e1; border-left: 4px solid #d97706;"
             ),
             id="params-panel",
             class_="tab-pane fade show active mobile-tab-pane col-md-4 col-lg-3 pe-md-4",
@@ -231,29 +222,41 @@ app_ui = ui.page_fluid(
         
         # Results Section (Right / Tabs)
         ui.div(
-            # Navigation Tabs for the dashboard panels
+            # Navigation Tabs
             ui.navset_pill(
-                # Tab 1: Theory and Damping Distribution
+                # Tab 1: FPP Theory and Waveforms
                 ui.nav_panel(
-                    "Theory & Damping (p(γ))",
+                    "FPP Theory & Filters",
                     ui.div(
-                        ui.div("Conceptual Context: Single Generative Process", class_="sphinx-admonition-title"),
+                        ui.div("The Filtered Point Process (FPP) Concept (Bloniasz et al., 2025)", class_="sphinx-admonition-title"),
                         ui.div(
                             ui.p(
-                                "Classical EEG analysis assumes that oscillatory activity (e.g. alpha rhythm) and scale-free background noise "
-                                "(\\(1/f^\\beta\\)) arise from two distinct, independent mechanisms. "
-                                "However, this dashboard demonstrates that a "
-                                "<strong>single generative process</strong> of stochastically timed, randomly damped linear oscillatory pulses: "
+                                "An extracellular neural field recording (EEG/LFP) arises from the superposition of many underlying postsynaptic potentials (PSPs). "
+                                "Instead of modeling each pulse as a bandpass filter, the FPP framework models the signal as a point process "
+                                "convolved with a smooth low-pass synaptic waveform: "
                             ),
                             ui.div(
-                                "$$X(t) = \\sum_k A_k\\, e^{-\\gamma_k(t-t_k)}\\cos\\bigl(2\\pi f_0(t-t_k)\\bigr)\\, \\Theta(t-t_k)$$",
-                                style="text-align: center; margin: 1rem 0;"
+                                "$$Y(t) = \\sum_n h_{PSP}(t - t_n)$$",
+                                style="text-align: center; margin: 0.75rem 0;"
                             ),
                             ui.p(
-                                "can simultaneously account for both spectral features. By manipulating the "
-                                "<strong>damping distribution \\(P_\\gamma\\)</strong> (discretized on a grid), "
-                                "we show that a weakly-damped mode creates the sharp oscillatory alpha peak, "
-                                "while a heavily-damped mode generates the broad scale-free shoulders around \\(f_0\\)."
+                                "According to Bartlett's theorem, the power spectrum decomposes linearly into two distinct biological contributors: "
+                            ),
+                            ui.div(
+                                "$$S(f) = |H_{PSP}(f)|^2 \\left[ \\lambda_0 + S_r(f) \\right]$$",
+                                style="text-align: center; margin: 0.75rem 0;"
+                            ),
+                            ui.tags.ul(
+                                ui.tags.li(
+                                    ui.tags.strong("Synaptic Waveform Filter \\(|H_{PSP}(f)|^2\\): "),
+                                    "A smooth double-exponential. Because it acts as a low-pass filter, the white-noise Poisson rate floor \\(\\lambda_0\\) "
+                                    "is shaped into a beautiful 1/f-like background that continues to climb all the way to 0 Hz."
+                                ),
+                                ui.tags.li(
+                                    ui.tags.strong("Cox Oscillatory Rate Spectrum \\(S_r(f)\\): "),
+                                    "A narrowband peak centered at \\(f_0\\) representing rhythmic synchronization of the event arrival times. "
+                                    "This creates the alpha bump organically on top of the 1/f background, resolving the low-frequency rolloff issue."
+                                )
                             ),
                             class_="sphinx-admonition-body"
                         ),
@@ -263,16 +266,16 @@ app_ui = ui.page_fluid(
                     ui.row(
                         ui.div(
                             ui.div(
-                                ui.h6("Damping Mixture Distribution p(γ)", class_="card-header bg-transparent font-weight-bold text-secondary text-center"),
-                                ui.output_plot("plot_damping_pdf", height="340px"),
+                                ui.h6("Synaptic PSP Filter in Time & Frequency", class_="card-header bg-transparent font-weight-bold text-secondary text-center"),
+                                ui.output_plot("plot_synaptic_filter", height="350px"),
                                 class_="card"
                             ),
                             class_="col-lg-6"
                         ),
                         ui.div(
                             ui.div(
-                                ui.h6("Representative Pulse Shapes", class_="card-header bg-transparent font-weight-bold text-secondary text-center"),
-                                ui.output_plot("plot_pulses", height="340px"),
+                                ui.h6("Point Process Firing Rate Bartlett Spectrum", class_="card-header bg-transparent font-weight-bold text-secondary text-center"),
+                                ui.output_plot("plot_rate_spectrum", height="350px"),
                                 class_="card"
                             ),
                             class_="col-lg-6"
@@ -280,23 +283,18 @@ app_ui = ui.page_fluid(
                     )
                 ),
                 
-                # Tab 2: Simulated Signal and Rice Envelope
+                # Tab 2: Simulated EEG Trace & Raster
                 ui.nav_panel(
-                    "Simulated Signal & Rice Envelope",
+                    "Simulated EEG Trace & Raster",
                     ui.div(
-                        ui.div("Rice Envelope-and-Carrier Decomposition", class_="sphinx-admonition-title"),
+                        ui.div("Cox Process Time-Series stacked visualization", class_="sphinx-admonition-title"),
                         ui.div(
                             ui.p(
-                                "Following Rice's mathematical analysis, any narrowband random process can be represented in carrier-and-envelope form: "
-                            ),
-                            ui.div(
-                                "$$X(t) = A(t)\\cos\\bigl(2\\pi f_0 t + \\varphi(t)\\bigr) = X_c(t)\\cos(2\\pi f_0 t) + X_s(t)\\sin(2\\pi f_0 t)$$",
-                                style="text-align: center; margin: 1rem 0;"
-                            ),
-                            ui.p(
-                                "where \\(X_c(t)\\) and \\(X_s(t)\\) are monotonic exponential shot noises (slowly varying envelope components). "
-                                "Below, we plot the simulated stochastic trace \\(X(t)\\) alongside its exact Rice amplitude envelope "
-                                "\\(A(t) = \\sqrt{X_c^2(t) + Xs^2(t)}\\) to illustrate the waxing-and-waning dynamics."
+                                "Below is the real-time simulation of the inhomogeneous Poisson process. "
+                                "Observe how the events in the bottom raster plot cluster closely around the peaks of the time-varying intensity "
+                                "\\(\\lambda(t)\\) (the alpha wave). Because the postsynaptic potential filter is smooth, their convolution "
+                                "results in a beautifully organic LFP/EEG trace \\(Y(t)\\) with waxing-and-waning amplitude modulations, "
+                                "replicating biological EEG dynamics perfectly."
                             ),
                             class_="sphinx-admonition-body"
                         ),
@@ -305,8 +303,8 @@ app_ui = ui.page_fluid(
                     
                     ui.div(
                         ui.div(
-                            ui.h6("Simulated Time Series X(t) & Rice Envelope A(t)", class_="card-header bg-transparent font-weight-bold text-secondary text-center"),
-                            ui.output_plot("plot_time_series", height="440px"),
+                            ui.h6("EEG Trace, Rate Process, and Firing Raster Stack", class_="card-header bg-transparent font-weight-bold text-secondary text-center"),
+                            ui.output_plot("plot_eeg_stack", height="520px"),
                             class_="card"
                         )
                     )
@@ -354,7 +352,7 @@ app_ui = ui.page_fluid(
         ),
         class_="tab-content mobile-tab-content pt-2"
     ),
-    title="Damped Oscillator Poisson Mixture Dashboard",
+    title="Filtered Point Process (FPP) EEG Dashboard",
     theme=shinyswatch.theme.minty()
 )
 
@@ -368,90 +366,94 @@ def server(input, output, session):
     @reactive.Effect
     def _():
         fit_min = input.fit_min_f()
-        ui.update_slider("fit_max_f", min=fit_min + 1)
+        ui.update_slider("fit_max_f", min=fit_min + 5)
         
     @reactive.Effect
     def _():
         fit_max = input.fit_max_f()
-        ui.update_slider("fit_min_f", max=fit_max - 1)
+        ui.update_slider("fit_min_f", max=fit_max - 5)
         
-    # 2. Text rendering of the second mode weight dynamically
-    @output
-    @render.ui
-    def weight_mode2_text():
-        w2 = 1.0 - input.w1()
-        return ui.HTML(f"<div style='font-size: 0.9rem; font-weight: 600; color: #475569; margin: 0.5rem 0;'>Relative Mixture Weight (w₂): <span style='color: #0f766e;'>{w2:.2f}</span></div>")
-
-    # 3. Core calculations (reactive calc)
+    # 2. Reactive simulation calc
     @reactive.calc
     def run_simulation_and_analysis():
         # Get UI parameters
-        mu1_val = input.mu1()
-        sigma1_val = input.sigma1()
-        w1_val = input.w1()
-        
-        mu2_val = input.mu2()
-        sigma2_val = input.sigma2()
-        
+        tau_decay_val = input.tau_decay()
+        tau_rise_val = input.tau_rise()
+        lambda_0_val = input.lambda_0()
         f0_val = input.f0()
-        lambda_val = input.lambda_rate()
+        bw_val = input.bw()
+        modulation_val = input.modulation()
+        
         noise_std_val = input.noise_std()
         T_val = input.sim_duration()
         
+        apply_medium_val = input.apply_medium_filter()
+        tau_med_val = input.tau_med() if apply_medium_val else 1.0
+        
         fit_range = [input.fit_min_f(), input.fit_max_f()]
         
-        # A. Run Simulation
-        t, X, Xc, Xs, envelope = simulate_oscillatory_poisson(
-            T_val, FS, f0_val, lambda_val, w1_val, mu1_val, sigma1_val, mu2_val, sigma2_val
+        # A. Run High-Resolution FPP Time-domain Simulation
+        t, Y, lambda_t, event_raster, Y_pure = simulate_fpp_eeg(
+            T_val, FS_SIM, lambda_0_val, f0_val, bw_val, modulation_val,
+            tau_decay_val, tau_rise_val, noise_std_val, apply_medium_val, tau_med_val
         )
         
-        # Add White Noise
-        np.random.seed(123)  # Replicable additive noise
-        if noise_std_val > 0:
-            X_noisy = X + np.random.normal(0, noise_std_val, len(X))
-        else:
-            X_noisy = X.copy()
-            
         # B. Compute Welch PSD (Empirical)
-        # Ensure we have a reasonable window size (at least 2 seconds if possible)
-        nperseg = int(min(len(X_noisy), FS * 2.0))
-        freqs_emp, psd_emp = welch(X_noisy, fs=FS, nperseg=nperseg, noverlap=nperseg//2)
+        # 1000 Hz simulation permits high quality Welch spectrum up to 500 Hz
+        nperseg = int(FS_SIM * 1.5)  # 1.5 second window
+        freqs_emp, psd_emp = welch(Y, fs=FS_SIM, nperseg=nperseg, noverlap=nperseg//2)
         
-        # Filter frequencies between 1.0 and 80.0 Hz for cleaner viewing
-        freq_mask = (freqs_emp >= 1.0) & (freqs_emp <= 80.0)
+        # Filter frequencies between 1.0 and 150.0 Hz for high fidelity, clean view
+        freq_mask = (freqs_emp >= 1.0) & (freqs_emp <= 150.0)
         freqs_emp_filtered = freqs_emp[freq_mask]
         psd_emp_filtered = psd_emp[freq_mask]
         
         # C. Compute Analytical PSD on the same frequency grid
-        psd_ana, gamma_grid, p_gamma = compute_analytical_psd(
-            freqs_emp_filtered, f0_val, lambda_val, w1_val, mu1_val, sigma1_val, mu2_val, sigma2_val
-        )
+        # Bartlett spectrum: S(f) = |H_PSP(f)|^2 * [lambda_0 + S_r(f)] * dt
+        # First, compute |H_PSP(f)|^2
+        h_psp_kernel = compute_psp_kernel(freqs_emp_filtered, tau_decay_val, tau_rise_val)
         
-        # Add the white noise level to analytical PSD for alignment: PSD_noisy = PSD_signal + 2 * dt * sigma^2
-        # For continuous white noise PSD density: S_noise(f) = 2 * noise_std^2 / fs
-        noise_density = 2.0 * (noise_std_val**2) / FS
+        # Optionally multiply by extracellular low pass filter
+        if apply_medium_val:
+            tau_m_sec = tau_med_val / 1000.0
+            medium_kernel = 1.0 / (1.0 + (2.0 * np.pi * freqs_emp_filtered * tau_m_sec) ** 2)
+            h_psp_kernel *= medium_kernel
+            
+        # The oscillatory rate spectrum S_r(f) is a Gaussian bump centered at f0
+        sigma_rate = modulation_val * lambda_0_val
+        sigma_osc = bw_val / 2.0
+        # Normalization to ensure integrated power matches sigma_rate^2
+        amp_osc = (sigma_rate ** 2) / (np.sqrt(2.0 * np.pi) * sigma_osc)
+        s_r = amp_osc * np.exp(-0.5 * ((freqs_emp_filtered - f0_val) / sigma_osc) ** 2)
+        
+        # Bartlett point-process spectrum: S_N = lambda_0 + s_r
+        s_n = lambda_0_val + s_r
+        
+        # Combine: S_field = |H_PSP|^2 * S_N * dt (discrete scaling)
+        dt = 1.0 / FS_SIM
+        psd_ana = h_psp_kernel * s_n * dt
+        
+        # Add white noise density floor
+        noise_density = 2.0 * (noise_std_val**2) / FS_SIM
         psd_ana_noisy = psd_ana + noise_density
         
         # D. Fit exponents
-        # Fit empirical PSD in fit range
         emp_fit_offset, emp_fit_beta = fit_aperiodic_slope(freqs_emp_filtered, psd_emp_filtered, fit_range)
-        
-        # Fit analytical PSD in fit range
         ana_fit_offset, ana_fit_beta = fit_aperiodic_slope(freqs_emp_filtered, psd_ana_noisy, fit_range)
         
         return {
             "t": t,
-            "X": X,
-            "X_noisy": X_noisy,
-            "Xc": Xc,
-            "Xs": Xs,
-            "envelope": envelope,
+            "Y": Y,
+            "Y_pure": Y_pure,
+            "lambda_t": lambda_t,
+            "event_raster": event_raster,
             "freqs": freqs_emp_filtered,
             "psd_emp": psd_emp_filtered,
             "psd_ana": psd_ana_noisy,
             "psd_ana_pure": psd_ana,
-            "gamma_grid": gamma_grid,
-            "p_gamma": p_gamma,
+            "h_psp_kernel": h_psp_kernel,
+            "s_n": s_n,
+            "s_r": s_r,
             "emp_beta": emp_fit_beta,
             "emp_offset": emp_fit_offset,
             "ana_beta": ana_fit_beta,
@@ -463,140 +465,136 @@ def server(input, output, session):
     # RENDER PLOTS
     # ==========================================
     
-    # Render PDF plot of gamma distribution
+    # 1. Render Synaptic PSP filter plot
     @output
     @render.plot
-    def plot_damping_pdf():
-        res = run_simulation_and_analysis()
-        gamma_grid = res["gamma_grid"]
-        p_gamma = res["p_gamma"]
+    def plot_synaptic_filter():
+        tau_decay_val = input.tau_decay()
+        tau_rise_val = input.tau_rise()
         
-        mu1_val = input.mu1()
-        sigma1_val = input.sigma1()
-        w1_val = input.w1()
+        t_max = 5.0 * (tau_decay_val / 1000.0)
+        filter_t = np.linspace(0, t_max, 500)
+        h_psp = generate_smooth_psp(filter_t, tau_decay_val, tau_rise_val)
         
-        mu2_val = input.mu2()
-        sigma2_val = input.sigma2()
+        # Compute frequency response
+        freqs_dense = np.linspace(1.0, 150.0, 300)
+        kernel = compute_psp_kernel(freqs_dense, tau_decay_val, tau_rise_val)
         
-        # Calculate individual modes for visual reference
-        d_gamma = gamma_grid[1] - gamma_grid[0]
-        p1 = np.exp(-0.5 * ((gamma_grid - mu1_val) / sigma1_val) ** 2)
-        p1 /= (np.sum(p1) * d_gamma)
-        
-        p2 = np.exp(-0.5 * ((gamma_grid - mu2_val) / sigma2_val) ** 2)
-        p2 /= (np.sum(p2) * d_gamma)
-        
-        fig, ax = plt.subplots(figsize=(6, 3.5), dpi=100)
-        ax.set_facecolor("#ffffff")
-        
-        # Clean axes
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_color('#cbd5e1')
-        ax.spines['bottom'].set_color('#cbd5e1')
-        
-        # Plot distributions
-        ax.plot(gamma_grid, p_gamma, color='#0f766e', linewidth=2.5, label='Total Mixture P(γ)')
-        ax.fill_between(gamma_grid, p_gamma, color='#0f766e', alpha=0.1)
-        
-        if w1_val > 0:
-            ax.plot(gamma_grid, w1_val * p1, color='#10b981', linestyle='--', linewidth=1.5, label='Mode 1 (Weak Damping)')
-        if w1_val < 1:
-            ax.plot(gamma_grid, (1.0 - w1_val) * p2, color='#64748b', linestyle='--', linewidth=1.5, label='Mode 2 (Heavy Damping)')
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6, 3.3), dpi=100)
+        for ax in [ax1, ax2]:
+            ax.set_facecolor("#ffffff")
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_color('#cbd5e1')
+            ax.spines['bottom'].set_color('#cbd5e1')
+            ax.grid(True, linestyle=':', alpha=0.4, color='#cbd5e1')
             
-        ax.set_xlabel('Damping Rate γ (rad/s)', fontsize=9.5, fontweight='medium', color='#1e293b')
-        ax.set_ylabel('Probability Density', fontsize=9.5, fontweight='medium', color='#1e293b')
-        ax.set_xlim(0, 70)
-        ax.legend(fontsize=8, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0')
-        ax.grid(True, linestyle=':', alpha=0.4, color='#cbd5e1')
+        # Left plot: Time domain waveform
+        ax1.plot(filter_t * 1000.0, h_psp, color='#0f766e', linewidth=2.0)
+        ax1.set_xlabel('Time (ms)', fontsize=9.0)
+        ax1.set_ylabel('Amplitude (norm)', fontsize=9.0)
+        ax1.set_title('PSP Waveform h_PSP(t)', fontsize=9.5, fontweight='bold', color='#0f766e')
+        # Highlight peak
+        t_p = (tau_decay_val * tau_rise_val / (tau_decay_val - tau_rise_val)) * np.log(tau_decay_val / tau_rise_val)
+        ax1.axvline(t_p, color='#d97706', linestyle=':', label=f'Peak ({t_p:.1f} ms)')
+        ax1.legend(fontsize=7.5)
+        
+        # Right plot: Frequency domain kernel
+        ax2.loglog(freqs_dense, kernel, color='#0f766e', linewidth=2.0)
+        ax2.set_xlabel('Frequency (Hz)', fontsize=9.0)
+        ax2.set_ylabel('Kernel |H(f)|²', fontsize=9.0)
+        ax2.set_title('Spectral Kernel |H_PSP(f)|²', fontsize=9.5, fontweight='bold', color='#0f766e')
+        ax2.set_xticks([1, 10, 50, 150])
+        ax2.get_xaxis().set_major_formatter(plt.ScalarFormatter())
         
         plt.tight_layout()
         return fig
 
-    # Render pulses
+    # 2. Render Point Process Bartlett spectrum
     @output
     @render.plot
-    def plot_pulses():
-        f0_val = input.f0()
-        mu1_val = input.mu1()
-        mu2_val = input.mu2()
+    def plot_rate_spectrum():
+        res = run_simulation_and_analysis()
+        freqs = res["freqs"]
+        s_n = res["s_n"]
+        s_r = res["s_r"]
+        lambda_0_val = input.lambda_0()
         
-        pulse_t = np.linspace(0, 1.5, 300)
-        
-        # Damped oscillatory pulses
-        # Pulse 1: Weakly damped
-        pulse1 = np.exp(-mu1_val * pulse_t) * np.cos(2.0 * np.pi * f0_val * pulse_t)
-        # Pulse 2: Heavily damped
-        pulse2 = np.exp(-mu2_val * pulse_t) * np.cos(2.0 * np.pi * f0_val * pulse_t)
-        
-        fig, ax = plt.subplots(figsize=(6, 3.5), dpi=100)
+        fig, ax = plt.subplots(figsize=(6, 3.3), dpi=100)
         ax.set_facecolor("#ffffff")
-        
-        # Clean axes
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('#cbd5e1')
         ax.spines['bottom'].set_color('#cbd5e1')
-        
-        ax.plot(pulse_t, pulse1, color='#10b981', linewidth=2.0, label=f'Weak Damping (γ = {mu1_val:.1f} rad/s)')
-        ax.plot(pulse_t, pulse2, color='#64748b', linewidth=2.0, alpha=0.75, label=f'Heavy Damping (γ = {mu2_val:.1f} rad/s)')
-        
-        ax.set_xlabel('Time (seconds)', fontsize=9.5, fontweight='medium', color='#1e293b')
-        ax.set_ylabel('Pulse Amplitude', fontsize=9.5, fontweight='medium', color='#1e293b')
-        ax.set_ylim(-1.1, 1.1)
-        ax.axhline(0, color='#e2e8f0', linestyle='-', linewidth=1.0)
-        ax.legend(fontsize=8, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0')
         ax.grid(True, linestyle=':', alpha=0.4, color='#cbd5e1')
+        
+        ax.plot(freqs, s_n, color='#7c3aed', linewidth=2.0, label='Point Process Spectrum S_N(f)')
+        ax.axhline(lambda_0_val, color='#64748b', linestyle='--', label=f'Broadband Rate Floor (λ₀ = {lambda_0_val} Hz)')
+        ax.fill_between(freqs, lambda_0_val, s_n, color='#7c3aed', alpha=0.1, label='Rhythmic Firing Component S_r(f)')
+        
+        ax.set_xlabel('Frequency (Hz)', fontsize=9.0)
+        ax.set_ylabel('Power Density (events/Hz)', fontsize=9.0)
+        ax.set_title('Bartlett Spectrum: S_N(f) = λ₀ + S_r(f)', fontsize=9.5, fontweight='bold', color='#7c3aed')
+        ax.legend(fontsize=7.5, loc='upper right', framealpha=0.95)
+        ax.set_xlim(1.0, 50.0)
         
         plt.tight_layout()
         return fig
 
-    # Render simulated signal and envelope
+    # 3. Render EEG voltage trace, Firing Rate, and Raster stack
     @output
     @render.plot
-    def plot_time_series():
+    def plot_eeg_stack():
         res = run_simulation_and_analysis()
         t = res["t"]
-        X_noisy = res["X_noisy"]
-        envelope = res["envelope"]
-        Xc = res["Xc"]
-        Xs = res["Xs"]
+        Y_noisy = res["Y"]
+        lambda_t = res["lambda_t"]
+        raster = res["event_raster"]
         
-        # Plot only a 2.5-second window to zoom in and clearly see carrier vs envelope
-        mask = (t >= 0.5) & (t <= 3.0)
+        # Display a 1.0 second zoom window (e.g. from 0.5s to 1.5s) to clearly see events and waves
+        zoom_mask = (t >= 0.5) & (t <= 1.5)
+        t_zoom = t[zoom_mask]
         
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 4.5), dpi=100, sharex=True)
-        ax1.set_facecolor("#ffffff")
-        ax2.set_facecolor("#ffffff")
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 5.0), dpi=100, sharex=True,
+                                             gridspec_kw={'height_ratios': [2, 1, 0.6]})
         
-        for ax in [ax1, ax2]:
+        for ax in [ax1, ax2, ax3]:
+            ax.set_facecolor("#ffffff")
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
             ax.spines['left'].set_color('#cbd5e1')
             ax.spines['bottom'].set_color('#cbd5e1')
             ax.grid(True, linestyle=':', alpha=0.3, color='#cbd5e1')
             
-        # Top subplot: Generative signal X(t) with envelope A(t)
-        ax1.plot(t[mask], X_noisy[mask], color='#cbd5e1', linewidth=1.0, alpha=0.8, label='Simulated EEG X(t) (Noisy)')
-        ax1.plot(t[mask], res["X"][mask], color='#ef4444', linewidth=1.2, label='Generative Trace (Pure Signal)')
-        ax1.plot(t[mask], envelope[mask], color='#0f766e', linewidth=2.0, label='Rice Amplitude Envelope A(t)')
-        ax1.plot(t[mask], -envelope[mask], color='#0f766e', linestyle=':', linewidth=1.2, alpha=0.7)
-        ax1.set_ylabel('Voltage (V)', fontsize=9.5, fontweight='medium')
-        ax1.legend(loc='upper right', fontsize=8, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0')
-        ax1.set_title('Generative Process and Slowly-Varying Amplitude Envelope', fontsize=10.5, color='#0f766e', fontweight='semibold')
+        # A. Top Subplot: EEG voltage signal
+        ax1.plot(t_zoom, Y_noisy[zoom_mask], color='#64748b', linewidth=0.8, alpha=0.6, label='Simulated EEG with White Noise')
+        ax1.plot(t_zoom, res["Y_pure"][zoom_mask], color='#0f766e', linewidth=1.5, label='Pure Synaptic FPP Signal')
+        ax1.set_ylabel('Voltage (norm)', fontsize=8.5)
+        ax1.set_title('A. Continuous Extracellular Voltage Y(t) = sum_n h_PSP(t - t_n)', fontsize=9.5, fontweight='bold', color='#0f766e')
+        ax1.legend(loc='upper right', fontsize=7.5, framealpha=0.9)
         
-        # Bottom subplot: Low-pass shot noises Xc(t) and Xs(t)
-        ax2.plot(t[mask], Xc[mask], color='#2563eb', linewidth=1.5, label='In-phase Carrier Envelope Xc(t)')
-        ax2.plot(t[mask], Xs[mask], color='#ea580c', linewidth=1.5, label='Quadrature Carrier Envelope Xs(t)')
-        ax2.set_xlabel('Time (seconds)', fontsize=9.5, fontweight='medium')
-        ax2.set_ylabel('Amplitude (V)', fontsize=9.5, fontweight='medium')
-        ax2.legend(loc='upper right', fontsize=8, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0')
-        ax2.set_title('Slowly-Varying Shot Noise Components (Rice Decomposition)', fontsize=10.5, color='#0f766e', fontweight='semibold')
+        # B. Middle Subplot: Cox Firing Rate Process lambda(t)
+        ax2.plot(t_zoom, lambda_t[zoom_mask], color='#7c3aed', linewidth=1.5)
+        ax2.axhline(input.lambda_0(), color='#64748b', linestyle=':', alpha=0.7, label=f'Mean Rate λ₀ = {input.lambda_0()} Hz')
+        ax2.set_ylabel('Firing Rate (Hz)', fontsize=8.5)
+        ax2.set_title('B. Time-Varying Firing Rate Process λ(t) = λ₀ + r(t) (Alpha Modulated)', fontsize=9.5, fontweight='bold', color='#7c3aed')
+        ax2.legend(loc='upper right', fontsize=7.5, framealpha=0.9)
         
+        # C. Bottom Subplot: Event Raster
+        event_indices = np.where(raster[zoom_mask] > 0.5)[0]
+        event_times = t_zoom[event_indices]
+        
+        ax3.vlines(event_times, 0, 1, colors='#111827', linewidth=1.0)
+        ax3.set_yticks([])
+        ax3.set_xlabel('Time (seconds)', fontsize=9.0)
+        ax3.set_title('C. Discrete Poisson Event Arrival Times (Raster)', fontsize=9.5, fontweight='bold', color='#111827')
+        
+        # Align ticks beautifully
+        plt.xlim(0.5, 1.5)
         plt.tight_layout()
         return fig
 
-    # Render log-log power spectrum
+    # 4. Render Log-Log PSD plot
     @output
     @render.plot
     def plot_psd_loglog():
@@ -609,45 +607,43 @@ def server(input, output, session):
         fit_max = input.fit_max_f()
         fit_range = [fit_min, fit_max]
         
-        fig, ax = plt.subplots(figsize=(6, 4.0), dpi=100)
+        fig, ax = plt.subplots(figsize=(6, 3.8), dpi=100)
         ax.set_facecolor("#ffffff")
-        
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('#cbd5e1')
         ax.spines['bottom'].set_color('#cbd5e1')
         
-        # Plot empirical and analytical
-        ax.loglog(freqs, psd_emp, color='#94a3b8', alpha=0.6, linewidth=1.2, label='Welch Empirical PSD (Noisy)')
-        ax.loglog(freqs, psd_ana, color='#0f766e', linewidth=2.0, label='Analytical Mixture PSD')
+        # Plot empirical and analytical spectra
+        ax.loglog(freqs, psd_emp, color='#94a3b8', alpha=0.5, linewidth=1.0, label='Welch Empirical PSD (Noisy)')
+        ax.loglog(freqs, psd_ana, color='#0f766e', linewidth=2.0, label='Bartlett Theoretical PSD')
         
         # Plot 1/f fit line
         f_fit = np.linspace(fit_min, fit_max, 100)
-        # Empirical fit line
         emp_fit_line = 10**(res["emp_offset"]) / (f_fit**(res["emp_beta"]))
-        ax.loglog(f_fit, emp_fit_line, color='#f97316', linestyle='--', linewidth=2.2, label=f'1/f^β Fit (β = {res["emp_beta"]:.2f})')
+        ax.loglog(f_fit, emp_fit_line, color='#d97706', linestyle='--', linewidth=2.2, label=f'1/f^β Fit (β = {res["emp_beta"]:.2f})')
         
         # Highlight fitting range
-        ax.axvspan(fit_min, fit_max, color='#f97316', alpha=0.07, label='Fit Exponent Band')
+        ax.axvspan(fit_min, fit_max, color='#d97706', alpha=0.07, label='Fit Exponent Band')
         
-        ax.set_xlabel('Frequency (Hz, log scale)', fontsize=9.5, color='#1e293b')
-        ax.set_ylabel('Power Density (V²/Hz, log scale)', fontsize=9.5, color='#1e293b')
+        ax.set_xlabel('Frequency (Hz, log scale)', fontsize=9.0, color='#1e293b')
+        ax.set_ylabel('Power Spectral Density (V²/Hz)', fontsize=9.0, color='#1e293b')
         
         # Customize ticks
-        ax.set_xticks([1, 2, 5, 10, 20, 40, 80])
+        ax.set_xticks([1, 2, 5, 10, 20, 50, 100, 150])
         ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+        ax.set_xlim(1.0, 150.0)
+        
+        # dynamic limits
+        ax.set_ylim(bottom=min(np.min(psd_emp), np.min(psd_ana)) * 0.5)
         
         ax.legend(fontsize=8, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0', loc='lower left')
         ax.grid(True, which='both', linestyle=':', alpha=0.3, color='#cbd5e1')
-        ax.set_xlim(1.0, 80.0)
-        
-        # Safe dynamic bounds
-        ax.set_ylim(bottom=min(np.min(psd_emp), np.min(psd_ana)) * 0.5)
         
         plt.tight_layout()
         return fig
 
-    # Render semi-log power spectrum
+    # 5. Render Semi-Log PSD plot
     @output
     @render.plot
     def plot_psd_semilog():
@@ -659,27 +655,25 @@ def server(input, output, session):
         fit_min = input.fit_min_f()
         fit_max = input.fit_max_f()
         
-        fig, ax = plt.subplots(figsize=(6, 4.0), dpi=100)
+        fig, ax = plt.subplots(figsize=(6, 3.8), dpi=100)
         ax.set_facecolor("#ffffff")
-        
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_color('#cbd5e1')
         ax.spines['bottom'].set_color('#cbd5e1')
         
-        # Convert to log10(Power)
-        ax.plot(freqs, np.log10(psd_emp), color='#94a3b8', alpha=0.6, linewidth=1.2, label='Welch Empirical PSD')
-        ax.plot(freqs, np.log10(psd_ana), color='#0f766e', linewidth=2.0, label='Analytical Mixture PSD')
+        ax.plot(freqs, np.log10(psd_emp), color='#94a3b8', alpha=0.5, linewidth=1.0, label='Welch Empirical PSD')
+        ax.plot(freqs, np.log10(psd_ana), color='#0f766e', linewidth=2.0, label='Theoretical PSD')
         
         # Highlight fitting range
-        ax.axvspan(fit_min, fit_max, color='#f97316', alpha=0.07, label='Fit Exponent Band')
+        ax.axvspan(fit_min, fit_max, color='#d97706', alpha=0.07, label='Fit Exponent Band')
         
-        ax.set_xlabel('Frequency (Hz, linear scale)', fontsize=9.5, color='#1e293b')
-        ax.set_ylabel('log10(Power Density)', fontsize=9.5, color='#1e293b')
+        ax.set_xlabel('Frequency (Hz, linear scale)', fontsize=9.0, color='#1e293b')
+        ax.set_ylabel('log10(Power Density)', fontsize=9.0, color='#1e293b')
         
         ax.legend(fontsize=8, framealpha=0.95, facecolor='#ffffff', edgecolor='#e2e8f0', loc='upper right')
         ax.grid(True, linestyle=':', alpha=0.3, color='#cbd5e1')
-        ax.set_xlim(1.0, 60.0)  # Zoom in slightly to highlight the alpha peak and shoulders
+        ax.set_xlim(1.0, 80.0)  # Zoom in slightly to highlight the alpha peak and background
         
         plt.tight_layout()
         return fig
@@ -692,17 +686,12 @@ def server(input, output, session):
     def comparison_table():
         res = run_simulation_and_analysis()
         
-        # Get UI parameters
-        mu1 = input.mu1()
-        sigma1 = input.sigma1()
-        w1 = input.w1()
-        
-        mu2 = input.mu2()
-        sigma2 = input.sigma2()
-        w2 = 1.0 - w1
-        
-        f0 = input.f0()
-        lambda_rate = input.lambda_rate()
+        tau_decay_val = input.tau_decay()
+        tau_rise_val = input.tau_rise()
+        lambda_0_val = input.lambda_0()
+        f0_val = input.f0()
+        bw_val = input.bw()
+        modulation_val = input.modulation()
         
         fit_min = input.fit_min_f()
         fit_max = input.fit_max_f()
@@ -719,36 +708,31 @@ def server(input, output, session):
                     </thead>
                     <tbody style="color: #334155; background-color: #ffffff;">
                         <tr>
-                            <td style="font-weight: 500;">Damping Mode 1 (Weak)</td>
-                            <td>Mean μ₁ = {mu1:.1f} rad/s, Width σ₁ = {sigma1:.1f}</td>
-                            <td>w₁ = {w1:.2f} (Relative Weight)</td>
+                            <td style="font-weight: 500;">Synaptic Timescales</td>
+                            <td>τ_decay = {tau_decay_val:.1f} ms, τ_rise = {tau_rise_val:.1f} ms</td>
+                            <td>Synaptic peak time: {((tau_decay_val * tau_rise_val / (tau_decay_val - tau_rise_val)) * np.log(tau_decay_val / tau_rise_val) if tau_decay_val != tau_rise_val else tau_decay_val):.1f} ms</td>
                         </tr>
                         <tr>
-                            <td style="font-weight: 500;">Damping Mode 2 (Heavy)</td>
-                            <td>Mean μ₂ = {mu2:.1f} rad/s, Width σ₂ = {sigma2:.1f}</td>
-                            <td>w₂ = {w2:.2f} (Relative Weight)</td>
+                            <td style="font-weight: 500;">Mean Firing Rate (λ₀)</td>
+                            <td>{lambda_0_val} Hz (Poisson base)</td>
+                            <td>{len(np.where(res['event_raster'] > 0.5)[0]) / input.sim_duration():.1f} Hz actual event frequency</td>
                         </tr>
                         <tr>
-                            <td style="font-weight: 500;">Pulse Center Freq (f₀)</td>
-                            <td>{f0:.1f} Hz</td>
-                            <td>Peak observed near {f0:.1f} Hz</td>
-                        </tr>
-                        <tr>
-                            <td style="font-weight: 500;">Poisson Arrival Rate (λ)</td>
-                            <td>{lambda_rate} Hz (Mean frequency)</td>
-                            <td>{lambda_rate * input.sim_duration():.0f} total pulses generated</td>
+                            <td style="font-weight: 500;">Alpha Rhythm Freq (f₀)</td>
+                            <td>{f0_val:.1f} Hz (BW = {bw_val:.1f} Hz)</td>
+                            <td>Modulation depth: {modulation_val * 100:.0f}%</td>
                         </tr>
                         <tr style="background-color: #f0fdfa;">
-                            <td style="font-weight: 600; color: #0f766e;">1/f^β Fitting Range</td>
+                            <td style="font-weight: 600; color: #0f766e;">1/f^β Fitting Bandwidth</td>
                             <td colspan="2" style="font-weight: 600; color: #0f766e; text-align: center;">{fit_min} Hz to {fit_max} Hz</td>
                         </tr>
                         <tr style="background-color: #f8fafc;">
-                            <td style="font-weight: 600; color: #0f766e;">Aperiodic Exponent (β)</td>
+                            <td style="font-weight: 600; color: #0f766e;">Spectral Exponent (β)</td>
                             <td style="font-weight: 600; color: #0f766e;">β = {res['ana_beta']:.3f}</td>
                             <td style="font-weight: 600; color: #d97706;">β = {res['emp_beta']:.3f}</td>
                         </tr>
                         <tr style="background-color: #f8fafc;">
-                            <td style="font-weight: 600; color: #0f766e;">Aperiodic Fit Offset (A)</td>
+                            <td style="font-weight: 600; color: #0f766e;">Aperiodic Offset (A)</td>
                             <td style="font-weight: 600; color: #0f766e;">Offset = {res['ana_offset']:.3f}</td>
                             <td style="font-weight: 600; color: #d97706;">Offset = {res['emp_offset']:.3f}</td>
                         </tr>
