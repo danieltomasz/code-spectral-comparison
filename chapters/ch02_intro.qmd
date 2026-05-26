@@ -21,15 +21,15 @@ The $1/f$ like broadband component also shows regional structure. @frauscher2018
 This chapter addresses three interrelated questions about how the regional spectral organisation reported by intracranial recordings is recovered in non-invasive source-reconstructed HD-EEG. Throughout, regional maps from iEEG are treated as the reference, following @janiukstyte2023NormativeBrainMapping and @afnan2024ValidationMEGSource. <!-- the Frauscher cohort is pre-surgical epilepsy patients rather than a population-normative sample, and the word "normative" is used in this referential sense rather than in a strict population-statistics sense. -->
 
 
-The first question concerns the regional oscillatory maps obtainable in each modality and their cross-modal correspondence. Which aspects of the regional oscillatory organisation in intracranial recordings are also visible in source-reconstructed HD-EEG? And does the cross-modal correspondence look different when reported bin-by-bin in frequency than when aggregated within canonical bands?
-
 This chapter addresses several  questions structured in parts/packaged: 
 
- - More general what are "normative" oscilatory maps within boths modalitites. First, which aspects of  oscillatory regional spectral organisation reported in intracranial recordings are also visible in source-reconstructed HD-EEG?  How these "maps" change when we look on frequnecy level and what when there are grouped per band.
+The first question concerns the regional oscillatory maps obtainable in each modality and their cross-modal correspondence. Which aspects of the regional oscillatory organisation in intracranial recordings are also visible in source-reconstructed HD-EEG? And does the cross-modal correspondence look different when reported bin-by-bin in frequency than when aggregated within canonical bands?
+<!-- 
+ - More general what are "normative" oscilatory maps within boths modalitites. First, which aspects of  oscillatory regional spectral organisation reported in intracranial recordings are also visible in source-reconstructed HD-EEG?  How these "maps" change when we look on frequnecy level and what when there are grouped per band. -->
 
 The second question concerns the role of 1/f modelling in the cross-modal oscillatory match. Does explicitly modelling and removing the broadband or knee component, as @afnan2024ValidationMEGSource did for MEG, change the cross-modal correspondence? How should the aperiodic model (fixed vs knee) be chosen, and does a data-driven clustering of peaks on the raw spectra (Frauscher-style) yield a different regional map than the proportion of specparam-parametrized peaks per band?   <!-- Model choice and the substantive effect of modelling on the cross-modal match are not strictly separable; they are treated in tandem, with the model choice flagged and the cross-modal effect reported as the primary outcome.
-TODO: define & wording about exactly which model is compared with what
- -->
+<!-- TODO: define & wording about exactly which model is compared with what
+ --> -->
 The third question concerns the stability of the aperiodic features themselves across
 modelling and methodological choices. The exponents from different aperiodic models (knee vs fixed) are not on the same scale, but they may still rank regions consistently across modalities. The question is whether they do so; whether exponents from the same dataset and the same model differ systematically when the fit is restricted to a sub-range (e.g. 1-45 Hz vs 1-80 Hz). These comparisons are pooled into a hierarchical Bayesian regression with ROI and subject as random effects, with fitting range and method as the fixed-effect predictors. 
 Then  I compare whether exponents estimated by IRASA agree with those from specparam fit over the same band (80 hz, is not feasible due to howt irasa is computed so i compute corelation for 1-45hz only )

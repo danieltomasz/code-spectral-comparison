@@ -20,6 +20,10 @@ For every virtual sensor 60s activity was extracted according to the parameters 
 
 All spectral data were normalized to unit total power to ensure that the comparison focused on the distribution of frequency peaks (e.g., the occipital alpha or hippocampal delta) rather than absolute amplitude differences between scalp and intracranial sensors.
 
+The general scheme of analyisis is presented in @fig-pipeline.
+
+![](figures/chapter2/pipeline.png){#fig-pipeline height="60%" column="page"}
+
 # Specpram: knee and fixed mode  parametrisation
 
 
@@ -32,7 +36,7 @@ All spectral data were normalized to unit total power to ensure that the compari
 
 To enable direct comparison with the original atlas results, the peak detection procedure of @frauscher2018AtlasNormalIntracranial was reproduced. The normalised power spectra were classified into $k$ groups using the k-means algorithm, with 160 features corresponding to the frequency steps from 0.5 to 80 Hz in 0.5 Hz increments, using Euclidean distance and 100 repetitions. The classification was repeated with increasing $k$ until a group without peaks was identified, defined as the group whose mean normalised spectrum was lower than the maximum among the other groups. The 50% of channels closest to the group mean were retained as the no-peak set.
 
-The 160 frequency bins were grouped into 22 frequency intervals based on the condition that each bin contains at least 4% of total mean power, yielding boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25, 31.75, and 80 Hz. The presence of a peak in a given frequency interval for a particular brain region was determined by comparing the distribution of spectral densities of all channels in that region against the distribution of the no-peak set at the same interval, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% significance level with Dunnett's correction for multiple comparisons across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals.
+The 160 frequency bins were grouped into 22 frequency intervals based on the condition that each bin contains at least 4% of total mean power, yielding boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25, 31.75, and 80 Hz. The presence of a peak in a given frequency interval for a particular brain region was determined by comparing the distribution of spectral densities of all channels in that region against the distribution of the no-peak set at the same interval, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% significance level with Dunnett's correction for multiple comparisons across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals (hemispheres are grouped together).
 
 For the HD-EEG data the same procedure was applied with the iEEG-derived frequency intervals retained for comparability, even though the 4% power condition was not met for the source-reconstructed spectra. The implications of this deviation are reported below as a finding of Analysis 1.
 
@@ -69,7 +73,7 @@ part, by filter edge effects rather than by physiological structure. The
 run) were retained as the no-peak reference set for all subsequent
 peak-detection tests.
 
-Applying the same procedure to the HD-EEG source-reconstructed data yielded six spectral groups. The reduced number of clusters indicates a narrower range of spectral shapes than in iEEG, consistent with the spatial smoothing introduced by source reconstruction. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart, with stronger concentration of power in the alpha range across most clusters, likely reflecting both the eyes-open recording condition and the dominance of posterior sources in the source model. @fig-ieeg-clusters presents these clustering results side by side.
+Applying the same procedure to the HD-EEG source-reconstructed data yielded  11 spectral groups. The reduced number of clusters indicates a narrower range of spectral shapes than in iEEG, consistent with the spatial smoothing introduced by source reconstruction. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart, with stronger concentration of power in the alpha range across most clusters, likely reflecting both the eyes-open recording condition and the dominance of posterior sources in the source model. @fig-ieeg-clusters presents these clustering results side by side.
 
 ![Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the seven iEEG clusters and Panel B shows the six HD-EEG clusters. In both modalities, one no-peak cluster is visible. HD-EEG shows more clusters, most of them distinguished only by the average power of the alpha peak. In the iEEG clusters, the knee is visible; reconstructed sources have more straightforward 1/f-like characteristics.](figures/chapter2/combined_clusters_psd.svg){#fig-ieeg-clusters width="100%" column="page"}
 
@@ -81,7 +85,7 @@ Regional differences per lobes were computed the same method, but just visualise
 
 ![](figures/chapter2/reconstructed sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
 
-The 22 frequency intervals proposed by @frauscher2018AtlasNormalIntracranial were defined so that each bin contained at least 4% of total mean power in the iEEG data. This condition was not satisfied for the source-reconstructed spectra, where power was more concentrated in the alpha range and the higher-frequency bins fell below the 4% threshold. The clustering result and the cluster identities themselves were also sensitive to the chosen fitting range: small changes in the upper or lower bound of the fit altered both the cluster solution and the contents of the no-peak set. The instability is reported here as a finding of Stage 1 rather than as a nuisance, and motivates the parallel use of the more stable per-band parametrised-peak descriptor below.
+The 22 frequency intervals proposed by @frauscher2018AtlasNormalIntracranial were defined so that each bin contained at least 4% of total mean power in the iEEG data. This condition was not satisfied for the source-reconstructed spectra, where power was more concentrated in the alpha range and the higher-frequency bins fell below the 4% threshold. The clustering result and the cluster identities themselves were also sensitive to the chosen fitting range: small changes in the upper or lower bound of the fit altered both the cluster solution and the contents of the no-peak set. The instability is reported here as a finding of Analysis 1 rather than as a nuisance, and motivates the parallel use of the more stable per-band parametrised-peak descriptor below.
 
 
 
@@ -95,7 +99,17 @@ The 22 frequency intervals proposed by @frauscher2018AtlasNormalIntracranial wer
 
 Cross-modal agreement between the iEEG atlas and the source-reconstructed HD-EEG was quantified using the band-overlap metric of @afnan2024ValidationMEGSource, applied directly to the unit-power-normalised PSDs. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, the iEEG atlas was taken as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median of the log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding standard deviation in HD-EEG. The bin-wise overlap is
 
-$$\text{overlap}_r(f) = \begin{cases} 1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f)\bigr\rvert}{\text{SD}^{\,\text{HD}}_r(f)}, & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f)\bigr\rvert \le \text{SD}^{\,\text{HD}}_r(f) \\[2mm] 0, & \text{otherwise.} \end{cases}$$
+$$
+\text{overlap}_r(f) =
+\begin{cases}
+    1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert}
+              {\text{SD}^{\,\text{HD}}_r(f)},
+        & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert
+          \le \text{SD}^{\,\text{HD}}_r(f) \\[2mm]
+    0,  & \text{otherwise.}
+\end{cases}
+$$
+
 
 The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and decreases linearly to 0 once the two medians differ by one HD-EEG standard deviation. The bin-wise overlap was averaged across the frequency bins of each canonical band ($\delta$ 0.5-4, $\theta$ 4-8, $\alpha$ 8-13, $\beta$ 13-30, $\gamma$ 30-80 Hz), yielding one value per region per band. Both the unaveraged bin-level overlap and the band-averaged summary are reported.
 
