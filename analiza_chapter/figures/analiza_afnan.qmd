@@ -1,0 +1,246 @@
+---
+title: "Reproducing Afnan 2023 Figure 2 (panel A)"
+format:
+  html:
+    toc: true
+    code-fold: true
+jupyter: spectral-comparison-3.14
+execute:
+  echo: false
+  output: true
+  cache: true
+  freeze: auto
+---
+
+Panel A of @afnan2023ValidatingMEGSource Figure 2: group average of relative
+PSD per frequency band, per 38-region iEEG atlas ROI, shown side-by-side for
+ground-truth iEEG and the MEG-estimated ViEEG. Here we substitute HD-EEG
+source-reconstructed signals for the MEG ViEEG. Within each band, iEEG and
+the reconstructed modality share a color scale so the maps are directly
+comparable; the scale changes between bands.
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from plotnine import (
+    aes,
+    element_text,
+    ggplot,
+    labs,
+    scale_fill_cmap,
+    theme,
+    theme_void,
+)
+
+from ggsegpy.geom_brain import geom_brain
+
+from pesco.atlases import load_frauscher
+from pesco.io import load_sources, prepare_psd
+from pesco.preprocess import compute_psd, normalize_psd
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DATA_PATH_IEEG = PROJECT_DIR / "data/Frauscher2018"
+DATA_PATH_SOURCES = PROJECT_DIR / "data/Mantini2018"
+
+# HD-EEG source data was high-pass filtered at 1 Hz; align iEEG to the same
+# lower bound so per-channel "total power" is computed over the same range
+# and the two modalities are comparable.
+FREQ_RANGE = (1.0, 80.0)
+BANDS = [
+    ("δ", 1.0, 4.0),
+    ("θ", 4.0, 8.0),
+    ("α", 8.0, 13.0),
+    ("β", 13.0, 30.0),
+    ("γ", 30.0, 80.0),
+]
+BAND_ORDER = [b[0] for b in BANDS]
+
+fig_dir = Path("figures")
+fig_dir.mkdir(exist_ok=True)
+```
+
+## Load both modalities
+
+```{python}
+#| label: load-ieeg
+# iEEG: normalize=False → keep raw V²/Hz; we normalise to unit-integral below
+# so the integration logic is shared with the HD modality.
+ieeg_f, ieeg_psd_df = prepare_psd(
+    matfile=DATA_PATH_IEEG / "WakefulnessMatlabFile.mat",
+    region_dict_file=DATA_PATH_IEEG / "RegionInformation.csv",
+    frauscher_bandpass=False,
+    normalize=False,
+    freq_range=FREQ_RANGE,
+)
+ieeg_psd_df.head()
+```
+
+```{python}
+#| label: load-hd
+hd_raw, hd_meta = load_sources(DATA_PATH_SOURCES)
+hd_f, hd_psd = compute_psd(
+    hd_raw.get_data(), hd_raw.info["sfreq"], fmin=FREQ_RANGE[0], fmax=FREQ_RANGE[1]
+)
+assert np.isclose(ieeg_f[0], hd_f[0]) and np.isclose(ieeg_f[-1], hd_f[-1]), (
+    "iEEG and HD frequency grids must align for relative PSD comparability"
+)
+hd_psd_df = pd.DataFrame(
+    hd_psd, index=pd.Index(hd_raw.ch_names, name="ch_name"), columns=hd_f
+).join(hd_meta)
+hd_psd_df.head()
+```
+
+## Per-channel band-relative power
+
+Following @afnan2023ValidatingMEGSource sec. 2.9: per channel, relative PSD
+bin = `PSD(f) / Σ_f PSD(f)` (each value divided by total power across the
+whole frequency range; bins sum to 1). The per-band value is the **sum** of
+those relative-PSD bins across the band — equivalently the fraction of
+total power in the band, in [0, 1]. This matches the paper's reported
+scales (anterior δ ≈ 0.36 = 36 % of total power in delta).
+
+The paper's prose "group average across all channels within a ROI and all
+frequency bins in each band" describes per-ROI averaging over channels of
+the per-channel band sum; "across all frequency bins" reads as the
+within-band aggregation, which must be a sum for the displayed scale to
+range up to 0.36 in δ (a mean across 7 bins would top out near 0.05).
+
+```{python}
+#| label: band-rel-power
+def band_relative_power(
+    psd_df: pd.DataFrame, freqs: np.ndarray, region_col: str
+) -> pd.DataFrame:
+    """Per-channel fraction of total power in each canonical band."""
+    freqs = np.asarray(freqs, dtype=float)
+    psd = psd_df[list(freqs)].to_numpy(dtype=float)
+    rel = psd / psd.sum(axis=-1, keepdims=True)    # bare ratio, sums to 1
+
+    out = {}
+    last_name = BANDS[-1][0]
+    for name, lo, hi in BANDS:
+        mask = (freqs >= lo) & (freqs <= hi if name == last_name else freqs < hi)
+        out[name] = rel[:, mask].sum(axis=1)       # ∈ [0, 1]
+
+    band_df = pd.DataFrame(out, index=psd_df.index)
+    band_df[region_col] = psd_df[region_col].to_numpy()
+    return band_df
+
+
+ieeg_bands = band_relative_power(ieeg_psd_df, ieeg_f, region_col="ChannelRegion")
+hd_bands = band_relative_power(hd_psd_df, hd_f, region_col="region_number")
+ieeg_bands.head()
+```
+
+```{python}
+#| label: roi-mean
+# Group average per ROI (frauscher_id 1-38). Bilateral ROIs collapse —
+# Afnan averages over all channels in a ROI regardless of hemisphere.
+ieeg_roi = (
+    ieeg_bands.groupby("ChannelRegion")[BAND_ORDER]
+    .mean()
+    .rename_axis("frauscher_id")
+    .reset_index()
+)
+hd_roi = (
+    hd_bands.groupby("region_number")[BAND_ORDER]
+    .mean()
+    .rename_axis("frauscher_id")
+    .reset_index()
+)
+ieeg_roi.head()
+```
+
+## Map ROI values onto the Frauscher 38-region atlas
+
+```{python}
+#| label: atlas
+atlas = load_frauscher()
+core = atlas.core[["label", "frauscher_id", "region", "hemi"]]
+
+
+def roi_to_labels(roi_df: pd.DataFrame, modality: str) -> pd.DataFrame:
+    """Long: one row per (atlas label, band) with the ROI mean attached."""
+    merged = core.merge(roi_df, on="frauscher_id", how="left")
+    long = merged.melt(
+        id_vars=["label", "frauscher_id", "region", "hemi"],
+        value_vars=BAND_ORDER,
+        var_name="band",
+        value_name="value",
+    )
+    long["modality"] = modality
+    return long
+
+
+ieeg_long = roi_to_labels(ieeg_roi, "iEEG")
+hd_long = roi_to_labels(hd_roi, "HD-EEG source")
+plot_df = pd.concat([ieeg_long, hd_long], ignore_index=True)
+plot_df["band"] = pd.Categorical(plot_df["band"], categories=BAND_ORDER, ordered=True)
+plot_df.head()
+```
+
+## Figure 2A — relative PSD on the cortical surface
+
+Per paper §2.9 / Fig. 2 caption: "color bar ranges from minimum to maximum
+value among iEEG and ViEEG in each frequency band, such that the scale is
+the same for both modalities in a given band". Each band gets its own
+color scale spanning that band's joint iEEG + HD range; values plotted
+in their native [0, 1] units (no global rescaling). Composed via plotnine
+0.15 native `|` / `/` operators so each row keeps its own fill scale.
+
+```{python}
+#| label: fig-2a
+#| fig-cap: "Group average relative PSD per ROI for the iEEG atlas (left) and HD-EEG source-reconstructed signals (right). One row per canonical band; within a row the two modalities share a color scale spanning that band's joint min-max (paper §2.9). Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown."
+from functools import reduce
+from operator import truediv
+
+def band_row(name: str, lo: float, hi: float):
+    sub = plot_df.loc[plot_df["band"] == name, ["label", "modality", "value"]]
+    vmin = float(sub["value"].min())
+    vmax = float(sub["value"].max())
+    scale = scale_fill_cmap(
+        cmap_name="RdYlGn_r",
+        limits=(vmin, vmax),
+        name=f"{name} ({lo:g}-{hi:g} Hz)",
+    )
+
+    def panel(modality: str, title: str, show_legend: bool):
+        d = sub.loc[sub["modality"] == modality, ["label", "value"]]
+        return (
+            ggplot(d, aes(fill="value"))
+            + geom_brain(
+                atlas=atlas, mapping=aes(fill="value"), show_legend=show_legend
+            )
+            + scale
+            + theme_void()
+            + theme(plot_title=element_text(size=9))
+            + labs(title=title)
+        )
+
+    left = panel("iEEG", f"{name}  iEEG", show_legend=False)
+    right = panel("HD-EEG source", f"{name}  HD-EEG source", show_legend=True)
+    return left | right
+
+
+def build_fig():
+    rows = [band_row(n, lo, hi) for n, lo, hi in BANDS]
+    return reduce(truediv, rows)
+
+# plotnine.composition mutates internal layout state on save → rebuild per export.
+build_fig().save(fig_dir / "fig2a_relative_psd.svg", width=10, height=16, verbose=False)
+build_fig().save(
+    fig_dir / "fig2a_relative_psd.png", width=10, height=16, dpi=150, verbose=False
+)
+build_fig()
+```
+
+## Notes
+
+- Hippocampus (r37) and amygdala (r38) are present in the Frauscher 38-ROI
+  iEEG atlas but lack 2D cortical-surface geometry in the bundled ggsegpy
+  atlas; `geom_brain` warns and skips them.
+- The paper's panel B (t-statistic map, Bonferroni-corrected per ROI × band)
+  is omitted here; reuse the same `plot_df` skeleton with a Welch t-test per
+  ROI to add it.
