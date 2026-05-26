@@ -2,13 +2,17 @@
 title: "Comparison of Ground Truth iEEG Atlas and Reconstructed HD-EEG Source Space"
 subtitle: "Recreating Figure 2 of Afnan et al. (2023)"
 format:
-  html:
-    toc: true
-    code-fold: true
   typst:
-    fontsize: 11pt
-    number-sections: true
+    #fontsize: 12pt
+    number-sections: false
     toc: false
+    #toc-depth: 2
+    # Tell Quarto/Pandoc to wrap citations in hyperlinks
+    link-citations: true
+    # Tell Typst to color all links blue
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
 jupyter: spectral-comparison-3.14
 execute:
   echo: true
@@ -264,40 +268,118 @@ One column per modality (iEEG Ground Truth left, HD-EEG Source right); one row p
 ```{python}
 #| label: fig-2a
 #| fig-cap: "Group average relative PSD per ROI for the iEEG atlas (left column) and HD-EEG source-reconstructed signals (right column). One row per canonical band; each row has its own independent color scale and color bar showing the actual unrescaled relative PSD values. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown."
-#| fig-width: 7
-#| fig-height: 12
+#| fig-width: 14
+#| fig-height: 15
 
-def make_band_row(band_name: str, lo: float, hi: float):
-    # Subset data for this band
-    sub = plot_df[(plot_df["band"] == band_name) & (plot_df["modality"].isin(["iEEG (ground truth)", "HD-EEG source"]))]
+# Colorscale for relative PSD. Try: "viridis", "magma", "plasma", "Spectral_r", or "jet"
+PSD_COLORSCALE = "viridis"
+
+t_long = t_to_labels(t_df)
+
+def make_band_row(
+    band_name: str,
+    lo: float,
+    hi: float,
+    show_title: bool = True,
+    title_ieeg: str = None,
+    title_hd: str = None,
+    title_t: str = None,
+):
+    # Subset data for this band, keeping only required columns to avoid atlas merge conflicts
+    sub_ieeg = plot_df.loc[
+        (plot_df["band"] == band_name) & (plot_df["modality"] == "iEEG (ground truth)"),
+        ["label", "value"]
+    ]
+    sub_hd = plot_df.loc[
+        (plot_df["band"] == band_name) & (plot_df["modality"] == "HD-EEG source"),
+        ["label", "value"]
+    ]
+    sub_t = t_long.loc[
+        t_long["band"] == band_name,
+        ["label", "value"]
+    ]
     
-    # Calculate limits for the actual relative PSD values in this band
-    vmin = float(np.nanmin(sub["value"]))
-    vmax = float(np.nanmax(sub["value"]))
+    # Calculate limits for the relative PSD in this band across both modalities
+    val_min = min(float(sub_ieeg["value"].min()), float(sub_hd["value"].min()))
+    val_max = max(float(sub_ieeg["value"].max()), float(sub_hd["value"].max()))
     
-    p = (
-        ggplot(sub, aes(fill="value"))
-        + geom_brain(atlas=atlas, mapping=aes(fill="value"), show_legend=True)
-        + facet_wrap("~modality")
+    t_ieeg = title_ieeg if title_ieeg is not None else (f"{band_name} ({lo:g}–{hi:g} Hz)  iEEG" if show_title else f"{band_name} ({lo:g}–{hi:g} Hz)")
+    t_hd = title_hd if title_hd is not None else ("ViEEG" if show_title else None)
+    t_t = title_t if title_t is not None else ("Welch t-map" if show_title else None)
+
+    # ggplot for iEEG (relative PSD, no legend)
+    p_ieeg = (
+        ggplot(sub_ieeg, aes(fill="value"))
+        + geom_brain(atlas=atlas, mapping=aes(fill="value"), hemi="left", show_legend=False)
         + scale_fill_cmap(
-            cmap_name="RdYlGn_r",
-            limits=(vmin, vmax),
+            cmap_name=PSD_COLORSCALE,
+            limits=(val_min, val_max),
+        )
+        + theme_void()
+        + theme(
+            plot_title=element_text(size=9, weight="bold", family="sans-serif", hjust=-0.15),
+            legend_position="none",
+        )
+    )
+    if t_ieeg is not None:
+        p_ieeg = p_ieeg + labs(title=t_ieeg)
+    
+    # ggplot for HD-EEG (relative PSD, with vertical legend on the right)
+    p_hd = (
+        ggplot(sub_hd, aes(fill="value"))
+        + geom_brain(atlas=atlas, mapping=aes(fill="value"), hemi="left", show_legend=True)
+        + scale_fill_cmap(
+            cmap_name=PSD_COLORSCALE,
+            limits=(val_min, val_max),
             name="Relative PSD",
         )
         + theme_void()
         + theme(
-            strip_text=element_text(size=10, weight="bold"),
-            plot_title=element_text(size=11, weight="bold", hjust=0.5),
+            plot_title=element_text(size=9, weight="bold", family="sans-serif", hjust=0.5),
+            legend_position="right",
+            legend_direction="vertical",
+            legend_title=element_text(size=8, weight="bold", family="sans-serif"),
+            legend_text=element_text(size=7, family="sans-serif"),
+            legend_key_height=40,
+            legend_key_width=6,
+            legend_box_spacing=0.04,
         )
-        + labs(title=f"{band_name} ({lo:g}–{hi:g} Hz)  [Limits: {vmin:.2f} – {vmax:.2f}]")
     )
-    return p
+    if t_hd is not None:
+        p_hd = p_hd + labs(title=t_hd)
+    
+    # ggplot for Welch's t-map (diverging, with vertical legend on the right)
+    p_t = (
+        ggplot(sub_t, aes(fill="value"))
+        + geom_brain(atlas=atlas, mapping=aes(fill="value"), hemi="left", show_legend=True)
+        + scale_fill_cmap(
+            cmap_name="RdBu_r",
+            limits=(-15, 15),
+            na_value="lightgray",
+            name="t-statistic",
+        )
+        + theme_void()
+        + theme(
+            plot_title=element_text(size=9, weight="bold", family="sans-serif", hjust=0.5),
+            legend_position="right",
+            legend_direction="vertical",
+            legend_title=element_text(size=8, weight="bold", family="sans-serif"),
+            legend_text=element_text(size=7, family="sans-serif"),
+            legend_key_height=40,
+            legend_key_width=6,
+            legend_box_spacing=0.04,
+        )
+    )
+    if t_t is not None:
+        p_t = p_t + labs(title=t_t)
+    
+    return p_ieeg | p_hd | p_t
 
 # Render each band row
-compiled_rows = [make_band_row(name, lo, hi) for name, lo, hi in BANDS]
+compiled_rows = [make_band_row(name, lo, hi, show_title=(i == 0)) for i, (name, lo, hi) in enumerate(BANDS)]
 
-# Stack rows vertically natively
-fig2a = (
+# Stack rows vertically to form the full composite side-by-side figure
+fig2 = (
     compiled_rows[0]
     / compiled_rows[1]
     / compiled_rows[2]
@@ -305,12 +387,14 @@ fig2a = (
     / compiled_rows[4]
 )
 
-# Save with precise figure size using draw() to avoid plotnine Stack.save ignoring size
-fig2a_fig = fig2a.draw()
-fig2a_fig.set_size_inches(7, 12)
-fig2a_fig.savefig(fig_dir / "fig2a_relative_psd.svg", dpi=150)
-fig2a_fig.savefig(fig_dir / "fig2a_relative_psd.png", dpi=200)
-fig2a
+# Save with precise wide figure size using draw() to keep proper aspect ratio and alignment
+fig2_fig = fig2.draw()
+fig2_fig.set_size_inches(14, 15)
+fig2_fig.savefig(fig_dir / "fig2_reproduction.svg", dpi=150)
+fig2_fig.savefig(fig_dir / "fig2_reproduction.png", dpi=200)
+# Overwrite fig2a_relative_psd.png so it is seamlessly displayed in the main Quarto chapter document
+fig2_fig.savefig(fig_dir / "fig2a_relative_psd.png", dpi=200)
+fig2
 ```
 
 ## Figure 2B — Welch's t-statistic map
@@ -320,8 +404,9 @@ A single-column faceted plot showing the Welch t-statistic ($p < 0.05$ Bonferron
 ```{python}
 #| label: fig-2b
 #| fig-width: 4.5
-#| fig-height: 12
-# Map Figure 2B (Welch t-map)
+#| fig-height: 10
+# Note: Welch t-map is now beautifully integrated side-by-side into the composite Figure 2 above.
+# This block is retained for Quarto structure compatibility and displays the standalone t-statistic map.
 t_long = t_to_labels(t_df)
 t_long["band"] = pd.Categorical(t_long["band"], categories=BAND_ORDER, ordered=True)
 t_long["band_label"] = t_long["band"].map(strip_lookup)
@@ -336,7 +421,7 @@ t_long["band_label"] = pd.Categorical(
 
 fig2b = (
     ggplot(t_long, aes(fill="value"))
-    + geom_brain(atlas=atlas, mapping=aes(fill="value"))
+    + geom_brain(atlas=atlas, mapping=aes(fill="value"), hemi="left")
     + facet_grid("band_label~modality")
     + scale_fill_cmap(
         cmap_name="RdBu_r",
@@ -346,13 +431,15 @@ fig2b = (
     )
     + theme_void()
     + theme(
-        strip_text=element_text(size=9),
-        plot_title=element_text(size=11),
+        strip_text=element_text(size=9, weight="bold", family="sans-serif"),
+        plot_title=element_text(size=11, weight="bold", family="sans-serif", hjust=0.5),
+        legend_title=element_text(size=9, weight="bold", family="sans-serif"),
+        legend_text=element_text(size=8, family="sans-serif"),
     )
     + labs(title="Afnan 2023 Fig. 2B — Welch t-map (iEEG - HD-EEG)")
 )
-fig2b.save(fig_dir / "fig2b_t_map.svg", width=4.5, height=12, dpi=150, verbose=False)
-fig2b.save(fig_dir / "fig2b_t_map.png", width=4.5, height=12, dpi=200, verbose=False)
+fig2b.save(fig_dir / "fig2b_t_map.svg", width=4.5, height=10, dpi=150, verbose=False)
+fig2b.save(fig_dir / "fig2b_t_map.png", width=4.5, height=10, dpi=200, verbose=False)
 fig2b
 ```
 
