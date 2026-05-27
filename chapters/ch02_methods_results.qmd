@@ -1,44 +1,86 @@
 ## Datasets
 
+The general scheme of analyisis is presented in @fig-pipeline.
+
+![Schematic analysis pipeline.](figures/chapter2/pipeline.png){#fig-pipeline height="60%" column="page"}
+
 ### Intracranial data
 
 The intracranial EEG data were obtained from the MNI Open iEEG Atlas [@frauscher2018AtlasNormalIntracranial], a normative resource compiled from 106 patients with refractory epilepsy  recorded at three centres. Only channels implanted in brain regions that were determined to be non-epileptogenic throughout the monitoring period were retained, yielding 1772 channels (13 channels were removed from intitial release as were later judged erroneus on visual inspection) distributed across 38 cortical regions defined by the MICCAI atlas. @fig-frauscher-atlas provides a spatial overview of channel coverage in the atlas, distinguishing depth/stereo-EEG contacts from cortical grid and strip contacts across both hemispheres.
 
 These 38 regions were derived from the consolidation of 20 smaller MICCAI labels into 8 functional groups to ensure sufficient channel density (min. 5 per region), while 16 labels were omitted due to lack of coverage. For each channel, 60 seconds of resting wakefulness data with eyes closed were available.
 
-![Spatial distribution of the MNI Open iEEG Atlas channels and regional reference centroids in MNI space. (**A**) Glass-brain visualization of the 1785 intracranial EEG channels, with depth and stereo-EEG contacts shown in blue and cortical grid/strip contacts shown in orange. For visualization, left-hemisphere channel coordinates were assigned negative x-values based on the hemisphere label. (**B**) Glass-brain visualization of the regional reference centroids used in the grouped regional analyses, shown as enlarged magenta markers.](figures/chapter2/frauscher_channels_and_centroids.png){#fig-frauscher-atlas fig-align="center" width="80%"}
+Signals were  resampled to 200 Hz. We avoided band-pass filtering at 0.5-80 Hz as this change power spectrum already  below cutoff frequency. Power spectral density (PSD) was estimated using Welch's method with 2-second Hamming windows and 50% overlap, resulting in a frequency resolution of 0.5 Hz.  Full preprocessing details are given in @frauscher2018AtlasNormalIntracranial.
 
-Signals were band-pass filtered at 0.5-80 Hz and resampled to 200 Hz. Power spectral density (PSD) was estimated using Welch's method with 2-second Hamming windows and 50% overlap, resulting in a frequency resolution of 0.5 Hz. Spectral densities were normalised to unit total power, making them independent of signal amplitude. Full preprocessing details are given in @frauscher2018AtlasNormalIntracranial.
 
-### Reconstructed sources
+### Source-reconstructed HD-EEG
 
-5 min  of eyes-open resting state EEG data were collected in 19 healthy young adult volunteers (age $28\pm 6$ years, 14 females) with Ethics Committee of ETH Zurich approval. EEG signals were recorded at 1000Hz sampling rate using a 256channel HydroCel Geodesic Sensor Net by Electrical Geodesics (Eugene, Oregon, USA). 
+Five minutes  of eyes-open resting state EEG data were collected in 19 healthy young adult volunteers (age $28\pm 6$ years, 14 females) with Ethics Committee of ETH Zurich approval. EEG signals were recorded at 1000Hz sampling rate using a 256channel HydroCel Geodesic Sensor Net by Electrical Geodesics (Eugene, Oregon, USA). 
 The full details of collecting and preprocessing this dataset dataset were described in @samogin2019SharedConnectionspecificIntrinsic and  @samogin2020FrequencydependentFunctionalConnectivity. The poor  chanels were  identified (0-13 pers subject) and interpolated, data was band-pass filtered within 1-80Hz range and biological artifact were removed using fixed-point ICA (FastICA) algorithm. The realistic head model was provided as input to the exact low-resolution brain electromagnetic tomography (eLORETA) algorithm ([@pascual-marqui2011AssessingInteractionsBrain], together with the  preprocessed EEG signals, to estimate brain activity in the source space at high-temporal resolution.
 
 While the HD-EEG data were recorded with eyes open, the  following steps and timeseries extraction were chosen to  matche the iEEG atlas: source activity was extracted from reconstructed sources  using average coordinates from the  electrodes within 76 MICCAI-defined ROIs in MNI space,  resulting in 1444 virtual sensors, with the grouped regional reference coordinates illustrated in Figure @fig-frauscher-atlas, panel B.
+
 For every virtual sensor 60s activity was extracted according to the parameters defined in Frauscher's paper (sampling frequency 200Hz). Spectral densities were computed using identical Welch parameters (2s windows, 50% overlap, 0.5 Hz resolution). 
 
 All spectral data were normalized to unit total power to ensure that the comparison focused on the distribution of frequency peaks (e.g., the occipital alpha or hippocampal delta) rather than absolute amplitude differences between scalp and intracranial sensors.
 
-The general scheme of analyisis is presented in @fig-pipeline.
 
-![](figures/chapter2/pipeline.png){#fig-pipeline height="60%" column="page"}
-
-# Specpram: knee and fixed mode  parametrisation
+![Spatial distribution of the MNI Open iEEG Atlas channels and regional reference centroids in MNI space. (**A**) Glass-brain visualization of the 1785 intracranial EEG channels, with depth and stereo-EEG contacts shown in blue and cortical grid/strip contacts shown in orange. For visualization, left-hemisphere channel coordinates were assigned negative x-values based on the hemisphere label. (**B**) Glass-brain visualization of the regional reference centroids used in the grouped regional analyses, shown as enlarged magenta markers.](figures/chapter2/frauscher_channels_and_centroids.png){#fig-frauscher-atlas fig-align="center" width="80%"}
 
 
-## Analysis 1 — Phenomenological description of regional oscillatory features
+##  Oscillatory descriptors
+
+#### K-means clusterisation
+
+To enable direct comparison with the original atlas, the peak-detection
+procedure of Frauscher et al. (2018) was reproduced The normalised power
+spectra were classified into k groups using k-means with 160 features
+(0.5 Hz bins from 0.5 to 80 Hz), Euclidean distance, and 100 repetitions.
+The classification was repeated with increasing k until a group without
+peaks was identified, defined as the group whose mean normalised spectrum
+was lower than the maximum among the other groups. The 50% of channels
+closest to the group mean were retained as the no-peak set.
+
+To test for the presence of region-specific peaks against this no-peak
+reference set, the spectrum was divided into frequency intervals. The 160
+frequency bins were grouped into 22 frequency intervals based on the
+condition that each bin contains at least 4% of total mean power, yielding
+boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25,
+6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25,
+31.75, and 80 Hz. The presence of a peak in a given frequency interval
+for a particular brain region was determined by comparing the distribution
+of spectral densities of all channels in that region against the no-peak
+set, using a one-sided two-sample Kolmogorov-Smirnov test at the 5%
+significance level with Dunnett's correction for multiple comparisons
+across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency
+intervals (hemispheres grouped together).
+
+For the HD-EEG data, the same procedure was applied with the
+iEEG-derived frequency intervals retained for comparability, even though
+the 4% power condition was not met for the source-reconstructed spectra.
+<!-- Implications of this deviation are reported as a finding (Section 3.1.1). -->
 
 
-### Methods
+### Cross-modal correspondence on uncorrected spectra
 
-#### Oscillatory peak detection:  k-means clustering
+Cross-modal agreement between the iEEG atlas and the source-reconstructed HD-EEG was quantified using the band-overlap metric of @afnan2024ValidationMEGSource, applied directly to the unit-power-normalised PSDs. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, the iEEG atlas was taken as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median of the log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding standard deviation in HD-EEG. The bin-wise overlap is
 
-To enable direct comparison with the original atlas results, the peak detection procedure of @frauscher2018AtlasNormalIntracranial was reproduced. The normalised power spectra were classified into $k$ groups using the k-means algorithm, with 160 features corresponding to the frequency steps from 0.5 to 80 Hz in 0.5 Hz increments, using Euclidean distance and 100 repetitions. The classification was repeated with increasing $k$ until a group without peaks was identified, defined as the group whose mean normalised spectrum was lower than the maximum among the other groups. The 50% of channels closest to the group mean were retained as the no-peak set.
+$$
+\text{overlap}_r(f) =
+\begin{cases}
+    1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert}
+              {\text{SD}^{\,\text{HD}}_r(f)},
+        & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert
+          \le \text{SD}^{\,\text{HD}}_r(f) \\[2mm]
+    0,  & \text{otherwise.}
+\end{cases}
+$$
 
-The 160 frequency bins were grouped into 22 frequency intervals based on the condition that each bin contains at least 4% of total mean power, yielding boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25, 31.75, and 80 Hz. The presence of a peak in a given frequency interval for a particular brain region was determined by comparing the distribution of spectral densities of all channels in that region against the distribution of the no-peak set at the same interval, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% significance level with Dunnett's correction for multiple comparisons across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals (hemispheres are grouped together).
 
-For the HD-EEG data the same procedure was applied with the iEEG-derived frequency intervals retained for comparability, even though the 4% power condition was not met for the source-reconstructed spectra. The implications of this deviation are reported below as a finding of Analysis 1.
+The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and decreases linearly to 0 once the two medians differ by one HD-EEG standard deviation. The bin-wise overlap was averaged across the frequency bins of each canonical band ($\delta$ 0.5-4, $\theta$ 4-8, $\alpha$ 8-13, $\beta$ 13-30, $\gamma$ 30-80 Hz), yielding one value per region per band. Both the unaveraged bin-level overlap and the band-averaged summary are reported.
+
+
+## Spectral parametrisation
 
 ### Results
 
@@ -93,25 +135,7 @@ The 22 frequency intervals proposed by @frauscher2018AtlasNormalIntracranial wer
 
 <!-- [PLACEHOLDER: presentation of the cross-modal correspondence at bin-level vs band-aggregated resolution. Note: this sub-question is mentioned in the intro but the analysis is most naturally placed in Stage 2 where the Afnan overlap operates bin-by-bin and is then averaged within bands. Consider moving this paragraph to Stage 2 Results if that is where the figure naturally lives.] -->
 
-## Analysis 2 — Cross-modal correspondence on uncorrected spectra
 
-### Methods
-
-Cross-modal agreement between the iEEG atlas and the source-reconstructed HD-EEG was quantified using the band-overlap metric of @afnan2024ValidationMEGSource, applied directly to the unit-power-normalised PSDs. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, the iEEG atlas was taken as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median of the log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding standard deviation in HD-EEG. The bin-wise overlap is
-
-$$
-\text{overlap}_r(f) =
-\begin{cases}
-    1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert}
-              {\text{SD}^{\,\text{HD}}_r(f)},
-        & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert
-          \le \text{SD}^{\,\text{HD}}_r(f) \\[2mm]
-    0,  & \text{otherwise.}
-\end{cases}
-$$
-
-
-The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and decreases linearly to 0 once the two medians differ by one HD-EEG standard deviation. The bin-wise overlap was averaged across the frequency bins of each canonical band ($\delta$ 0.5-4, $\theta$ 4-8, $\alpha$ 8-13, $\beta$ 13-30, $\gamma$ 30-80 Hz), yielding one value per region per band. Both the unaveraged bin-level overlap and the band-averaged summary are reported.
 
 ### Results
 
