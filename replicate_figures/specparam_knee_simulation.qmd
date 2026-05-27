@@ -1,0 +1,552 @@
+---
+title: "Simulating and Understanding the SpecParam (FOOOF) Knee Parameter"
+subtitle: "An Interactive Guide to Aperiodic Component Modeling"
+author: Daniel Borek
+format:
+  html:
+    embed-resources: true
+jupyter: spectral-comparison-3.14
+execute:
+  echo: false
+  fig-show: true
+  cache: true
+  freeze: auto
+---
+
+## 1. Theoretical Framework
+
+The power spectrum of electrophysiological recordings (e.g., EEG, iEEG, LFP) contains two major components: **periodic activity** (oscillatory peaks) and **aperiodic activity** (the 1/f-like background). 
+
+The `specparam` (formerly `FOOOF`) algorithm parameterizes the aperiodic component in log-log space. In its general **Knee mode**, the aperiodic power spectrum $L(f)$ is modeled as:
+
+$$L(f) = b - \log_{10}(k + f^{\chi})$$
+
+where:
+- $L(f)$ is the log-power at frequency $f$.
+- $b$ is the **offset**, related to the overall vertical position of the spectrum.
+- $k$ is the **knee parameter**, representing the bend/transition point in the spectrum.
+- $\chi$ is the **exponent**, representing the slope of the power spectrum at high frequencies.
+
+---
+
+### 1.1 The Role of the Knee Parameter ($k$)
+
+To understand the mathematical behavior of the knee parameter, we can examine its limits at low and high frequencies:
+
+#### Low Frequency Plateau ($f \ll k^{1/\chi}$)
+When the frequency $f$ is small enough such that $f^{\chi}$ is much smaller than the knee parameter $k$, the $f^{\chi}$ term becomes negligible:
+
+$$L(f) \approx b - \log_{10}(k)$$
+
+This yields a flat, horizontal **plateau** of height $b - \log_{10}(k)$. The height of the plateau is determined jointly by the offset $b$ and the knee parameter $k$.
+
+#### High Frequency Power-Law ($f \gg k^{1/\chi}$)
+When the frequency $f$ is large such that $f^{\chi}$ is much larger than $k$, the knee parameter $k$ becomes negligible:
+
+$$L(f) \approx b - \log_{10}(f^{\chi}) = b - \chi \log_{10}(f)$$
+
+In log-log space, this is a straight line with a constant negative slope equal to $-\chi$.
+
+---
+
+### 1.2 The Knee Frequency ($f_k$) and Time Constant ($\tau$)
+
+The **Knee Frequency** ($f_k$ in Hz) marks the transition point (the "bend") between the low-frequency plateau and the high-frequency slope. This is the frequency where the two terms inside the logarithm are equal:
+
+$$f_k^{\chi} = k \implies f_k = k^{1/\chi}$$
+
+At this exact frequency, the log-power is:
+
+$$L(f_k) = b - \log_{10}(k + k) = b - \log_{10}(2k) = \left(b - \log_{10}(k)\right) - \log_{10}(2) \approx \text{Plateau Height} - 0.301$$
+
+This means $f_k$ is the frequency at which the power drops by $\log_{10}(2) \approx 0.3$ log units (or 3 dB) below the low-frequency plateau. It is mathematically analogous to the **cut-off frequency** of a first-order low-pass filter!
+
+#### Relationship to Time Constants ($\tau$)
+Under physical models of neural activity (such as shot-noise models or membrane potential dynamics), the knee frequency corresponds to a characteristic neural relaxation timescale or **time constant** ($\tau$):
+
+$$\tau = \frac{1}{2\pi f_k} = \frac{1}{2\pi k^{1/\chi}}$$
+
+A higher knee parameter $k$ corresponds to a higher knee frequency $f_k$, which translates to a shorter time constant $\tau$ (faster decay of neural correlations).
+
+---
+
+## 2. Python Setup and Imports
+
+Let's initialize our Python environment and load the necessary libraries.
+
+```{python}
+#| label: setup
+import numpy as np
+import matplotlib.pyplot as plt
+from specparam import SpectralModel, SpectralGroupModel
+
+# Set nice matplotlib defaults
+plt.rcParams['figure.figsize'] = [10, 6]
+plt.rcParams['font.size'] = 11
+plt.rcParams['axes.spines.top'] = False
+plt.rcParams['axes.spines.right'] = False
+plt.rcParams['figure.dpi'] = 100
+```
+
+---
+
+## 3. Mathematical Simulation of the Aperiodic Component
+
+Let's define a function that implements the SpecParam knee equation so we can compute and plot the spectra manually.
+
+```{python}
+def specparam_knee_func(f, b, k, chi):
+    """
+    Computes the SpecParam aperiodic component: L(f) = b - log10(k + f^chi)
+    """
+    return b - np.log10(k + f**chi)
+
+# Define a standard frequency range (e.g., 1 to 100 Hz)
+freqs = np.linspace(1, 100, 500)
+```
+
+### 3.1 Parameter Sweep: Varying the Knee Parameter ($k$)
+
+Here, we keep the offset ($b=3.0$) and exponent ($\chi=1.5$) constant, and vary $k$ from $2.0$ to $50.0$. 
+
+Notice how:
+1. A larger $k$ shifts the low-frequency plateau downwards.
+2. A larger $k$ pushes the knee (bend) frequency further to the right.
+3. At high frequencies, all curves converge asymptotically to the same slope ($-\chi = -1.5$).
+
+```{python}
+b_val = 3.0
+chi_val = 1.5
+k_values = [2.0, 10.0, 50.0]
+colors = ['#22c55e', '#64748b', '#3b82f6'] # Green, Slate, Blue
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+# Plot 1: Log-Log Space (SpecParam standard representation)
+ax1 = axes[0]
+for k_val, color in zip(k_values, colors):
+    l_power = specparam_knee_func(freqs, b_val, k_val, chi_val)
+    f_k = k_val**(1 / chi_val)
+    
+    # Plot curve
+    ax1.plot(np.log10(freqs), l_power, label=f'k = {k_val} (fk ≈ {f_k:.1f} Hz)', color=color, linewidth=2.5)
+    
+    # Plot vertical line at Knee Frequency
+    y_k = specparam_knee_func(f_k, b_val, k_val, chi_val)
+    ax1.axvline(np.log10(f_k), linestyle='--', color=color, alpha=0.5)
+    ax1.scatter(np.log10(f_k), y_k, color=color, s=50, zorder=5)
+
+ax1.set_xlabel('log10(Frequency)')
+ax1.set_ylabel('log10(Power)')
+ax1.set_title('Log-Log Space')
+ax1.legend()
+ax1.grid(True, linestyle=':', alpha=0.6)
+
+# Plot 2: Semilog Space (Actual Hz on X-axis, Log Power on Y-axis)
+ax2 = axes[1]
+for k_val, color in zip(k_values, colors):
+    l_power = specparam_knee_func(freqs, b_val, k_val, chi_val)
+    f_k = k_val**(1 / chi_val)
+    
+    ax2.semilogx(freqs, l_power, label=f'k = {k_val}', color=color, linewidth=2.5)
+    ax2.axvline(f_k, linestyle='--', color=color, alpha=0.5)
+    ax2.scatter(f_k, specparam_knee_func(f_k, b_val, k_val, chi_val), color=color, s=50, zorder=5)
+
+# Set custom log-spaced tick labels
+ticks = [1, 2, 5, 10, 20, 50, 100]
+ax2.set_xticks(ticks)
+ax2.set_xticklabels([str(t) for t in ticks])
+ax2.set_xlabel('Frequency (Hz, log scale)')
+ax2.set_ylabel('log10(Power)')
+ax2.set_title('Semilog Space (Physical Hz)')
+ax2.legend()
+ax2.grid(True, which='both', linestyle=':', alpha=0.6)
+
+plt.suptitle(r'Effect of Varying Knee Parameter (k) [with b = 3.0, $\chi$ = 1.5]', fontsize=14, y=1.02)
+plt.tight_layout()
+plt.show()
+```
+
+---
+
+### 3.2 Parameter Sweep: Varying the Exponent ($\chi$)
+
+Now we keep the offset ($b=3.0$) and the knee parameter ($k=10.0$) constant, and vary $\chi$ from $1.0$ to $2.0$.
+
+Notice how:
+1. At low frequencies, all curves start at the *exact same plateau height* ($b - \log_{10}(k) = 3.0 - \log_{10}(10) = 2.0$).
+2. As the exponent increases, the high-frequency slope becomes steeper.
+3. The knee frequency ($f_k = k^{1/\chi}$) shifts to the left as $\chi$ increases (since $10^{1.0} = 10$ Hz, but $10^{1/2} = 3.16$ Hz).
+
+```{python}
+b_val = 3.0
+k_val = 10.0
+chi_values = [1.0, 1.5, 2.0]
+colors = ['#22d3ee', '#64748b', '#0891b2'] # Cyan, Slate, Dark Cyan
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5.5))
+
+# Plot 1: Log-Log Space
+ax1 = axes[0]
+for chi, color in zip(chi_values, colors):
+    l_power = specparam_knee_func(freqs, b_val, k_val, chi)
+    f_k = k_val**(1 / chi)
+    
+    ax1.plot(np.log10(freqs), l_power, label=rf'$\chi$ = {chi} (fk ≈ {f_k:.1f} Hz)', color=color, linewidth=2.5)
+    y_k = specparam_knee_func(f_k, b_val, k_val, chi)
+    ax1.axvline(np.log10(f_k), linestyle='--', color=color, alpha=0.5)
+    ax1.scatter(np.log10(f_k), y_k, color=color, s=50, zorder=5)
+
+ax1.set_xlabel('log10(Frequency)')
+ax1.set_ylabel('log10(Power)')
+ax1.set_title('Log-Log Space')
+ax1.legend()
+ax1.grid(True, linestyle=':', alpha=0.6)
+
+# Plot 2: Semilog Space
+ax2 = axes[1]
+for chi, color in zip(chi_values, colors):
+    l_power = specparam_knee_func(freqs, b_val, k_val, chi)
+    f_k = k_val**(1 / chi)
+    
+    ax2.semilogx(freqs, l_power, label=rf'$\chi$ = {chi}', color=color, linewidth=2.5)
+    ax2.axvline(f_k, linestyle='--', color=color, alpha=0.5)
+    ax2.scatter(f_k, specparam_knee_func(f_k, b_val, k_val, chi), color=color, s=50, zorder=5)
+
+ticks = [1, 2, 5, 10, 20, 50, 100]
+ax2.set_xticks(ticks)
+ax2.set_xticklabels([str(t) for t in ticks])
+ax2.set_xlabel('Frequency (Hz, log scale)')
+ax2.set_ylabel('log10(Power)')
+ax2.set_title('Semilog Space (Physical Hz)')
+ax2.legend()
+ax2.grid(True, which='both', linestyle=':', alpha=0.6)
+
+plt.suptitle(r'Effect of Varying Exponent ($\chi$) [with b = 3.0, k = 10.0]', fontsize=14, y=1.02)
+plt.tight_layout()
+plt.show()
+```
+
+---
+
+## 4. Unified Interactive Simulation and Fitting Dashboard
+
+In a live Jupyter notebook or when running this document locally in VS Code, you can execute the following cell to get a comprehensive interactive dashboard. 
+
+This dashboard combines the **generative simulation** (parameters $b$, $k$, and $\chi$) with **dynamic model fitting** using `specparam` over a configurable frequency **Fit Range**. 
+
+Drag the sliders to see:
+1. How the theoretical knee transitions dynamically (crimson markers).
+2. How simulated noisy power spectral data (incorporating a simulated 10 Hz alpha peak) responds to ground-truth changes.
+3. How fitting a **Knee model** (teal curve) vs. a **Fixed model** (orange dashed curve) over different frequency ranges distorts or recovers the true parameters (summarized in the tabular comparison below the plots).
+
+```{python}
+#| label: interactive-widget
+#| eval: false
+from ipywidgets import interactive, FloatSlider, FloatRangeSlider, VBox, HBox, Output
+import IPython.display
+
+def plot_interactive_dashboard(b=3.0, k=15.0, chi=2.0, fit_range=(1.0, 100.0)):
+    # Calculations for true curve
+    f_k = k**(1 / chi)
+    tau_ms = (1 / (2 * np.pi * f_k)) * 1000  # in milliseconds
+    plateau_height = b - np.log10(k)
+    
+    # 1. Generate the noisy simulated spectrum dynamically
+    # Use a fixed seed inside the widget so the noise pattern doesn't jump wildly 
+    # when sliding, showing smooth transitions instead of random jitter!
+    np.random.seed(42)
+    sim_freqs = np.linspace(1, 100, 200)
+    true_aperiodic = specparam_knee_func(sim_freqs, b, k, chi)
+    noise = np.random.normal(0, 0.04, len(sim_freqs))
+    sim_power = true_aperiodic + noise
+    
+    # Add a small alpha peak at 10 Hz to simulate realistic neural data
+    from scipy.stats import norm
+    alpha_peak = 0.3 * norm.pdf(sim_freqs, loc=10, scale=1.5)
+    sim_power += alpha_peak
+    
+    # 2. Fit both Knee and Fixed models over the specified fit range
+    min_f, max_f = fit_range
+    
+    fm_k = SpectralModel(aperiodic_mode='knee', verbose=False)
+    fm_k.fit(sim_freqs, 10**sim_power, [min_f, max_f])
+    
+    fm_f = SpectralModel(aperiodic_mode='fixed', max_n_peaks=0, verbose=False)
+    fm_f.fit(sim_freqs, 10**sim_power, [min_f, max_f])
+    
+    # Get fit results
+    k_res = fm_k.results.model.get_component('aperiodic')
+    f_res = fm_f.results.model.get_component('aperiodic')
+    
+    mask = (sim_freqs >= min_f) & (sim_freqs <= max_f)
+    fit_freqs = sim_freqs[mask]
+    
+    # Extract fitted parameters
+    fit_k_offset = fm_k.get_params('aperiodic', 'offset')
+    fit_k_knee = fm_k.get_params('aperiodic', 'knee')
+    fit_k_exponent = fm_k.get_params('aperiodic', 'exponent')
+    
+    fit_f_offset = fm_f.get_params('aperiodic', 'offset')
+    fit_f_exponent = fm_f.get_params('aperiodic', 'exponent')
+    
+    # Prepare figure
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    
+    # ----------------------------------------------------
+    # Plot 1: Log-Log Plot
+    # ----------------------------------------------------
+    # Noisy data points (grey outside fit range, darker inside)
+    ax1.scatter(np.log10(sim_freqs[~mask]), sim_power[~mask], color='#e2e8f0', s=15, alpha=0.6, label='Data (outside fit range)')
+    ax1.scatter(np.log10(sim_freqs[mask]), sim_power[mask], color='#94a3b8', s=20, alpha=0.8, label='Data (inside fit range)')
+    
+    # True theoretical (noise-free) curve
+    ax1.plot(np.log10(sim_freqs), true_aperiodic, color='#64748b', linestyle=':', linewidth=2, label='True Aperiodic (Ground Truth)')
+    
+    # Fit curves
+    if len(k_res) > 0 and len(fit_freqs) == len(k_res):
+        ax1.plot(np.log10(fit_freqs), k_res, color='#0f766e', linewidth=3, 
+                 label=rf"Knee Fit ($\chi$ = {fit_k_exponent:.2f}, k = {fit_k_knee:.1f})")
+    if len(f_res) > 0 and len(fit_freqs) == len(f_res):
+        ax1.plot(np.log10(fit_freqs), f_res, color='#ea580c', linestyle='--', linewidth=2.5, 
+                 label=rf"Fixed Fit ($\chi$ = {fit_f_exponent:.2f})")
+                 
+    # Visual cues for fit boundaries and Knee frequencies
+    ax1.axvline(np.log10(min_f), color='#94a3b8', linestyle=':', linewidth=1.5)
+    ax1.axvline(np.log10(max_f), color='#94a3b8', linestyle=':', linewidth=1.5)
+    
+    # True Knee frequency marker
+    ax1.axvline(np.log10(f_k), color='#e11d48', linestyle='-.', linewidth=1.5, alpha=0.8, label=f'True fk ({f_k:.1f} Hz)')
+    ax1.scatter(np.log10(f_k), specparam_knee_func(f_k, b, k, chi), color='#e11d48', s=70, zorder=10)
+    
+    # Fitted Knee frequency marker
+    if fit_k_knee is not None and fit_k_knee > 0 and fit_k_exponent > 0:
+        fit_f_k = fit_k_knee**(1 / fit_k_exponent)
+        if min_f <= fit_f_k <= max_f:
+            ax1.axvline(np.log10(fit_f_k), color='#0f766e', linestyle='--', linewidth=1.5, alpha=0.8, label=f'Fit fk ({fit_f_k:.1f} Hz)')
+            fit_y_k = fit_k_offset - np.log10(fit_k_knee + fit_f_k**fit_k_exponent)
+            ax1.scatter(np.log10(fit_f_k), fit_y_k, color='#0f766e', s=70, zorder=10)
+            
+    ax1.set_xlabel('log10(Frequency)')
+    ax1.set_ylabel('log10(Power)')
+    ax1.set_title('Log-Log Representation')
+    ax1.grid(True, linestyle=':', alpha=0.5)
+    ax1.set_xlim(np.log10(1), np.log10(100))
+    ax1.legend(fontsize=9.5, loc='lower left')
+    
+    # ----------------------------------------------------
+    # Plot 2: Semilog Plot
+    # ----------------------------------------------------
+    ax2.scatter(sim_freqs[~mask], sim_power[~mask], color='#e2e8f0', s=15, alpha=0.6, label='Data (outside fit range)')
+    ax2.scatter(sim_freqs[mask], sim_power[mask], color='#94a3b8', s=20, alpha=0.8, label='Data (inside fit range)')
+    ax2.semilogx(sim_freqs, true_aperiodic, color='#64748b', linestyle=':', linewidth=2, label='True Aperiodic (Ground Truth)')
+    
+    if len(k_res) > 0 and len(fit_freqs) == len(k_res):
+        ax2.semilogx(fit_freqs, k_res, color='#0f766e', linewidth=3, 
+                     label=rf"Knee Fit ($\chi$ = {fit_k_exponent:.2f}, k = {fit_k_knee:.1f})")
+    if len(f_res) > 0 and len(fit_freqs) == len(f_res):
+        ax2.semilogx(fit_freqs, f_res, color='#ea580c', linestyle='--', linewidth=2.5, 
+                     label=rf"Fixed Fit ($\chi$ = {fit_f_exponent:.2f})")
+                     
+    ax2.axvline(min_f, color='#94a3b8', linestyle=':', linewidth=1.5)
+    ax2.axvline(max_f, color='#94a3b8', linestyle=':', linewidth=1.5)
+    
+    ax2.axvline(f_k, color='#e11d48', linestyle='-.', linewidth=1.5, alpha=0.8, label=f'True fk ({f_k:.1f} Hz)')
+    ax2.scatter(f_k, specparam_knee_func(f_k, b, k, chi), color='#e11d48', s=70, zorder=10)
+    
+    if fit_k_knee is not None and fit_k_knee > 0 and fit_k_exponent > 0:
+        fit_f_k = fit_k_knee**(1 / fit_k_exponent)
+        if min_f <= fit_f_k <= max_f:
+            ax2.axvline(fit_f_k, color='#0f766e', linestyle='--', linewidth=1.5, alpha=0.8, label=f'Fit fk ({fit_f_k:.1f} Hz)')
+            fit_y_k = fit_k_offset - np.log10(fit_k_knee + fit_f_k**fit_k_exponent)
+            ax2.scatter(fit_f_k, fit_y_k, color='#0f766e', s=70, zorder=10)
+            
+    ticks = [1, 2, 5, 10, 20, 50, 100]
+    ax2.set_xticks(ticks)
+    ax2.set_xticklabels([str(t) for t in ticks])
+    ax2.set_xlabel('Frequency (Hz, log scale)')
+    ax2.set_ylabel('log10(Power)')
+    ax2.set_title('Semilog Representation (Physical Hz)')
+    ax2.grid(True, which='both', linestyle=':', alpha=0.5)
+    ax2.set_xlim(1, 100)
+    ax2.legend(fontsize=9.5, loc='lower left')
+    
+    # ----------------------------------------------------
+    # Parameter Comparison Dashboard Table (Text Block)
+    # ----------------------------------------------------
+    err_k_b = fit_k_offset - b if fit_k_offset is not None else 0.0
+    err_k_k = fit_k_knee - k if fit_k_knee is not None else 0.0
+    err_k_chi = fit_k_exponent - chi if fit_k_exponent is not None else 0.0
+    
+    err_f_b = fit_f_offset - b if fit_f_offset is not None else 0.0
+    err_f_chi = fit_f_exponent - chi if fit_f_exponent is not None else 0.0
+    
+    r2_k = fm_k.get_metrics('gof_rsquared') if fm_k.get_metrics('gof_rsquared') is not None else 0.0
+    r2_f = fm_f.get_metrics('gof_rsquared') if fm_f.get_metrics('gof_rsquared') is not None else 0.0
+    
+    stats_text = (
+        f"【 GROUND TRUTH 】  Offset (b): {b:.2f} | Knee (k): {k:.1f} | Exponent (χ): {chi:.2f} | fk: {f_k:.2f} Hz | τ: {tau_ms:.1f} ms\n"
+        f"【 KNEE FIT 】      Offset (b): {fit_k_offset:.2f} (err: {err_k_b:+.2f}) | Knee (k): {fit_k_knee:.1f} (err: {err_k_k:+.1f}) | Exponent (χ): {fit_k_exponent:.2f} (err: {err_k_chi:+.2f}) | R²: {r2_k:.3f}\n"
+        f"【 FIXED FIT 】     Offset (b): {fit_f_offset:.2f} (err: {err_f_b:+.2f}) | Exponent (χ): {fit_f_exponent:.2f} (err: {err_f_chi:+.2f}) | R²: {r2_f:.3f}\n\n"
+        f"Observe how: (1) Knee Fit perfectly recovers true values when fit range is [1, 100].\n"
+        f"             (2) Fixed Fit has a large error in χ when fit range covers the low frequency knee plateau.\n"
+        f"             (3) Restricting Fit Range to [30, 100] improves the Fixed Fit's χ but misses the knee transition entirely."
+    )
+    
+    fig.text(0.5, -0.12, stats_text, ha='center', fontsize=11, fontfamily='monospace',
+             bbox=dict(facecolor='#f8fafc', edgecolor='#e2e8f0', boxstyle='round,pad=0.8'))
+    
+    plt.tight_layout()
+    plt.show()
+
+# Setup the interactive sliders dynamically
+b_slider = FloatSlider(min=0.5, max=5.0, step=0.1, value=3.0, description='Offset (b)')
+chi_slider = FloatSlider(min=0.5, max=4.0, step=0.1, value=2.0, description='Exponent (χ)')
+k_slider = FloatSlider(min=0.1, max=1000.0, step=0.5, value=15.0, description='Knee (k)')
+fit_range_slider = FloatRangeSlider(min=1.0, max=100.0, step=1.0, value=[1.0, 100.0], description='Fit Range (Hz)')
+
+def update_k_range(*args):
+    # Restrict max knee parameter so that f_k = k**(1/chi) <= 100 Hz
+    # This means k <= 100**chi
+    chi = chi_slider.value
+    max_k = 100.0 ** chi
+    k_slider.max = max_k
+    if k_slider.value > max_k:
+        k_slider.value = max_k
+
+chi_slider.observe(update_k_range, 'value')
+update_k_range() # Initialize constraints
+
+interactive_plot = interactive(
+    plot_interactive_dashboard, 
+    b=b_slider, 
+    k=k_slider, 
+    chi=chi_slider,
+    fit_range=fit_range_slider
+)
+display(interactive_plot)
+```
+
+---
+
+## 5. Why You Can't Ignore the Knee: Fitting Bias Demonstration
+
+A very common methodological pitfall in neural spectral analysis is fitting a **Fixed model** (straight line in log-log space) to a spectrum that actually possesses a **Knee**. 
+
+Let's simulate this scenario and fit both models using `specparam` to see the resulting parameter distortion.
+
+### 5.1 Simulate a Power Spectrum with a Knee and Noise
+We'll simulate a true power spectrum with $b=3.0$, $k=15.0$, $\chi=2.0$ (representing standard cortical membrane dynamics) and add gaussian noise.
+
+```{python}
+#| label: simulate-noisy-spectrum
+np.random.seed(42)
+
+# True parameters
+true_b = 3.0
+true_k = 15.0
+true_chi = 2.0
+
+# Generate spectrum and add standard white noise (e.g. standard deviation = 0.05)
+sim_freqs = np.linspace(1, 100, 200)
+true_aperiodic = specparam_knee_func(sim_freqs, true_b, true_k, true_chi)
+noise = np.random.normal(0, 0.04, len(sim_freqs))
+sim_power = true_aperiodic + noise
+
+# Also add an oscillatory peak in the alpha band (e.g., 10 Hz) to make it look like real EEG
+from scipy.stats import norm
+alpha_peak = 0.3 * norm.pdf(sim_freqs, loc=10, scale=1.5)
+sim_power += alpha_peak
+```
+
+### 5.2 Fit Both Models Using SpecParam
+
+We will use the standard `SpectralModel` object from `specparam` to fit the spectrum in:
+1. **Knee Mode** (`aperiodic_mode='knee'`)
+2. **Fixed Mode** (`aperiodic_mode='fixed'`)
+
+```{python}
+#| label: fit-specparam
+# Fit in Knee mode
+fm_knee = SpectralModel(aperiodic_mode='knee', verbose=False)
+fm_knee.fit(sim_freqs, 10**sim_power, [1, 100]) # SpecParam fits in log10 space but takes linear power input
+
+# Fit fixed model (without knee) for comparison
+fm_fixed = SpectralModel(aperiodic_mode='fixed', max_n_peaks=0, verbose=False)
+fm_fixed.fit(sim_freqs, 10**sim_power, [1, 100])
+```
+
+### 5.3 Compare the Fit Parameters and Plots
+
+Let's inspect the results:
+
+```{python}
+#| label: print-comparison
+print("=" * 60)
+print(f"{'Parameter':<25} | {'True Value':<10} | {'Knee Fit':<10} | {'Fixed Fit':<10}")
+print("-" * 60)
+print(f"{'Offset (b)':<25} | {true_b:<10.2f} | {fm_knee.get_params('aperiodic', 'offset'):<10.2f} | {fm_fixed.get_params('aperiodic', 'offset'):<10.2f}")
+print(f"{'Knee Parameter (k)':<25} | {true_k:<10.2f} | {fm_knee.get_params('aperiodic', 'knee'):<10.2f} | {'N/A':<10}")
+print(f"{'Exponent (chi)':<25} | {true_chi:<10.2f} | {fm_knee.get_params('aperiodic', 'exponent'):<10.2f} | {fm_fixed.get_params('aperiodic', 'exponent'):<10.2f}")
+print(f"{'Goodness of fit (R^2)':<25} | {'N/A':<10} | {fm_knee.get_metrics('gof_rsquared'):<10.3f} | {fm_fixed.get_metrics('gof_rsquared'):<10.3f}")
+print("=" * 60)
+```
+
+> [!WARNING]
+> Look closely at the estimated **Exponent ($\chi$)** under the **Fixed Fit** model! 
+> The true exponent is **`2.00`**, but the Fixed fit estimates it as roughly **`1.4 - 1.6`**. 
+> Because the Fixed model does not have a parameter to model the low-frequency plateau, it is forced to fit a straight line through the plateau and the slope, tilting the fit line and making the exponent appear **significantly lower** (flatter) than it actually is!
+
+Let's visualize this overlay.
+
+```{python}
+#| label: plot-fit-comparison
+fig, ax = plt.subplots(figsize=(10, 6.5))
+
+# Plot simulated data points
+ax.scatter(np.log10(sim_freqs), sim_power, color='#cbd5e1', s=15, alpha=0.8, label='Simulated Data (with alpha peak)')
+
+# Plot Knee Fit
+knee_ap_fit = fm_knee.results.model.get_component('aperiodic')
+ax.plot(np.log10(sim_freqs), knee_ap_fit, color='#0f766e', linewidth=2.5, label=f"Knee Mode Aperiodic (χ = {fm_knee.get_params('aperiodic', 'exponent'):.2f}, k = {fm_knee.get_params('aperiodic', 'knee'):.1f})")
+
+# Plot Fixed Fit
+fixed_ap_fit = fm_fixed.results.model.get_component('aperiodic')
+ax.plot(np.log10(sim_freqs), fixed_ap_fit, color='#ea580c', linestyle='--', linewidth=2.5, label=f"Fixed Mode Aperiodic (χ = {fm_fixed.get_params('aperiodic', 'exponent'):.2f})")
+
+ax.set_xlabel('log10(Frequency)')
+ax.set_ylabel('log10(Power)')
+ax.set_title('Distortion of Estimated Exponent when Fitting a Fixed Model to Knee Data')
+ax.legend(loc='lower left', fontsize=10.5)
+ax.grid(True, linestyle=':', alpha=0.5)
+
+plt.tight_layout()
+plt.show()
+```
+
+## 5.4 Interactive Fitting Range Analysis
+
+This dynamic analysis is now fully integrated into the **Unified Interactive Simulation and Fitting Dashboard** in [Section 4](#unified-interactive-simulation-and-fitting-dashboard). 
+
+You can use the **Fit Range (Hz)** slider in that unified dashboard to explore how limiting the frequency range (e.g., to 30 - 100 Hz) changes the fits. In the unified dashboard, you can simultaneously manipulate the ground-truth simulation parameters ($b, k, \chi$) and the fitting boundaries to see their combined effects in real time!
+
+---
+
+## 6. Summary of Key Insights
+
+When analyzing biological power spectra:
+1. **Biological Meaning**: The transition represented by the knee frequency ($f_k$) is not just a fitting parameter, it corresponds directly to a **neural timescale (time constant $\tau$)**. Shifting this transition marks changes in how long synaptic and circuit inputs are integrated.
+2. **Methodological Rigor**: If your power spectrum spans lower frequencies (e.g., $< 20$ Hz) and shows any sign of bending, **always use the Knee mode** in SpecParam. As demonstrated above, fitting a Fixed model will lead to a **downward bias** in the calculated aperiodic exponent, which might obscure true biological differences or create artificial ones!
+
+---
+
+### 🌐 Shareable Serverless Python Shiny Web Dashboard
+
+We have compiled this interactive analysis as a standalone, serverless web application powered by **Shiny for Python running in WebAssembly (Shinylive)**.
+
+This beautiful dashboard is styled with a modern, publication-grade Bootstrap theme (`minty`) and uses **official Python packages (SpecParam, SciPy, NumPy, and Matplotlib) under the hood**! It compiles your exact Python reactives and fitting routines into a static, client-side package. Once opened, the browser's Pyodide engine downloads and caches these wheels. **Subsequent visits will load instantly (<400ms)** with complete offline support.
+
+Once pushed to GitHub and hosted on **GitHub Pages**, anyone can open the dashboard directly in their browser (e.g., via a **QR code** on your poster, slides, or paper) and interact with your actual Python mathematical fits in real-time!
+
+* The compiled application entrypoint is located in [docs/index.html](file:///Users/daniel/PhD/spectral-comparison/code/docs/index.html) and defined in [dashboard/app.py](file:///Users/daniel/PhD/spectral-comparison/code/dashboard/app.py).
+* See [docs/README.md](file:///Users/daniel/PhD/spectral-comparison/code/docs/README.md) for step-by-step instructions on compiling local changes, deploying to GitHub Pages, and generating high-quality vector QR codes.
