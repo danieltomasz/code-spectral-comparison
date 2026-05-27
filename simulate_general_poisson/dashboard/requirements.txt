@@ -1,5 +1,0 @@
-shiny
-shinyswatch
-numpy
-matplotlib
-scipy
