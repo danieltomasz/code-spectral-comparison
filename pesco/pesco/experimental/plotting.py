@@ -147,6 +147,7 @@ def plot_clusters(
     save: bool = True,
     title: str | None = None,
     legend_fontsize: float | None = None,
+    xlim: tuple[float, float] | None = None,
 ) -> tuple[Figure, Axes]:
     """Plot per-cluster summary PSD, highlighting the no-peak cluster.
 
@@ -226,16 +227,20 @@ def plot_clusters(
     if legend_fontsize is not None:
         legend_kwargs["fontsize"] = legend_fontsize
     ax.legend(**legend_kwargs)
-    ax.set_xticks(band_edges())
+    xmin, xmax = xlim if xlim is not None else (float(np.min(f)), float(np.max(f)))
+    ax.set_xticks([e for e in band_edges() if xmin <= e <= xmax])
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     if log_y:
         ax.set_yscale("log")
     ax.grid()
     for b in EEG_BANDS:
-        ax.text(
-            b.label_x, 0.97, f"${b.tex}$", fontsize=14,
-            transform=ax.get_xaxis_transform(), ha="center", va="top",
-        )
+        if xmin <= b.label_x <= xmax:
+            ax.text(
+                b.label_x, 0.97, f"${b.tex}$", fontsize=14,
+                transform=ax.get_xaxis_transform(), ha="center", va="top",
+            )
+    if xlim is not None:
+        ax.set_xlim(xlim)
     ax.set_xlabel("Frequency")
     if ylabel is None:
         ylabel = (
@@ -267,17 +272,21 @@ def plot_clusters_pair(
     suptitle_fontsize: float = 18,
     suptitle_fontweight: str = "bold",
     sharex: bool = True,
+    sharey: bool = False,
     legend_fontsize: float = 11,
+    xlim: tuple[float, float] | None = None,
 ) -> tuple[Figure, np.ndarray]:
     """Stack two ``plot_clusters`` panels vertically (top/bottom).
 
     Each of ``top`` and ``bottom`` is a kwargs dict forwarded to
     :func:`plot_clusters`. Required: ``psd_clust``, ``f``, ``dataset``.
     """
-    fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=sharex)
+    fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=sharex, sharey=sharey)
     for panel_kwargs, ax in ((top, axes[0]), (bottom, axes[1])):
         kw = dict(panel_kwargs)
         kw.setdefault("legend_fontsize", legend_fontsize)
+        if xlim is not None:
+            kw.setdefault("xlim", xlim)
         plot_clusters(ax=ax, show=False, save=False, **kw)
 
     if suptitle is not None:
@@ -806,6 +815,7 @@ def plot_region_difference_heatmap_pair(
     suptitle_fontsize: float = 16,
     suptitle_fontweight: str = "bold",
     suptitle_y: float = 0.98,
+    suptitle_pad: float = 0.015,
     axis_label_fontsize: float = 12,
     cbar_label_fontsize: float = 11,
     cbar_tick_fontsize: float = 10,
@@ -976,16 +986,18 @@ def plot_region_difference_heatmap_pair(
     if suptitle_obj is not None:
         fig.canvas.draw()
         renderer = fig.canvas.get_renderer()
+        _loc_attr = {"left": "_left_title", "center": "title", "right": "_right_title"}
+        title_objs = [getattr(ax, _loc_attr.get(title_loc, "title")) for ax in axes]
         title_tops = [
-            ax.title.get_window_extent(renderer).y1
-            for ax in axes
-            if ax.get_title()
+            t.get_window_extent(renderer).y1
+            for t in title_objs
+            if t.get_text()
         ]
         if title_tops:
             top_fig = max(title_tops) / fig.bbox.height
             sup_bbox = suptitle_obj.get_window_extent(renderer)
             sup_h_fig = (sup_bbox.y1 - sup_bbox.y0) / fig.bbox.height
-            suptitle_obj.set_y(top_fig + sup_h_fig / 2 + 0.005)
+            suptitle_obj.set_y(top_fig + sup_h_fig / 2 + suptitle_pad)
     if output_path is not None:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)

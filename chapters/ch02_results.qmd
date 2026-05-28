@@ -1,40 +1,21 @@
 ## Results
 
-###  Recovery of regional spectral organisation on uncorrected spectra
 
+## Oscillatory descriptors
 
-#### Cluster solutions
+#### K-means clusterisation
 
-The k-means clustering procedure was applied to the iEEG atlas with one
-deliberate departure from @frauscher2018AtlasNormalIntracranial: the
-0.5-80 Hz bandpass filter used in the original study was omitted. Any
-bandpass filter introduces an amplitude transition near its cutoff
-frequencies, distorting the spectral shape at the low (0.5 Hz) and high
-(80 Hz) ends of the analysis range. Because k-means here operates
-directly on normalised spectral density across the full 0.5-80 Hz
-interval, such filter-induced shape changes are liable to be picked up
-by the clustering as structure rather than excluded from it.
+The k-means clustering procedure was applied to the iEEG atlas with one deliberate departure from @frauscher2018AtlasNormalIntracranial: the
+0.5-80 Hz bandpass filter used in the original study was omitted. Any bandpass filter introduces an amplitude transition near its cutoff frequencies, distorting the spectral shape at the low (0.5 Hz) and high (80 Hz) ends of the analysis range. Because k-means here operates directly on normalised spectral density across the full 0.5-80 Hz interval, such filter-induced shape changes are liable to be picked upby the clustering as structure rather than excluded from it.
 
 To check that this deviation accounts for the differences from the
-published result, the clustering was run in both configurations on the
-same data. With the 0.5-80 Hz bandpass applied, the procedure recovered
-the eight-group structure reported by
-@frauscher2018AtlasNormalIntracranial: a no-peak group plus seven peak
-groups in the low delta, high delta, theta, alpha, low beta, high beta,
-and gamma bands. Without the bandpass, the procedure yielded seven
-groups: a no-peak group, two delta clusters, one theta cluster, two
-clusters with alpha-band peaks, and one beta cluster — with no gamma
-group and no separation of low from high beta. The unfiltered solution
-is taken forward as the more faithful description, since the clustering
-operates on undistorted spectra; the disappearance of the gamma cluster
-and of the low/high beta separation in the unfiltered run is consistent
-with these distinctions in the published atlas being driven, at least in
-part, by filter edge effects rather than by physiological structure. The
-50% of channels closest to the mean of the no-peak group (unfiltered
-run) were retained as the no-peak reference set for all subsequent
+published result, the clustering was run in both configurations on the same data. With the 0.5-80 Hz bandpass applied, the procedure recovered the eight-group structure reported by
+@frauscher2018AtlasNormalIntracranial: a no-peak group plus seven peak groups in the low delta, high delta, theta, alpha, low beta, high beta, and gamma bands. Without the bandpass, the procedure yielded seven groups: a no-peak group, two delta clusters, one theta cluster, two clusters with alpha-band peaks, and one beta cluster — with no gamma group and no separation of low from high beta. The unfiltered solution is taken forward as the more faithful description, since the clustering operates on undistorted spectra; the disappearance of the gamma cluster and of the low/high beta separation in the unfiltered run is consistent with these distinctions in the published atlas being driven, at least in part, by filter edge effects rather than by physiological structure. The 50% of channels closest to the mean of the no-peak group (unfiltered run) were retained as the no-peak reference set for all subsequent
 peak-detection tests.
 
-Applying the same procedure to the HD-EEG source-reconstructed data yielded  11 spectral groups. The reduced number of clusters indicates a narrower range of spectral shapes than in iEEG, consistent with the spatial smoothing introduced by source reconstruction. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart, with stronger concentration of power in the alpha range across most clusters, likely reflecting both the eyes-open recording condition and the dominance of posterior sources in the source model. @fig-ieeg-clusters presents these clustering results side by side.
+Applying the same procedure to the HD-EEG source-reconstructed data yielded 11 spectral groups, but their structure differed  from iEEG. There were seven clusters with with peak in  alpha 8-12 Hz dufferentiated by the amplitude of athe peak, indicating that the clustering over-segmented a single alpha-dominated continuum rather than resolving distinct bands, No distinct theta or beta clusters emerged (the band labels along the top axis are frequency guides, not cluster identities), and the sharp notch at 50 Hz reflects line-noise removal. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart. @fig-ieeg-clusters presents the two clustering solutions side by side.
+
+The cluster " band peak frequency" is the argmax of each cluster's spectrum relative to the no-peak baseline, which labels a cluster by its strongest oscillatory deviation and is only meaningful where a cluster carries a genuine peak. In the HD-EEG data only the δ and α clusters showed a clear bump above the aperiodic background; the remaining high-frequency clusters were distinguished not by a gamma oscillation but by a shallower aperiodic slope, producing an elevated broadband tail. For these clusters the elevated gamma shouldnt be read as genuine gamma oscillations. Whereas the iEEG atlas resolved a full bank of band-specific oscillatory clusters (δ→γ), the HD-EEG cluster structure was therefore dominated by alpha power and aperiodic slope.. @fig-ieeg-clusters presents these clustering results side by side.
 
 ![Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the seven iEEG clusters and Panel B shows the six HD-EEG clusters. In both modalities, one no-peak cluster is visible. HD-EEG shows more clusters, most of them distinguished only by the average power of the alpha peak. In the iEEG clusters, the knee is visible; reconstructed sources have more straightforward 1/f-like characteristics.](figures/chapter2/combined_clusters_psd.svg){#fig-ieeg-clusters width="100%" column="page"}
 
@@ -46,25 +27,17 @@ Regional differences per lobes were computed the same method, but just visualise
 
 ![](figures/chapter2/reconstructed sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
 
-The 22 frequency intervals proposed by were defined so that each bin contained at least 4% of total mean power in the iEEG data. This condition was not satisfied for the source-reconstructed spectra, where power was more concentrated in the alpha range and the higher-frequency bins fell below the 4% threshold. The clustering result and the cluster identities themselves were also sensitive to the chosen fitting range: small changes in the upper or lower bound of the fit altered both the cluster solution and the contents of the no-peak set. The instability is reported here as a finding of Analysis 1 rather than as a nuisance, and motivates the parallel use of the more stable per-band parametrised-peak descriptor below.
-
-The 22 frequency intervals proposed by  @frauscher2018AtlasNormalIntracranial were
-defined so that each bin contained at least 4% of total mean power in
-iEEG. This condition was not satisfied for source-reconstructed spectra,
-where power was more concentrated in the alpha range and higher-frequency
-bins fell below the 4% threshold. The clustering result and cluster
-identities were also sensitive to the chosen preprocessing effects in fitting range: small changes
-in the upper or lower bound altered both the cluster solution and the
-contents of the no-peak set. The instability is reported here as a
-finding of the cluster descriptor itself and motivates the parallel use
-of the more stable per-band parametrised-peak descriptor
-
-
-<!-- [PLACEHOLDER: prose describing the uncorrected Afnan overlap heatmap. Migrate the heatmap figure (fig-afnan-overlap-raw in aperiodic_paper.qmd) and the band-means table.] -->
-
 ![Average spectral overlap between the iEEG atlas and source-reconstructed HD-EEG, per MICCAI region and frequency band, computed on uncorrected relative-power PSDs.](figures/chapter2/afnan_overlap_raw_heatmap.svg){#fig-afnan-overlap-raw}
 
-<!-- [PLACEHOLDER: bin-level overlap presentation — same data, unaveraged across bins, to show where in frequency the cross-modal match is good or poor.] -->
+#### Clustering stability and data driven intervals 
+
+The cluster solution and the no-peak set were themselves sensitive to preprocessing and to the chosen fitting range: small changes in the upper or lower bound altered both the number of clusters and the membership and shape of the no-peak reference set (especially in hd eeg reconstructed sources where some configuratrion werent able to find the so called no-peak set ).
+
+The 22 frequency intervals of @frauscher2018AtlasNormalIntracranial were defined so that each interval contained at least 4% of the total mean power in iEEG. When this data-driven rule was applied to the source-reconstructed HD-EEG spectra it failed to reproduce that structure: it yielded 21 intervals rather than 22 and, critically, placed five separate intervals above 31.75 Hz where the original atlas defines a single 31.75-80 Hz interval. This gamma over-segmentation is a consequence of the normalisation step. Because each channel spectrum is normalised to unit in-band integral, only spectral shape is retained and absolute power is discarded; channels then contribute to the mean in proportion to how their unit mass is distributed across frequency rather than to their signal strength. Source-reconstructed spectra have a shallower aperiodic slope and a relatively flat high-frequency noise floor, so a larger share of each channel's mass falls at high frequency, and low-SNR channels with weak alpha are the flattest and contribute the most relative gamma power. The averaged normalised spectrum is thus inflated above ~30 Hz and the cumulative-4% rule carves this noise-dominated tail into spurious narrow intervals. A robustness check confirmed the mechanism: replacing the mean with a median reference spectrum and restricting derivation to the physiological band (≤45 Hz) collapsed the spurious gamma intervals.
+
+For this reason the 4% condition does not transfer to source-reconstructed data, and data-driven HD-EEG intervals are not directly comparable with the iEEG atlas. To preserve cross-modal comparability, the fixed 22 intervals of @frauscher2018AtlasNormalIntracranial were retained for both modalities in all regional peak-detection tests (@fig-hdeeg-reg_dfiff).
+
+Because the clustering, the no-peak reference, and the interval definition were all unstable across reasonable preprocessing choices, this k-means peak-detection descriptor was not carried forward to the aperiodic-corrected (specparam) spectra. The downstream analyses instead characterise oscillatory content with the more stable per-band parametrised-peak descriptor, which requires neither a clustering step nor a no-peak reference and is therefore robust to these choices.
 
 
 #### Model selection: knee vs fixed by BIC

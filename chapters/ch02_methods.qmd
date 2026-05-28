@@ -41,14 +41,13 @@ closest to the group mean were retained as the no-peak set.
 
 To test for the presence of region-specific peaks against this no-peak reference set, the spectrum was divided into frequency intervals. The 160 frequency bins were grouped into 22 frequency intervals based on the condition that each bin contains at least 4% of total mean power, yielding
 boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25, 31.75, and 80 Hz. 
-The presence of a peak in a given frequency interval for a particular brain region was determined by comparing the distribution
-of spectral densities of all channels in that region against the no-peak set, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% significance level with Dunnett's correction for multiple comparisons across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals (hemispheres grouped together).
 
-Similarly to @frauscher2018AtlasNormalIntracranial, a second test was performed for those brain regions and frequency intervals in which significant differences were found, to determine the percentage of channels in the brain region of interest that had a significantly higher relative power than the no-peak set at the given frequency interval. We performed an uncorrected one-sided Wilcoxon rank-sum test (at 5% significance level), comparing the distribution of the nopeak set to the spectral density of each individual channel
+The presence of a peak in a given frequency interval for a particular brain region was determined by comparing the distribution of spectral densities of all channels in that region against the no-peak set, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% significance level with Bonferroni correction for multiple comparisons across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals (hemispheres grouped together).
+
+The Kolmogorov-Smirnov screen identifies where a region differs from the no-peak set but not how many of its channels drive that difference. To quantify how widespread the effect was within the region each channel's relative power in that interval was compared against the no-peak distribution with a one-sided Wilcoxon rank-sum (Mann-Whitney U) test at the 5% level, uncorrected. We report the proportion of the region's channels that exceeded the no-peak set. This second stage mirrors the two-step logic of @frauscher2018AtlasNormalIntracranial.
 
 For the HD-EEG data, the same procedure was applied with the
-iEEG-derived frequency intervals retained for comparability, even though
-the 4% power condition was not met for the source-reconstructed spectra.
+iEEG-derived frequency intervals retained for comparability, even though the 4% power condition was not met for the source-reconstructed spectra.
 <!-- Implications of this deviation are reported as a finding (Section 3.1.1). -->
 
 
