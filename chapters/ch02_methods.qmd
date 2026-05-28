@@ -28,7 +28,7 @@ All spectral data were normalized to unit total power to ensure that the compari
 ![Spatial distribution of the MNI Open iEEG Atlas channels and regional reference centroids in MNI space. (**A**) Glass-brain visualization of the 1785 intracranial EEG channels, with depth and stereo-EEG contacts shown in blue and cortical grid/strip contacts shown in orange. For visualization, left-hemisphere channel coordinates were assigned negative x-values based on the hemisphere label. (**B**) Glass-brain visualization of the regional reference centroids used in the grouped regional analyses, shown as enlarged magenta markers.](figures/chapter2/frauscher_channels_and_centroids.png){#fig-frauscher-atlas fig-align="center" width="80%"}
 
 
-##  Oscillatory descriptors
+## Oscillatory descriptors
 
 #### K-means clusterisation
 
@@ -54,6 +54,8 @@ set, using a one-sided two-sample Kolmogorov-Smirnov test at the 5%
 significance level with Dunnett's correction for multiple comparisons
 across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency
 intervals (hemispheres grouped together).
+
+Similarly to @frauscher2018AtlasNormalIntracranial, a second test was performed for those brain regions and frequency intervals in which significant differences were found, to determine the percentage of channels in the brain region of interest that had a significantly higher relative power than the no-peak set at the given frequency interval. We performed an uncorrected one-sided Wilcoxon rank-sum test (at 5% significance level), comparing the distribution of the nopeak set to the spectral density of each individual channel
 
 For the HD-EEG data, the same procedure was applied with the
 iEEG-derived frequency intervals retained for comparability, even though
@@ -84,8 +86,7 @@ The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and 
 
 #### specparam settings
 
-PSDs were parameterised using specparam (formerly FOOOF; Donoghue et al.
-2020) with the following shared settings:
+PSDs were parameterised using specparam (formerly FOOOF; @donoghue2020ParameterizingNeuralPower) with the following shared settings:
 
 - Fitting frequency range: 1-80 Hz (primary); 1-45 Hz (range comparison
   in Section )
@@ -99,16 +100,16 @@ below 0.90 were flagged for inspection and the sensitivity of regional
 results to their inclusion or exclusion was assessed (Section x.x).
 
 
-### 2.4.2 Aperiodic models and selection
+###  Aperiodic parametrisation and model selection
 
 Two aperiodic models are used. In **fixed** mode the aperiodic component
 is modelled in log-power space as
 
-    L_ap(f) = b − χ · log10(f)
+$$L_{\mathrm{ap}}(f) = b - \chi \cdot \log_{10}(f)$$
 
 with offset b and exponent χ. In **knee** mode,
 
-    L_ap(f) = b − log10(k + f^χ)
+$$L_{\mathrm{ap}}(f) = b - \log_{10}(k + f^{\chi})$$
 
 with an additional knee parameter k.
 
@@ -123,7 +124,7 @@ across the fitted range, where the fixed model is the standard choice
 BIC values for both modes are reported per modality (Section 3.2.1) as
 confirmation of these prior choices. -->
 
-#### 2.3.2 Per-band peak prevalence from specparam
+####  Per-band peak prevalence from specparam
 
 For each channel, parameterised peaks from specparam (Section 2.4) were
 assigned to canonical bands δ (0.5-4 Hz), θ (4-8 Hz), α (8-13 Hz), β
@@ -132,7 +133,7 @@ prevalence in a region was defined as the proportion of channels in that
 region exhibiting at least one peak in a given band.
 
 
-### 2.5 Aperiodic subtraction
+###  Aperiodic subtraction
 
 The fitted aperiodic component was reconstructed on the fitted frequency
 grid and subtracted from the empirical PSD in linear power space, yielding
@@ -166,7 +167,7 @@ $$L_\text{ap}(f) = b - \chi \cdot \log_{10}(f).$$
  -->
 
 
-#### 2.4.3 IRASA
+####  IRASA
 
 As a complementary decomposition, aperiodic exponents in HD-EEG were also
 estimated using Irregular Resampling Auto-Spectral Analysis (IRASA; Wen
@@ -183,7 +184,7 @@ is the IRASA exponent.
 
 
 
-### 2.7 Stability analyses
+### Stability analyses
 
 <!-- FIX #5: clarified which of the three stability comparisons feed the
 Bayesian model and which are reported separately. Previous version listed
