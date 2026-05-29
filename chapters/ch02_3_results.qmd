@@ -44,6 +44,7 @@ We present regional relative band power, compared across modalities with the ban
 
 ![Average spectral overlap between the iEEG atlas and source-reconstructed HD-EEG, per MICCAI region and frequency band, computed on uncorrected relative-power PSDs.](figures/chapter2/afnan_overlap_raw_heatmap.svg){#fig-afnan-overlap-raw}
 
+![](figures/chapter2/relative_power/fig2a_relative_psd.svg)
 
 ### Periodic/aperiodic separation
 

@@ -86,7 +86,7 @@ ieeg_f, ieeg_psd_df = prepare_psd(
     freq_range=FREQ_RANGE,
 )
 ieeg_psd_df.head()
-Markdown(ieeg_psd_df.head().round(2).to_markdown(index=False))
+#Markdown(ieeg_psd_df.head().round(2).to_markdown(index=False))
 ```
 
 ```{python}
@@ -104,7 +104,7 @@ hd_psd_df = pd.DataFrame(
     hd_psd, index=pd.Index(hd_raw.ch_names, name="ch_name"), columns=hd_f
 ).join(hd_meta)
 hd_psd_df.head()
-Markdown(hd_psd_df.head().round(2).to_markdown(index=False))
+#Markdown(hd_psd_df.head().round(2).to_markdown(index=False))
 ```
 
 ## Per-channel band-relative power
