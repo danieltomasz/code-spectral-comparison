@@ -1,13 +1,13 @@
 # Mapping Oscillatory and 1/f Broadband Spectral Features Across Cortical Regions and Recording Modalities {#sec-chapter2}
 
-{{< include ch02_intro.qmd >}}
+{{< include ch02_1_intro.qmd >}}
 
 
-{{< include ch02_methods.qmd >}}
+{{< include ch02_2_methods.qmd >}}
 
-{{< include ch02_results.qmd >}}
+{{< include ch02_3_results.qmd >}}
 
-{{< include ch02_discussion.qmd >}}
+{{< include ch02_4_discussion.qmd >}}
 
 
 ## References

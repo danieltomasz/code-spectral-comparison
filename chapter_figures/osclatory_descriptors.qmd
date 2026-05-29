@@ -1,0 +1,401 @@
+---
+title: K-means Clustering (DatasetCtx version)
+author: Daniel Borek
+format: typst
+pdf-engine: typst
+jupyter: spectral-comparison-3.14
+
+execute:
+  echo: false
+  cache: true
+  freeze: auto
+  output: false
+---
+
+## Oscillatory descriptors
+
+#### K-means clusterisation
+
+<!-- Per-dataset namespace via `DatasetCtx`. Each dataset (iEEG, reconstructed sources) populates its own ctx object so globals never collide. -->
+
+```{python}
+#| label: setup
+#| include: false
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from pesco.experimental.clustering import (
+    cluster_bands,
+    cluster_peak_frequencies,
+    find_k_with_no_peak,
+    get_no_peak,
+    order_clusters_by_peak,
+)
+from pesco.experimental.peak_testing import (
+    compute_intervals,
+    cutintervals,
+    test_lobes,
+    test_regions,
+    test_regions_heatmap,
+)
+from pesco.experimental.plotting import (
+    plot_cluster_brain,
+    plot_clusters,
+    plot_clusters_pair,
+    plot_histogram,
+    plot_lobes,
+    plot_region_difference_heatmap,
+    plot_region_difference_heatmap_pair,
+    plot_regions,
+)
+from pesco.io import load_sources, prepare_psd
+from pesco.pipeline import DatasetCtx
+from pesco.preprocess import compute_psd, normalize_psd
+
+seed = 3
+np.random.seed(seed)
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DATA_PATH_SOURCES = Path(f"{PROJECT_DIR}/data/Mantini2018")
+DATA_PATH_IEEG = Path(f"{PROJECT_DIR}/data/Frauscher2018")
+
+NO_PEAK_SUMMARY = "mean"
+PLOT_SUMMARY = "median"
+```
+
+# compute clasterisation iEEG
+
+```{python}
+ieeg = DatasetCtx(name="intracranial data")
+ieeg.f, ieeg.psd = prepare_psd(
+    matfile = DATA_PATH_IEEG / "WakefulnessMatlabFile.mat",
+    region_dict_file = DATA_PATH_IEEG / "RegionInformation.csv",
+    frauscher_bandpass=False,
+    normalize=True,
+    freq_range=(0.5, 80),
+)
+assert ieeg.psd is not None
+
+ieeg.psd
+```
+
+```{python}
+k, ieeg.psd_clust, ieeg.smal = find_k_with_no_peak(
+    ieeg.psd,
+    k_range=range(2, 16),
+    feature_cols=ieeg.f,
+    summary=NO_PEAK_SUMMARY,
+    random_seed=seed,
+)
+
+print(f"selected k={k}, no-peak cluster(s): {ieeg.smal}")
+
+no_peak_df, no_peak_center = get_no_peak(
+    ieeg.psd_clust, ieeg.smal, feature_cols=ieeg.f, summary=NO_PEAK_SUMMARY,
+)
+
+assert no_peak_df is not None and no_peak_center is not None
+ieeg.no_peak_df = no_peak_df
+ieeg.no_peak_center = no_peak_center
+```
+
+
+
+```{python}
+ieeg.peaks = cluster_peak_frequencies(
+    ieeg.psd_clust,
+    ieeg.f,
+    summary=PLOT_SUMMARY,
+    baseline=ieeg.no_peak_center,
+    freq_range=(1.0, 80.0),
+    feature_cols=ieeg.f,
+    no_peak=ieeg.smal,
+)
+print(ieeg.peaks)
+```
+
+
+```{python}
+#| output: true
+fig, _ = plot_clusters(
+    ieeg.psd_clust,
+    ieeg.f,
+    ieeg.name,
+    ieeg.smal,
+    nopeak=ieeg.smal[0] if ieeg.smal else None,
+    summary=PLOT_SUMMARY,
+    log_y=True,
+    order_by_peak=True,
+    peak_baseline=ieeg.no_peak_center,
+    peak_freq_range=(1.0, 80.0),
+    feature_cols=ieeg.f,
+    label_by_band=True,
+)
+fig.savefig("images/ieeg_clusters.png", dpi=600, bbox_inches="tight")
+```
+
+
+```{python}
+#| output: true
+
+pos = ieeg.psd_clust[["mni_x", "mni_y", "mni_z"]].to_numpy()
+labels = ieeg.psd_clust["clusters"].to_numpy()
+
+order = list(ieeg.smal) + order_clusters_by_peak(
+    ieeg.psd_clust,
+    ieeg.f,
+    summary=PLOT_SUMMARY,
+    exclude=ieeg.smal,
+    baseline=ieeg.no_peak_center,
+    freq_range=(1.0, 80.0),
+    feature_cols=ieeg.f,
+)
+band_names = cluster_bands(ieeg.peaks)
+
+
+```
+
+```{python}
+ieeg.colbin, _ = cutintervals(ieeg.f)
+ieeg.regional_diff = test_regions_heatmap(
+    no_peak_df=ieeg.no_peak_df,
+    psd=ieeg.psd,
+    colbin=ieeg.colbin,
+)
+ieeg.sig_lobes = test_lobes(ieeg.no_peak_df, ieeg.psd, ieeg.colbin)
+ieeg.sig_regions = test_regions(ieeg.no_peak_df, ieeg.psd, ieeg.colbin)
+```
+
+
+```{python}
+#| output: true
+
+fig, ax = plot_region_difference_heatmap(
+    ieeg.regional_diff,
+    title=f"Significant differences between regions and no-peak cluster of {ieeg.name}",
+    output_path=f"images/{ieeg.name}_all_regional_differences.png",
+    annot_fontsize=7,
+)
+
+```
+
+# HD EEG
+
+
+```{python}
+SOURCE_DURATION_SECONDS = 60.0
+SOURCE_START_SECONDS = None  # None: centered 60 s segment
+FREQ_RANGE = (1, 80.0)
+USE_FRAUSCHER_BINS = True
+
+src = DatasetCtx(name="reconstructed sources")
+
+raw_src, region_meta = load_sources(DATA_PATH_SOURCES)
+n_samples = int(SOURCE_DURATION_SECONDS * raw_src.info["sfreq"])
+if n_samples > raw_src.n_times:
+    raise ValueError("Source recording shorter than SOURCE_DURATION_SECONDS.")
+if SOURCE_START_SECONDS is None:
+    src_start = (raw_src.n_times - n_samples) // 2
+else:
+    src_start = int(SOURCE_START_SECONDS * raw_src.info["sfreq"])
+src_stop = src_start + n_samples
+print(f"source PSD segment: {src_start / raw_src.info['sfreq']:.1f}-{src_stop / raw_src.info['sfreq']:.1f} s")
+
+data = raw_src.get_data(start=src_start, stop=src_stop)
+src.f, psd_arr = compute_psd(
+    data, raw_src.info["sfreq"], fmin=FREQ_RANGE[0], fmax=FREQ_RANGE[1],
+)
+psd_arr = normalize_psd(psd_arr, src.f)
+src.psd = pd.DataFrame(
+    psd_arr, index=raw_src.info["ch_names"], columns=src.f,
+).join(region_meta)
+src.psd
+```
+
+```{python}
+_, src.psd_clust, src.smal = find_k_with_no_peak(
+    src.psd,
+    k_range=range(2, 16),
+    feature_cols=src.f,
+    summary=NO_PEAK_SUMMARY,
+    random_seed=seed,
+)
+print(f"no-peak cluster(s): {src.smal}")
+
+no_peak_df, no_peak_center = get_no_peak(
+    src.psd_clust, src.smal, feature_cols=src.f, summary=NO_PEAK_SUMMARY,
+)
+assert no_peak_df is not None and no_peak_center is not None
+src.no_peak_df = no_peak_df
+src.no_peak_center = no_peak_center
+```
+
+```{python}
+src.peaks = cluster_peak_frequencies(
+    src.psd_clust,
+    src.f,
+    summary=PLOT_SUMMARY,
+    baseline=src.no_peak_center,
+    freq_range=(1.0, 80.0),
+    feature_cols=src.f,
+    no_peak=src.smal,
+)
+print(src.peaks)
+```
+
+
+```{python}
+#| output: true
+
+fig, _ = plot_clusters(
+    src.psd_clust,
+    src.f,
+    src.name,
+    src.smal,
+    nopeak=src.smal[0] if src.smal else None,
+    summary="mean",
+    log_y=True,
+    order_by_peak=True,
+    peak_baseline=src.no_peak_center,
+    peak_freq_range=(1.0, 80.0),
+    feature_cols=src.f,
+    label_by_band=True,
+)
+fig.savefig("reconstructed_sources_clusters.png", dpi=600, bbox_inches="tight")
+
+```
+
+
+
+```{python}
+USE_FRAUSCHER_BINS = True
+if USE_FRAUSCHER_BINS:
+    src.colbin, _ = cutintervals(src.f)
+else:
+    df = src.f[1] - src.f[0]
+    band = src.f <= 45.0
+    ref = src.psd[list(src.f[band])].median(axis=0).to_numpy()
+    edges = compute_intervals(src.f[band], ref)
+    # cuts derived ≤45 Hz; collapse 45–80 Hz noise tail into one trailing bin
+    edges = np.append(edges[:-1], src.f[-1] + df / 2)
+    src.colbin, _ = cutintervals(src.f, edges=edges)
+    print(f"derived {len(src.colbin.categories)} intervals (paper: 22): {np.round(edges, 2)}")
+
+src.regional_diff = test_regions_heatmap(
+    no_peak_df=src.no_peak_df,
+    psd=src.psd,
+    colbin=src.colbin,
+)
+src.sig_lobes = test_lobes(src.no_peak_df, src.psd, src.colbin)
+src.sig_regions = test_regions(src.no_peak_df, src.psd, src.colbin)
+```
+
+```{python}
+#| output: true
+
+fig, ax = plot_region_difference_heatmap(
+    src.regional_diff,
+    title=f"Significant differences between regions and no-peak cluster of {src.name}",
+    reference_df= ieeg.regional_diff,
+    output_path=f"images/{src.name}_all_regional_differences.png",
+    annot_fontsize=7,
+)
+```
+
+
+## Side-by-side
+
+Both ctx objects coexist; iterate or compare freely.
+
+
+
+```{python}
+for ctx in (ieeg, src):
+    print(
+        f"{ctx.name}: "
+        f"{len(ctx.psd)} channels, "
+        f"k={ctx.psd_clust['clusters'].nunique()}, "
+        f"no-peak={ctx.smal}, "
+        f"intervals={len(ctx.colbin.categories) if ctx.colbin is not None else None}"
+    )
+```
+
+```{python}
+#| output: true
+
+fig, axes = plot_region_difference_heatmap_pair(
+    ieeg.regional_diff, src.regional_diff,
+    suptitle="Regional differences vs no-peak cluster: iEEG vs reconstructed sources",
+    left_title="A) intracranial data",
+    right_title="B) reconstructed sources",
+    facecolor="#ececec",
+    annot_fontsize=9.5,
+    tick_fontsize=12,           # tweak if needed
+    title_fontsize=15,
+    dpi=600,                    # journal-grade
+        square=True,  # force identical cell size
+
+)
+fig.savefig("figures/chapter2/combined_regional_differences.svg", bbox_inches="tight")
+
+```
+
+```{python}
+#| output: true
+
+fig, axes = plot_clusters_pair(
+    top=dict(
+        psd_clust=ieeg.psd_clust,
+        f=ieeg.f,
+        dataset=ieeg.name,
+        smal=ieeg.smal,
+        nopeak=ieeg.smal[0] if ieeg.smal else None,
+        summary=PLOT_SUMMARY,
+        log_y=True,
+        order_by_peak=True,
+        peak_baseline=ieeg.no_peak_center,
+        peak_freq_range=(0.5, 80.0),
+        feature_cols=ieeg.f,
+        label_by_band=True,
+        title=f"A) {ieeg.name}",
+        xlim=(1, 80),
+    ),
+    bottom=dict(
+        psd_clust=src.psd_clust,
+        f=src.f,
+        dataset=src.name,
+        smal=src.smal,
+        nopeak=src.smal[0] if src.smal else None,
+        summary=PLOT_SUMMARY,
+        log_y=True,
+        order_by_peak=True,
+        peak_baseline=src.no_peak_center,
+        peak_freq_range=(1.0, 80.0),
+        feature_cols=src.f,
+        label_by_band=True,
+        title=f"B) {src.name}",
+        xlim=(1, 80),
+    ),
+    suptitle="Cluster PSDs: iEEG vs reconstructed sources",
+    figsize=(12, 14),
+    dpi=600,
+    sharey=True
+)
+fig.savefig("figures/chapter2/combined_clusters_psd.svg", bbox_inches="tight")
+```
+
+```{python}
+import joblib
+from pathlib import Path
+
+CACHE = Path(PROJECT_DIR , "data/interim/clustering/cache")
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+for ctx in (ieeg, src):
+    fname = ctx.name.replace(" ", "_") + ".joblib"
+    joblib.dump(ctx, CACHE / fname, compress=3)
+    print(f"saved {fname}  ({(CACHE / fname).stat().st_size / 1e6:.1f} MB)")
+```
+

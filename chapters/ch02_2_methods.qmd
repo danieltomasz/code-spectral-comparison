@@ -34,7 +34,7 @@ All spectral data were normalized to unit total power to ensure that the compari
 
 Where later analyses use canonical bands, we define them as delta 1-4 Hz, theta 4-8 Hz, alpha 8-13 Hz, beta 13-30 Hz, low gamma 30-45 Hz, and high gamma 45-80 Hz. Gamma is split at 45 Hz to separate any residual line-noise effect from genuine high-frequency activity. We use 1 Hz as the lower bound throughout to aid the cross-modal comparison.
 
-##  Recovery of regional spectral organisation on uncorrected spectra
+###  Recovery of regional spectral organisation on uncorrected spectra
 
 #### K-means clustering and no-peak reference 
 
@@ -128,7 +128,7 @@ $$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(
 
 This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which corresponds to the specparam convention, as a sensitivity comparison.
 
-##  Stability of aperiodic estimates
+###  Stability of aperiodic estimates
 
 Our last questions asks whether the regional aperiodic estimates agree across three methodological choices. Because some comparisons involve parameters that are not on a common scale, we quantify agreement by correlation, rank-based where the scales differ.
 

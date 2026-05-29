@@ -1,6 +1,8 @@
 ## Results
 
-## Oscillatory descriptors
+### Recovery of regional spectral organisation on uncorrected spectra
+
+We first ask whether the regional spectral organisation of the iEEG atlas survives in source-reconstructed HD-EEG, before any aperiodic correction.
 
 #### K-means clusterisation
 
@@ -16,7 +18,7 @@ Applying the same procedure to the HD-EEG source-reconstructed data yielded 11 s
 
 The cluster " band peak frequency" is the argmax of each cluster's spectrum relative to the no-peak baseline, which labels a cluster by its strongest oscillatory deviation and is only meaningful where a cluster carries a genuine peak. In the HD-EEG data only the δ and α clusters showed a clear bump above the aperiodic background; the remaining high-frequency clusters were distinguished not by a gamma oscillation but by a shallower aperiodic slope, producing an elevated broadband tail. For these clusters the elevated gamma shouldnt be read as genuine gamma oscillations. Whereas the iEEG atlas resolved a full bank of band-specific oscillatory clusters (δ→γ), the HD-EEG cluster structure was therefore dominated by alpha power and aperiodic slope.. @fig-ieeg-clusters presents these clustering results side by side.
 
-![Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the seven iEEG clusters and Panel B shows the six HD-EEG clusters. In both modalities, one no-peak cluster is visible. HD-EEG shows more clusters, most of them distinguished only by the average power of the alpha peak. In the iEEG clusters, the knee is visible; reconstructed sources have more straightforward 1/f-like characteristics.](figures/chapter2/combined_clusters_psd.svg){#fig-ieeg-clusters width="100%" column="page"}
+![Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the seven iEEG clusters and Panel B shows the 11 HD-EEG clusters. In both modalities, one no-peak cluster is visible. HD-EEG shows more clusters, most of them distinguished only by the average power of the alpha peak. In the iEEG clusters, the knee is visible; reconstructed sources have more straightforward 1/f-like characteristics.](figures/chapter2/combined_clusters_psd.svg){#fig-ieeg-clusters width="100%" column="page"}
 
 ![](figures/chapter2/combined_regional_differences.svg)
 
@@ -24,9 +26,7 @@ Lobar differences presented as spectrum are presented below.
 
 ![Differences per lobes in intracranial data](figures/chapter2/intracranial data_lobar_differences.svg){#fig-ieeg-reg_dfiff width="100%" column="page"}
 
-![Differences per lobes in reconstruncted sources data]](figures/chapter2/reconstructed sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
-
-
+![Differences per lobes in reconstruncted sources data](figures/chapter2/reconstructed sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
 
 #### Clustering stability and data driven intervals 
 
@@ -38,3 +38,42 @@ For this reason the 4% condition does not transfer to source-reconstructed data,
 
 Because the clustering, the no-peak reference, and the interval definition were all unstable across reasonable preprocessing choices, this k-means peak-detection descriptor was not carried forward to the aperiodic-corrected (specparam) spectra. The downstream analyses instead characterise oscillatory content with the more stable per-band parametrised-peak descriptor, which requires neither a clustering step nor a no-peak reference and is therefore robust to these choices.
 
+#### Band-power map and cross-modal overlap
+
+We present regional relative band power, compared across modalities with the band-overlap metric.
+
+![Average spectral overlap between the iEEG atlas and source-reconstructed HD-EEG, per MICCAI region and frequency band, computed on uncorrected relative-power PSDs.](figures/chapter2/afnan_overlap_raw_heatmap.svg){#fig-afnan-overlap-raw}
+
+
+### Periodic/aperiodic separation
+
+Having established the uncorrected picture, we ask whether separating periodic from aperiodic activity changes which regional features are preserved.
+
+
+#### Per-band peak prevalence from specparam
+
+<!-- PLACEHOLDER: cross-modal comparison of peak prevalence per band and region (specparam peaks). Where do the two modalities agree/disagree once peaks are modelled explicitly rather than read off the raw PSD. -->
+
+#### Cross-modal overlap before and after aperiodic correction
+
+<!-- PLACEHOLDER: the H2 result proper. Report the change in band-overlap after subtracting the aperiodic component, per band and region, against the uncorrected overlap from 3.1.2. State whether overlap improves (as Afnan 2023 found for MEG) or degrades, and in which bands/regions. Log-ratio sensitivity comparison. -->
+
+#### Model-fit quality and low-quality sources
+
+<!-- PLACEHOLDER: BIC for knee vs fixed per modality (confirming the model choices); outcome of the R² < 0.90 sensitivity check; the subset of near-flat HD-EEG sources with exponents near zero. -->
+
+### H3: Stability of aperiodic estimates
+
+Finally, we ask how far the aperiodic estimates themselves depend on the modelling choices made to obtain them.
+
+#### Knee vs fixed
+
+<!-- PLACEHOLDER: per-modality Pearson/Spearman between knee- and fixed-model exponents across channels. If relevant, whether the fixed exponent tracks knee frequency (cf. Ameen 2025). -->
+
+#### Fitting range
+
+<!-- PLACEHOLDER: per-channel agreement between 1-80 and 1-45 Hz fixed-mode exponents; magnitude and direction of the range effect; whether uniform or ROI-dependent. -->
+
+#### IRASA vs specparam
+
+<!-- PLACEHOLDER: Pearson/Spearman between IRASA (2-40 Hz) and specparam fixed-mode exponents refit over 2-40 Hz, in HD-EEG. -->
