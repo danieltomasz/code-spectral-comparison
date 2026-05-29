@@ -1,6 +1,5 @@
 ## Results
 
-
 ## Oscillatory descriptors
 
 #### K-means clusterisation
@@ -21,13 +20,13 @@ The cluster " band peak frequency" is the argmax of each cluster's spectrum rela
 
 ![](figures/chapter2/combined_regional_differences.svg)
 
-Regional differences per lobes were computed the same method, but just visualised differently.
+Lobar differences presented as spectrum are presented below.
 
-![](figures/chapter2/intracranial data_lobar_differences.svg){#fig-ieeg-reg_dfiff width="100%" column="page"}
+![Differences per lobes in intracranial data](figures/chapter2/intracranial data_lobar_differences.svg){#fig-ieeg-reg_dfiff width="100%" column="page"}
 
-![](figures/chapter2/reconstructed sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
+![Differences per lobes in reconstruncted sources data]](figures/chapter2/reconstructed sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
 
-![Average spectral overlap between the iEEG atlas and source-reconstructed HD-EEG, per MICCAI region and frequency band, computed on uncorrected relative-power PSDs.](figures/chapter2/afnan_overlap_raw_heatmap.svg){#fig-afnan-overlap-raw}
+
 
 #### Clustering stability and data driven intervals 
 
@@ -38,175 +37,4 @@ The 22 frequency intervals of @frauscher2018AtlasNormalIntracranial were defined
 For this reason the 4% condition does not transfer to source-reconstructed data, and data-driven HD-EEG intervals are not directly comparable with the iEEG atlas. To preserve cross-modal comparability, the fixed 22 intervals of @frauscher2018AtlasNormalIntracranial were retained for both modalities in all regional peak-detection tests (@fig-hdeeg-reg_dfiff).
 
 Because the clustering, the no-peak reference, and the interval definition were all unstable across reasonable preprocessing choices, this k-means peak-detection descriptor was not carried forward to the aperiodic-corrected (specparam) spectra. The downstream analyses instead characterise oscillatory content with the more stable per-band parametrised-peak descriptor, which requires neither a clustering step nor a no-peak reference and is therefore robust to these choices.
-
-
-#### Model selection: knee vs fixed by BIC
-
-Specparam was fit in both knee and fixed aperiodic modes to each modality over the shared fitting range, using the shared peak settings. The aperiodic mode for downstream analyses was selected per modality on the basis of the Bayesian Information Criterion (BIC), with the model achieving the lower BIC retained. Because the knee model carries one extra parameter and BIC penalises model complexity, this selection is reported alongside prior evidence on the spectral shape of each modality. The iEEG atlas exhibits a clear knee in log-log space as originally reported by @frauscher2018AtlasNormalIntracranial and consistent with reports that knees are commonly observed in intracranial recordings [@donoghue2024EvaluatingComparingMeasures; @bush2024AperiodicComponentsLocal]. HD-EEG source-reconstructed spectra are typically near-linear in log-log space across the fitted range, where the fixed model is the standard choice [@donoghue2020ParameterizingNeuralPower].
-
-
-
-#### Bin-level vs band-aggregated maps
-
-<!-- [PLACEHOLDER: presentation of the cross-modal correspondence at bin-level vs band-aggregated resolution. Note: this sub-question is mentioned in the intro but the analysis is most naturally placed in Stage 2 where the Afnan overlap operates bin-by-bin and is then averaged within bands. Consider moving this paragraph to Stage 2 Results if that is where the figure naturally lives.] -->
-
-
-
-<!-- [PLACEHOLDER: report BIC values for knee vs fixed in each modality, the model selected, and whether the selection agrees with the prior-evidence expectation (knee for iEEG, fixed for HD-EEG).] -->
-
-
-<!-- [PLACEHOLDER: present the Afnan overlap recomputed on the aperiodic-corrected spectra and contrast it with the uncorrected baseline from Stage 2. Include the heatmap (fig-afnan-overlap from aperiodic_paper.qmd) and the band-means summary.] -->
-
-![Average spectral overlap between the iEEG atlas and source-reconstructed HD-EEG, per MICCAI region and frequency band, computed on the aperiodic-removed residual.](figures/chapter2/afnan_overlap_heatmap.svg){#fig-afnan-overlap}
-
-### Oscillatory peak detection:  k-means after 1/f removal
-
-Both datasets themselves have different characteristics, so we used different settings for removing the 1/f background.
-The iEEG channel spectra exhibited a clear knee in log-log space (as orginally reported by @frauscher2018AtlasNormalIntracranial),  consistent with reports that knees are commonly observed in intracranial  recordings [@donoghue2024EvaluatingComparingMeasures; @bush2024AperiodicComponentsLocal]. We therefore  fit the iEEG spectra using Specparam's knee model. The HD-EEG  source-reconstructed spectra, by contrast, were approximately linear  in log-log space across the fitted frequency range and did not exhibit  a clear knee; we therefore used the fixed (no-knee) Specparam model  for these data, in line with standard practice for scalp/source M/EEG [@donoghue2020ParameterizingNeuralPower].
-
-For each channel, the normalized PSD was parameterised over 1-80 Hz with peak_width_limits = [1, 8] Hz, max_n_peaks = 8, peak_threshold = 3.0 (in units of standard deviation of the residual), and aperiodic_mode = "knee". In knee mode, the aperiodic component is modelled in log-power space as
-
-$$L_\text{ap}(f) = b - \log_{10}\bigl(k + f^{\chi}\bigr),$$
-
-where $b$ is the offset, $k$ the knee parameter, and $\chi$ the exponent governing the high-frequency roll-off. The fitted parameters $(b, k, \chi)$ were extracted per channel and used to reconstruct $L_\text{ap}(f)$ on the fitted frequency grid. The oscillatory residual was obtained by subtracting the aperiodic fit from the empirical log-PSD,
-
-$$L_\text{osc}(f) = \log_{10} \text{PSD}(f) - L_\text{ap}(f),$$
-
-and back-transformed to linear power as $\text{PSD}\text{osc}(f) = 10^{L\text{osc}(f)}$.
-The resulting $\text{PSD}_\text{osc}$ was carried forward to the clustering analysis without further normalisation, preserving the channel-relative scaling implied by the aperiodic subtraction.
-
-
-<!-- Fit quality was assessed via the goodness-of-fit $R^2$ reported by specparam; across the iEEG channels, the median $R^2$ was 0.98, with 1765/1772 channels exceeding $R^2 \geq 0.9$.  -->
-
-For the purpose of removing the 1/f background and testing if it improves the comparability we used the specparam algorithm. 
-
-PSDs were parameterised using the specparam algorithm (formerly FOOOF; @donoghue2020ParameterizingNeuralPower) in fixed aperiodic mode. 
-! We should use knee here as even frauscher describe the there was knee here.As it was noted by @frauscher2018AtlasNormalIntracranial
-
-The algorithm fits an aperiodic component of the form
-
-$$\log_{10} P(f) = b - \chi \cdot \log_{10}(f)$$
-
-where $b$ is the offset and $\chi$ is the exponent, and then identifies periodic peaks above this background as Gaussian functions. The following settings were used:
-
-- Fitting frequency range: 1-40 Hz
-- Peak width limits: 1.0-8.0 Hz
-- Maximum number of peaks: 6
-- Minimum peak height: 0.1 (log power)
-- Peak threshold: 2.0 standard deviations
-
-For each region in each dataset, the primary aperiodic parameters of interest were the exponent ($\chi$) and offset ($b$). Oscillatory peaks were characterised by their centre frequency, power, and bandwidth. Model fits were evaluated using $R^2$ and mean absolute error; fits with $R^2$ below 0.90 were flagged for inspection.
-
-exponents extracted from knee and fixed mode are not directly comparable, so for direct comaprison we thought about using the extraction with the sam setings .
-
-
-#### Spectral Comparison 
-
-As discussed in Chapter 1 (@sec-specparam-geometry), the parameters produced by specparam and IRASA are model- and range-dependent descriptors of spectral shape: the exponent depends on the frequency range over which it is estimated [@gerster2022SeparatingNeuralOscillations; @boncompte2026AperiodicExponentBrain], and the offset and exponent are structurally coupled by the geometry of the fit. The goal is therefore not to treat any single parameter as a direct physiological quantity, but to determine which spectral features are regionally organised, which are preserved across modalities, and which are sensitive to the assumptions of the analysis pipeline
-alongside spectral parameterisation. To assess robustness against methodological choices, I use two complementary decomposition approaches: specparam and IRASA. As discussed in Chapter 1 (@sec-specparam-geometry), the parameters produced by these methods are model- and range-dependent descriptors of spectral shape. The exponent depends on the frequency range over which it is estimated [@gerster2022SeparatingNeuralOscillations; @boncompte2026AperiodicExponentBrain], and the offset and exponent are structurally coupled by the geometry of the fit. These caveats apply throughout the chapter. Thus, the goal is not to treat any single parameter as a direct physiological quantity, but to determine which spectral features are regionally organised, which are preserved across modalities, and which are sensitive to the assumptions of the analysis pipeline.
-
-There are some limitation in the realisation of current approach. The Frauscher iEEG atlas was recorded with eyes closed, whereas the HD-EEG dataset used here was recorded with eyes open. Eye state affects oscillatory activity, most strongly posterior alpha power, and may also affect aperiodic exponent and offset [@geller2014EyeClosureCauses]. Where cross-modal agreement is observed, it is therefore observed despite differences in recording condition. Where cross-modal agreement is weak, modality and condition cannot be fully separated with the data used here. This limitation is considered again in the Discussion.
-
-
-## Analysis 4 — Stability of aperiodic features
-
-### Methods
-
-#### Knee vs fixed exponent rank agreement
-
-For each modality, the channel-level exponent estimated under the knee model was compared with the channel-level exponent estimated under the fixed model. Because the two exponents are not on the same scale, the comparison was made by rank correlation across channels (Pearson and Spearman) rather than by direct numerical agreement.
-
-#### Stability of the fixed-mode exponent across fitting ranges
-
-For each modality, the fixed-mode exponent was computed twice: once over 1-80 Hz and once over 1-45 Hz. The per-channel agreement between the two estimates was quantified. These comparisons were pooled into a hierarchical Bayesian regression with the exponent as the outcome, fitting range as a fixed-effect predictor, modality as a fixed-effect predictor, and ROI and subject as random effects, to localise where the choice of fitting range materially shifts the estimate.
-
-<!-- [PLACEHOLDER: specify the Bayesian model formula, priors, sampler, convergence diagnostics. Implementation pending.] -->
-
-#### IRASA vs specparam exponent at matched band
-
-As a complementary check, the aperiodic exponent in HD-EEG was estimated using Irregular Resampling Auto-Spectral Analysis (IRASA; @wen2016SeparatingFractalOscillatory). IRASA computes the power spectrum at multiple resampling factors ($h$ = 1.05 to 2.0 in steps of 0.05); for each factor, the geometric mean of the up-sampled and down-sampled spectra is taken, and the median across factors yields the fractal (aperiodic) component. Because IRASA up-samples the signal by up to $h_\text{max} = 2$, the analysed band is bounded by the Nyquist limit, $h_\text{max} \cdot f_\text{hi} < f_s / 2$. With $f_s = 200$ Hz this restricts the upper edge to below 50 Hz, so the IRASA decomposition was run over 2-40 Hz. The fractal exponent was obtained by fitting a line in log-log space to the IRASA aperiodic spectrum; the sign-reversed slope gives the IRASA exponent. For direct comparison, specparam was additionally refit in fixed mode over the same 2-40 Hz band, and the per-channel exponents from the two methods were compared by Pearson and Spearman correlation.
-
-### Results
-
-#### Knee vs fixed within each modality
-
-<!-- [PLACEHOLDER: rank correlations between knee and fixed exponents within iEEG and within HD-EEG.] -->
-
-#### Fitting-range stability
-
-<!-- [PLACEHOLDER: Bayesian regression output. Posterior distributions of the fitting-range effect, by ROI. Forest plot or equivalent. Pending implementation.] -->
-
-#### IRASA vs specparam at 2-40 Hz
-
-<!-- [PLACEHOLDER: scatter plot of per-channel exponents (fig-hd-exp-specparam-irasa from irasa.qmd), with Pearson and Spearman correlation values.] -->
-
-![HD-EEG aperiodic exponent estimated by specparam versus IRASA (fixed model, 2-40 Hz). The dashed line marks identity.](figures/chapter2/hd_exponent_specparam_vs_irasa.svg){#fig-hd-exp-specparam-irasa}
-
-
-<!-- 
-### Aperiodic estimation: IRASA
-
-As a complementary approach to specparam, the aperiodic component of each regional time course was estimated using Irregular Resampling Auto-Spectral Analysis (IRASA; @wen2016SeparatingFractalOscillatory). IRASA exploits the self-similar properties of fractal processes: the power spectrum is computed at multiple resampling factors ($h$ = 1.1 to 1.9 in steps of 0.05), and for each factor, the geometric mean of the up-sampled and down-sampled spectra is taken. The median across resampling factors yields the fractal (aperiodic) component, and the oscillatory residual is obtained by subtraction from the original spectrum.
-
-The fractal exponent was estimated by fitting a line in log-log space to the IRASA-derived aperiodic spectrum over the 1-40 Hz range, matching the specparam fitting range. The slope (with sign reversed) provides an IRASA-based estimate of the aperiodic exponent. -->
-
-
-### Computing correspondence
-
-Regional aggregation and atlas-level correspondence
-
-For each modality, spectral parameters were aggregated within atlas regions. For the iEEG atlas, parameters were averaged (mean) across all channels assigned to each of the 38 MICCAI regions. For the HD-EEG datasets, parameters were first computed per subject per label and then averaged across subjects to produce group-level regional estimates.
-
-Cross-modal correspondence was quantified using Spearman rank correlations across regions. For each parameter (exponent, offset, peak prevalence per frequency band, dominant peak frequency), the vector of regional values from one modality was correlated with the corresponding vector from another modality, yielding a cross-modal correlation coefficient. Significance was assessed using permutation testing (10,000 permutations, shuffling region labels) to account for the small number of spatial units.
-
-
-
-![](figures/chapter2/per_roi_spearman_atlas.svg)
-
-
-
-
-<!-- 
-
-### Regional oscillatory profiles
-
-Peak detection was performed per region and frequency bin using the Frauscher procedure, separately for each dataset.
-
-<!-- Peak frequency maps, peak prevalence by region and band, per dataset. 
-
-![](figures/chapter2/intracranial data_lobar_differences.svg)
-
-![](figures/chapter2/reconstructed sources_lobar_differences.svg)
- -->
-
-
-
-
-
-
-#### specparam-based peak prevalence per band
-
-<!-- [DEPENDENCY: this descriptor requires the specparam fits whose aperiodic mode is selected in Stage 3. Two coherent options are available: (i) use a prior-evidence default mode here (knee for iEEG, fixed for HD-EEG) and report a sensitivity check against the BIC-selected mode in Stage 3, or (ii) move the BIC selection to Shared Methods so that all later stages use the same fits. Decide before writing the result.] -->
-
-Specparam fits were extracted using the shared settings above. For each channel, parametrised peaks were assigned to the canonical bands $\delta$ (0.5-4 Hz), $\theta$ (4-8 Hz), $\alpha$ (8-13 Hz), $\beta$ (13-30 Hz), and $\gamma$ (30-80 Hz) according to their centre frequency. Peak prevalence in a region was defined as the proportion of channels in that region exhibiting at least one peak in a given band. The procedure operates on the same channel-to-region assignment as the clustering analysis above.
-
-
-
-#### Regional peak-prevalence maps
-
-<!-- [PLACEHOLDER: prose describing peak-prevalence regional maps. Migrate from aperiodic_paper.qmd peak_prevalence_by_region outputs. Figures currently referenced in old text but with no descriptive prose:
-  - figures/chapter2/intracranial data_lobar_differences.svg
-  - figures/chapter2/reconstructed sources_lobar_differences.svg
-  - figures/chapter2/combined_regional_differences.svg
-  - figures/chapter2/per_roi_spearman_atlas.svg
-[VERIFY: which of these are clustering-based and which are peak-prevalence-based. If the per_roi_spearman_atlas figure is cross-modal peak-prevalence Spearman, it may belong here or in a later cross-modal stage — confirm.] -->
-
-
-
-#### Survival of clustering-based and peak-prevalence findings after correction
-
-The Frauscher peak-detection procedure (k-means, no-peak set, KS test) and the specparam peak-prevalence procedure were both re-applied to the aperiodic-corrected spectra. For each region × frequency interval combination from the clustering procedure, and each region × canonical band combination from the peak-prevalence procedure, the presence of a significant peak before correction was compared with the presence of a significant peak after correction. Peaks that survived correction were considered robust against the aperiodic background; peaks that disappeared after correction were considered potentially confounded by aperiodic variation.
-
-<!-- [PLACEHOLDER: results prose comparing the corrected and uncorrected Stage 1 outputs, region by region and band by band.] -->
-
 
