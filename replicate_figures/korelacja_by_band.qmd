@@ -64,6 +64,13 @@ from pesco.experimental.plotting import (
     plot_regions,
     plot_regions_per_lobe,
 )
+from pesco.bandpower import (
+    compare_region_band_power,
+    plot_band_power_correlation_grid,
+    region_band_power,
+    relative_band_power_by_channel,
+    relative_psd_df,
+)
 from pesco.io import load_sources, prepare_psd
 from pesco.pipeline import DatasetCtx
 from pesco.preprocess import compute_psd, normalize_psd
@@ -127,19 +134,6 @@ LOBE_COLORS = {
 }
 
 
-def metadata_columns(df):
-    return [c for c in df.columns if isinstance(c, str)]
-
-
-def relative_psd_df(psd_df, freqs):
-    """Return PSD normalised to unit in-band power, preserving metadata."""
-    freqs = np.asarray(freqs, dtype=float)
-    rel = normalize_psd(psd_df[list(freqs)].to_numpy(dtype=float), freqs)
-    return pd.DataFrame(rel, index=psd_df.index, columns=freqs).join(
-        psd_df[metadata_columns(psd_df)]
-    )
-
-
 def add_roi_hemisphere_labels(metadata):
     """Add hemisphere-specific ROI labels for left/right map comparison."""
     metadata = metadata.copy()
@@ -158,219 +152,6 @@ def add_roi_hemisphere_labels(metadata):
     )
     metadata["roi_bilateral"] = metadata["Region name"].astype(str)
     return metadata
-
-
-def relative_band_power_by_channel(psd_df, freqs, dataset, bands=BANDS):
-    """Integrate uncorrected PSD into relative band power for each channel."""
-    freqs = np.asarray(freqs, dtype=float)
-    psd = psd_df[list(freqs)].to_numpy(dtype=float)
-    freq_step = float(np.median(np.diff(freqs)))
-    total_power = np.nansum(psd, axis=1) * freq_step
-
-    meta_cols = [
-        c for c in ["Region name", "Lobe", "hemisphere", "mni_x"] if c in psd_df
-    ]
-    metadata = add_roi_hemisphere_labels(psd_df[meta_cols]).reset_index(drop=True)
-    metadata.insert(0, "channel", psd_df.index.astype(str))
-    metadata["dataset"] = dataset
-
-    out = []
-    for i, (lo, hi, band) in enumerate(bands):
-        if i == len(bands) - 1:
-            mask = (freqs >= lo) & (freqs <= hi)
-        else:
-            mask = (freqs >= lo) & (freqs < hi)
-        band_power = np.nansum(psd[:, mask], axis=1) * freq_step
-        df = metadata.copy()
-        df["band"] = band
-        df["band_label"] = BAND_LABELS[band]
-        df["absolute_band_power"] = band_power
-        df["relative_power"] = np.divide(
-            band_power,
-            total_power,
-            out=np.full_like(band_power, np.nan, dtype=float),
-            where=total_power > 0,
-        )
-        out.append(df)
-    return pd.concat(out, ignore_index=True)
-
-
-def region_band_power(channel_band_power, summary="mean", roi_level="hemisphere"):
-    """Collapse channels to a normative map at bilateral or hemisphere ROI level."""
-    summary_func = summary if isinstance(summary, str) else summary
-    if roi_level == "hemisphere":
-        group_cols = [
-            "dataset",
-            "Region name",
-            "hemisphere",
-            "roi_hemisphere",
-            "Lobe",
-            "band",
-            "band_label",
-        ]
-    elif roi_level == "bilateral":
-        group_cols = [
-            "dataset",
-            "Region name",
-            "roi_bilateral",
-            "Lobe",
-            "band",
-            "band_label",
-        ]
-    else:
-        raise ValueError("roi_level must be 'hemisphere' or 'bilateral'.")
-
-    return (
-        channel_band_power.groupby(group_cols, observed=True)
-        .agg(
-            relative_power=("relative_power", summary_func),
-            n_channels=("relative_power", "size"),
-            sd_channels=("relative_power", "std"),
-        )
-        .reset_index()
-    )
-
-
-def compare_region_band_power(
-    region_power,
-    x_dataset,
-    y_dataset,
-    roi_col="roi_hemisphere",
-    n_label="n_roi_hemispheres",
-):
-    """Pair regional band-power maps and compute Spearman rho per band."""
-    x_meta_cols = [roi_col, "Region name", "Lobe", "band", "band_label"]
-    if "hemisphere" in region_power.columns:
-        x_meta_cols.insert(2, "hemisphere")
-
-    x = (
-        region_power.loc[region_power["dataset"] == x_dataset]
-        .rename(
-            columns={
-                "relative_power": "x_relative_power",
-                "n_channels": "x_n_channels",
-                "sd_channels": "x_sd_channels",
-            }
-        )
-        [x_meta_cols + ["x_relative_power", "x_n_channels", "x_sd_channels"]]
-    )
-    y = (
-        region_power.loc[region_power["dataset"] == y_dataset]
-        .rename(
-            columns={
-                "relative_power": "y_relative_power",
-                "n_channels": "y_n_channels",
-                "sd_channels": "y_sd_channels",
-            }
-        )
-        [[roi_col, "band", "y_relative_power", "y_n_channels", "y_sd_channels"]]
-    )
-    paired = x.merge(y, on=[roi_col, "band"], how="inner")
-
-    rows = []
-    for band in [b[2] for b in BANDS]:
-        d = paired.loc[paired["band"] == band].dropna(
-            subset=["x_relative_power", "y_relative_power"]
-        )
-        if len(d) >= 3:
-            rho, p_value = stats.spearmanr(
-                d["x_relative_power"], d["y_relative_power"]
-            )
-        else:
-            rho, p_value = np.nan, np.nan
-        rows.append(
-            {
-                "band": band,
-                "band_label": BAND_LABELS[band],
-                "spearman_rho": rho,
-                "p_value": p_value,
-                n_label: len(d),
-            }
-        )
-    correlations = pd.DataFrame(rows)
-    return paired, correlations
-
-
-def plot_band_power_correlation_grid(
-    paired,
-    correlations,
-    x_label="source HD-EEG\nrelative band power",
-    y_label="intracranial EEG\nrelative band power",
-    title="Uncorrected PSD: relative band-power correspondence",
-    x_col="x_relative_power",
-    y_col="y_relative_power",
-):
-    """Janiukstyte Fig. 3 style scatter grid, with points coloured by lobe."""
-    band_order = [b[2] for b in BANDS]
-    fig, axes = plt.subplots(1, len(band_order), figsize=(15, 3.3))
-
-    for ax, band in zip(axes, band_order):
-        d = paired.loc[paired["band"] == band].dropna(
-            subset=[x_col, y_col]
-        )
-        for lobe in LOBE_ORDER:
-            lobe_data = d.loc[d["Lobe"] == lobe]
-            if lobe_data.empty:
-                continue
-            ax.scatter(
-                lobe_data[x_col],
-                lobe_data[y_col],
-                s=32,
-                alpha=0.72,
-                color=LOBE_COLORS[lobe],
-                edgecolors="none",
-            )
-
-        if len(d) >= 2 and d[x_col].nunique() > 1:
-            slope, intercept = np.polyfit(
-                d[x_col], d[y_col], deg=1
-            )
-            x_range = np.linspace(
-                d[x_col].min(), d[x_col].max(), 100
-            )
-            ax.plot(x_range, slope * x_range + intercept, color="black", lw=2.2)
-
-        rho = correlations.loc[
-            correlations["band"] == band, "spearman_rho"
-        ].iloc[0]
-        ax.set_title(
-            f"{BAND_LABELS[band]}\nrho={rho:.2f}",
-            color="black",
-            fontsize=15,
-            pad=8,
-        )
-        ax.set_xlabel(x_label, fontsize=10)
-        ax.tick_params(axis="both", labelsize=9)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-
-    axes[0].set_ylabel(y_label, fontsize=11)
-    fig.suptitle(title, y=1.08, fontsize=14)
-    legend_handles = [
-        Line2D(
-            [0],
-            [0],
-            marker="o",
-            linestyle="",
-            label=lobe,
-            markerfacecolor=LOBE_COLORS[lobe],
-            markeredgecolor="none",
-            markersize=7,
-            alpha=0.72,
-        )
-        for lobe in LOBE_ORDER
-        if lobe in set(paired["Lobe"])
-    ]
-    fig.legend(
-        handles=legend_handles,
-        loc="lower center",
-        bbox_to_anchor=(0.5, -0.05),
-        ncol=len(legend_handles),
-        frameon=False,
-        fontsize=10,
-    )
-    fig.tight_layout()
-    return fig
 
 
 def reconstruct_specparam_log_model(fg, row_idx):

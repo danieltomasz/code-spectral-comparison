@@ -11,5 +11,12 @@ from pesco.spectral import (  # noqa: F401
     inspect_fit_quality,
     inspect_q_extremes,
 )
+from pesco.bandpower import (  # noqa: F401
+    relative_band_power_by_channel,
+    region_band_power,
+    compare_region_band_power,
+    plot_band_power_correlation_grid,
+    relative_psd_df,
+)
 from pesco.stats import regional_permtest  # noqa: F401
 from pesco.peaks import peak_survival  # noqa: F401
