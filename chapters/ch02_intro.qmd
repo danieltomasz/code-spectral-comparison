@@ -25,10 +25,10 @@ and the choice between fixed (1/f) and knee (more general spectral shape) aperio
 
 This chapter therefore addresses three questions. 
 
- **First**, we asked whether the regional spectral organisation reported in the Frauscher iEEG atlas is recoverable in source-reconstructed HD-EEG using uncorrected unit-power PSDs, using two complementary descriptors: data-driven k-means clustering across broder range of frequencies (Frauscher-style) and per traditionally defined band power powere across regions.
-.
-**Second**, we asked whether explicit modelling of  freqencies and power of  specparam extracted peaks  and  adjusting the previously defined band by removal of thespecparam estimated broadband  background changes which regional oscillatory features are preserved across modalities.
+First, we asked whether the regional spectral organisation reported in the Frauscher iEEG atlas is recoverable in source-reconstructed HD-EEG using uncorrected unit-power PSDs, evaluated with two descriptors that rest on different assumptions: data-driven k-means clustering across a broader range of frequencies (used in @frauscher2018AtlasNormalIntracranial) and per traditionally defined band power across regions.
 
-**Third**, we asked whether aperiodic parameters themselves are stable across three methodological choices: aperiodic model (knee vs fixed), fitting range (1-80 vs 1-45 Hz), and decomposition method (specparam vs IRASA).
+Second, we asked whether explicit modelling of  freqencies and power of  specparam extracted peaks  and  adjusting the previously defined band by removal of thespecparam estimated broadband  background changes which regional oscillatory features correspond across modalities.
+
+Third, we asked whether regional spectral estimates agree across  methodological and parameters choices — aperiodic model (knee vs fixed), fitting range (1-80 vs 1-45 Hz), and decomposition method (specparam vs IRASA) — with agreement assessed by correlation, rank-based where the parameters are not on a common scale.
 .
 
