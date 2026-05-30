@@ -1,0 +1,156 @@
+---
+title: "Band-power correlation grid"
+format:
+  typst:
+    number-sections: false
+    toc: false
+jupyter: spectral-comparison-3.14
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+Minimal pipeline to build `plot_band_power_correlation_grid` for the
+uncorrected relative band-power maps (bilateral MICCAI regions).
+
+## Setup
+
+Import the band-power helpers and IO functions, set the random seed, and define
+data paths, the analysis frequency range (0.5-80 Hz), and the output figure
+directory.
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")
+
+from pesco.bandpower import (
+    compare_region_band_power,
+    plot_band_power_correlation_grid,
+    region_band_power,
+    relative_band_power_by_channel,
+)
+from pesco.io import load_sources, prepare_psd
+from pesco.pipeline import DatasetCtx
+from pesco.preprocess import compute_psd
+
+seed = 3
+np.random.seed(seed)
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DATA_PATH_SOURCES = Path(f"{PROJECT_DIR}/data/Mantini2018")
+DATA_PATH_IEEG = Path(f"{PROJECT_DIR}/data/Frauscher2018")
+
+FREQ_RANGE = (0.5, 80.0)
+
+fig_dir = Path("figures/chapter2")
+fig_dir.mkdir(parents=True, exist_ok=True)
+```
+
+## Load data
+
+Load the raw iEEG atlas (Frauscher) PSD with region metadata — no bandpass, no
+normalization, so power stays in raw units for the relative-power step.
+
+```{python}
+#| label: load-ieeg-raw
+ieeg_raw = DatasetCtx(name="intracranial data (raw)")
+ieeg_raw.f, ieeg_raw.psd = prepare_psd(
+    matfile=DATA_PATH_IEEG / "WakefulnessMatlabFile.mat",
+    region_dict_file=DATA_PATH_IEEG / "RegionInformation.csv",
+    frauscher_bandpass=False,
+    normalize=False,
+)
+assert ieeg_raw.psd is not None
+```
+
+Load the HD-EEG source-reconstructed data (Mantini), compute a PSD per source
+channel over the same frequency range, and assemble a channel × frequency
+dataframe with the source metadata joined on.
+
+```{python}
+#| label: load-hd-raw
+sources_raw, sources_meta = load_sources(DATA_PATH_SOURCES)
+hd_data = sources_raw.get_data()
+hd_fs = sources_raw.info["sfreq"]
+hd_f, hd_psd = compute_psd(hd_data, hd_fs, fmin=FREQ_RANGE[0], fmax=FREQ_RANGE[1])
+
+hd_psd_df = pd.DataFrame(
+    hd_psd,
+    index=pd.Index(sources_raw.ch_names, name="ch_name"),
+    columns=hd_f,
+).join(sources_meta)
+```
+
+## Relative band power per region
+
+Compute relative band power for every channel in each dataset, pool them, then
+average channels within each bilateral MICCAI region. `compare_region_band_power`
+pairs the two datasets region-by-region and returns the paired per-region values
+plus the per-band Spearman correlations.
+
+```{python}
+#| label: uncorrected-relative-bandpower-bilateral
+ieeg_raw_band_power = relative_band_power_by_channel(
+    ieeg_raw.psd, ieeg_raw.f, dataset="iEEG atlas"
+)
+hd_raw_band_power = relative_band_power_by_channel(
+    hd_psd_df, hd_f, dataset="source HD-EEG"
+)
+
+raw_band_power_by_channel = pd.concat(
+    [ieeg_raw_band_power, hd_raw_band_power], ignore_index=True
+)
+raw_region_band_power_bilateral = region_band_power(
+    raw_band_power_by_channel, summary="mean", roi_level="bilateral"
+)
+
+(
+    raw_band_power_paired_bilateral,
+    raw_band_power_correlations_bilateral,
+) = compare_region_band_power(
+    raw_region_band_power_bilateral,
+    x_dataset="source HD-EEG",
+    y_dataset="iEEG atlas",
+    roi_col="roi_bilateral",
+    n_label="n_regions",
+)
+```
+
+## Correlation grid figure
+
+One scatter panel per band (band shown in the facet strip with its Pearson r):
+source HD-EEG vs iEEG atlas relative band power, one point per bilateral region,
+colored by anatomical lobe with a single black OLS fit line per panel. A dashed
+`y = x` identity line shows any systematic offset between the two modalities.
+Axes are free per panel. Saved as SVG to the figure directory.
+
+```{python}
+#| label: uncorrected-bandpower-correlation-plot-bilateral
+#| output: true
+#| fig-width: 15
+#| fig-height: 3.3
+#| fig-cap: "Janiukstyte-style correlation of uncorrected relative band-power maps. Each point is one bilateral MICCAI region; channel powers were averaged within region before correlation."
+fig = plot_band_power_correlation_grid(
+    raw_band_power_paired_bilateral,
+    raw_band_power_correlations_bilateral,
+    color_by="lobe",
+    method="pearson",
+    identity_line=True,
+    x_label="source HD-EEG\nrelative band power",
+    y_label="iEEG atlas\nrelative band power",
+    title="Uncorrected PSD: bilateral regional relative band-power correspondence",
+)
+fig.save(
+    fig_dir / "uncorrected_relative_band_power_correlations_bilateral.svg",
+    verbose=False,
+)
+fig
+```

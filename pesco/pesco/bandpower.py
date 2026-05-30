@@ -6,8 +6,8 @@ channels into a shared spatial unit (ROI/region), then correlate the resulting
 normative maps across two modalities (e.g. source HD-EEG vs intracranial EEG).
 
 The pipeline is four stages, each a pure function returning a tidy DataFrame
-(or a Matplotlib figure). Per the project convention, plotting returns the
-figure only; the caller is responsible for ``savefig``.
+(or a plotnine ggplot). Per the project convention, plotting returns the
+figure only; the caller is responsible for ``save``.
 
     1. relative_band_power_by_channel  -- PSD table  -> one row per (channel, band)
     2. region_band_power               -- collapse channels into ROI maps
@@ -32,7 +32,7 @@ Usage
 ...     regions, x_dataset="HD-EEG", y_dataset="iEEG", roi_col="roi_bilateral"
 ... )
 >>> fig = plot_band_power_correlation_grid(paired, correlations)  # color_by="band"
->>> fig.savefig("bandpower_correlations.svg", bbox_inches="tight")
+>>> fig.save("bandpower_correlations.svg")  # plotnine ggplot; caller saves
 
 Band definitions are reused from :data:`pesco.experimental.clustering.EEG_BANDS`
 (the project's single source of truth for canonical band edges). Display names
@@ -45,9 +45,19 @@ from typing import Iterable, Literal
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
+from plotnine import (
+    aes,
+    element_blank,
+    facet_wrap,
+    geom_abline,
+    geom_point,
+    geom_smooth,
+    ggplot,
+    labs,
+    scale_color_manual,
+    theme,
+    theme_classic,
+)
 from scipy import stats
 
 from pesco.experimental.clustering import Band, EEG_BANDS, Summary
@@ -69,14 +79,16 @@ BAND_DISPLAY: dict[str, tuple[str, str]] = {
 BAND_LABELS: dict[str, str] = {name: long for name, (long, _) in BAND_DISPLAY.items()}
 BAND_COLORS: dict[str, str] = {name: color for name, (_, color) in BAND_DISPLAY.items()}
 
-# Anatomical-lobe coloring, used only when ``color_by="lobe"``.
+# Anatomical-lobe coloring, used only when ``color_by="lobe"``. Pastel version of
+# the combined_regional_differences palette (Occipital=red, Parietal=green,
+# Frontal=blue, Temporal=dark/neutral) plus a fifth hue for Insula.
 LOBE_ORDER: tuple[str, ...] = ("Occipital", "Parietal", "Frontal", "Temporal", "Insula")
 LOBE_COLORS: dict[str, str] = {
-    "Occipital": "red",
-    "Parietal": "green",
-    "Frontal": "#1f6feb",
-    "Temporal": "black",
-    "Insula": "black",
+    "Occipital": "#EA9999",
+    "Parietal": "#B6D7A8",
+    "Frontal": "#9FC5E8",
+    "Temporal": "#999999",
+    "Insula": "#B4A7D6",
 }
 
 
@@ -357,11 +369,14 @@ def plot_band_power_correlation_grid(
     x_col: str = "x_relative_power",
     y_col: str = "y_relative_power",
     bands: Iterable[Band] = EEG_BANDS,
-) -> Figure:
-    """Janiukstyte Fig. 3A style scatter grid: one panel per band.
+    method: Literal["spearman", "pearson"] = "spearman",
+    scales: str = "free",
+    identity_line: bool = False,
+) -> ggplot:
+    """Janiukstyte Fig. 3A style scatter grid: one faceted panel per band.
 
     Each panel scatters paired regional relative power (x vs y) with a linear
-    fit line, and shows the band's Spearman rho in the title.
+    fit line; the band's Spearman rho is shown in the facet strip label.
 
     Parameters
     ----------
@@ -369,104 +384,107 @@ def plot_band_power_correlation_grid(
         Outputs of :func:`compare_region_band_power`.
     color_by : {"band", "lobe"}, optional
         ``"band"`` (default, matches the reference figure): all points in a
-        panel share the band's color and the rho title is drawn in that color.
-        ``"lobe"``: points colored by anatomical lobe with a shared legend and
-        black titles/fit lines.
+        panel share the band's color, no legend. ``"lobe"``: points colored by
+        anatomical lobe with a shared legend; a single black fit line per panel.
     x_label, y_label, title : str
-        Axis labels and figure suptitle. ``title=None`` omits the suptitle.
+        Axis labels and plot title. ``title=None`` omits the title.
     x_col, y_col : str
         Columns in ``paired`` to plot.
     bands : iterable of Band, optional
         Defaults to :data:`pesco.experimental.clustering.EEG_BANDS`.
+    method : {"spearman", "pearson"}, optional
+        Statistic shown in each strip. ``"spearman"`` (default) reads
+        ``spearman_rho`` from ``correlations``. ``"pearson"`` computes Pearson r
+        per band directly from ``paired`` so the number matches the OLS fit line.
+    scales : str, optional
+        Passed to :func:`facet_wrap`. ``"free"`` (default) gives each band its
+        own axes; ``"fixed"`` shares one axis range across all panels so
+        cross-band magnitude and spread differences are visible.
+    identity_line : bool, optional
+        When ``True``, draw a dashed ``y = x`` reference line so any systematic
+        offset between the two modalities is visible.
 
     Returns
     -------
-    matplotlib.figure.Figure
-        The caller is responsible for saving (see module docstring).
+    plotnine.ggplot
+        Caller saves via ``fig.save(path)`` (see module docstring).
+
+    Notes
+    -----
+    Unlike the reference figure, the rho title is plain black: plotnine styles
+    all facet strips with one ``theme`` and cannot color each strip by its band.
+    Point colors still encode the band.
     """
     if color_by not in ("band", "lobe"):
         raise ValueError("color_by must be 'band' or 'lobe'.")
+    if method not in ("spearman", "pearson"):
+        raise ValueError("method must be 'spearman' or 'pearson'.")
 
     bands = list(bands)
-    fig, axes = plt.subplots(1, len(bands), figsize=(15, 3.3))
+    band_order = [b.name for b in bands]
+    d = paired.dropna(subset=[x_col, y_col]).copy()
 
-    for ax, band in zip(axes, bands):
-        d = paired.loc[paired["band"] == band.name].dropna(subset=[x_col, y_col])
-
-        if color_by == "band":
-            ax.scatter(
-                d[x_col],
-                d[y_col],
-                s=32,
-                alpha=0.72,
-                color=BAND_COLORS[band.name],
-                edgecolors="none",
+    # Statistic carried in each facet strip. Spearman is read from the passed
+    # correlations table; Pearson is computed here so the number matches the
+    # OLS (geom_smooth lm) line drawn in each panel.
+    if method == "spearman":
+        stat_by_band = dict(zip(correlations["band"], correlations["spearman_rho"]))
+        stat_name = "rho"
+    else:
+        stat_by_band = {}
+        for n in band_order:
+            sub = d.loc[d["band"] == n]
+            stat_by_band[n] = (
+                stats.pearsonr(sub[x_col], sub[y_col])[0] if len(sub) >= 3 else np.nan
             )
-            fit_color = BAND_COLORS[band.name]
-            title_color = BAND_COLORS[band.name]
-        else:
-            for lobe in LOBE_ORDER:
-                lobe_data = d.loc[d["Lobe"] == lobe]
-                if lobe_data.empty:
-                    continue
-                ax.scatter(
-                    lobe_data[x_col],
-                    lobe_data[y_col],
-                    s=32,
-                    alpha=0.72,
-                    color=LOBE_COLORS[lobe],
-                    edgecolors="none",
-                )
-            fit_color = "black"
-            title_color = "black"
+        stat_name = "r"
 
-        if len(d) >= 2 and d[x_col].nunique() > 1:
-            slope, intercept = np.polyfit(d[x_col], d[y_col], deg=1)
-            x_range = np.linspace(d[x_col].min(), d[x_col].max(), 100)
-            ax.plot(x_range, slope * x_range + intercept, color=fit_color, lw=2.2)
+    # One ordered facet per band, strip label carrying the chosen statistic.
+    strip = {
+        n: f"{BAND_LABELS[n]}\n{stat_name}={stat_by_band.get(n, np.nan):.2f}"
+        for n in band_order
+    }
+    d["panel"] = pd.Categorical(
+        d["band"].map(strip), categories=[strip[n] for n in band_order], ordered=True
+    )
 
-        rho = correlations.loc[
-            correlations["band"] == band.name, "spearman_rho"
-        ].iloc[0]
-        ax.set_title(
-            f"{BAND_LABELS[band.name]}\nrho={rho:.2f}",
-            color=title_color,
-            fontsize=15,
-            pad=8,
+    if color_by == "band":
+        d["band_label"] = pd.Categorical(
+            d["band"].map(BAND_LABELS),
+            categories=[BAND_LABELS[n] for n in band_order],
+            ordered=True,
         )
-        ax.set_xlabel(x_label, fontsize=10)
-        ax.tick_params(axis="both", labelsize=9)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-
-    axes[0].set_ylabel(y_label, fontsize=11)
-    if title is not None:
-        fig.suptitle(title, y=1.08, fontsize=14)
-
-    if color_by == "lobe":
-        legend_handles = [
-            Line2D(
-                [0],
-                [0],
-                marker="o",
-                linestyle="",
-                label=lobe,
-                markerfacecolor=LOBE_COLORS[lobe],
-                markeredgecolor="none",
-                markersize=7,
-                alpha=0.72,
-            )
-            for lobe in LOBE_ORDER
-            if lobe in set(paired["Lobe"])
-        ]
-        fig.legend(
-            handles=legend_handles,
-            loc="lower center",
-            bbox_to_anchor=(0.5, -0.05),
-            ncol=len(legend_handles),
-            frameon=False,
-            fontsize=10,
+        color_scale = scale_color_manual(
+            values={BAND_LABELS[n]: BAND_COLORS[n] for n in band_order}, guide=None
         )
+        point = geom_point(aes(color="band_label"), size=2.2, alpha=0.72)
+        smooth = geom_smooth(aes(color="band_label"), method="lm", se=False, size=1.1)
+    else:
+        d["Lobe"] = pd.Categorical(
+            d["Lobe"], categories=[lo for lo in LOBE_ORDER if lo in set(d["Lobe"])]
+        )
+        color_scale = scale_color_manual(values=LOBE_COLORS, name="Lobe")
+        point = geom_point(aes(color="Lobe"), size=2.2, alpha=0.72)
+        # Single overall fit per panel: constant color, not grouped by lobe.
+        smooth = geom_smooth(method="lm", se=False, color="black", size=1.1)
 
-    fig.tight_layout()
-    return fig
+    plot = ggplot(d, aes(x=x_col, y=y_col))
+    if identity_line:
+        # Drawn first so it sits beneath the points.
+        plot = plot + geom_abline(
+            slope=1, intercept=0, linetype="dashed", color="#999999", size=0.6
+        )
+    return (
+        plot
+        + point
+        + smooth
+        + color_scale
+        + facet_wrap("panel", nrow=1, scales=scales)
+        + labs(x=x_label, y=y_label, title=title)
+        + theme_classic()
+        + theme(
+            figure_size=(15, 3.3),
+            panel_spacing=0.04,
+            strip_background=element_blank(),
+        )
+    )

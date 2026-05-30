@@ -89,11 +89,12 @@ PLOT_SUMMARY = "median"
 # specparam peak settings following Afnan et al. 2023, shared across every
 # fit. aperiodic_mode is passed per fit: knee for iEEG, and both knee and
 # fixed for HD-EEG so the two can be compared.
-FREQ_RANGE = (0.5, 80.0)
+FREQ_RANGE = (1.0, 80.0)
 R2_THRESHOLD = 0.9
 SPECPARAM_SETTINGS = dict(
     peak_width_limits=[1, 8],
     max_n_peaks=8,
+    min_peak_height=0.1,
     peak_threshold=3.0,
 )
 
@@ -698,9 +699,9 @@ fig = plot_band_power_correlation_grid(
     y_label="iEEG atlas\nrelative band power",
     title="Uncorrected PSD: bilateral regional relative band-power correspondence",
 )
-fig.savefig(
+fig.save(
     fig_dir / "uncorrected_relative_band_power_correlations_bilateral.svg",
-    bbox_inches="tight",
+    verbose=False,
 )
 fig
 ```
@@ -968,9 +969,9 @@ fig = plot_band_power_correlation_grid(
     x_col="x_value",
     y_col="y_value",
 )
-fig.savefig(
+fig.save(
     fig_dir / "specparam_best_normalized_linear_residual_correlations_bilateral.svg",
-    bbox_inches="tight",
+    verbose=False,
 )
 fig
 ```
@@ -1088,9 +1089,9 @@ fig = plot_band_power_correlation_grid(
     y_label="iEEG atlas\nrelative band power",
     title="Uncorrected PSD: hemisphere-specific relative band-power correspondence",
 )
-fig.savefig(
+fig.save(
     fig_dir / "uncorrected_relative_band_power_correlations_hemisphere.svg",
-    bbox_inches="tight",
+    verbose=False,
 )
 fig
 ```

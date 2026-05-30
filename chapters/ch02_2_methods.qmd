@@ -32,7 +32,7 @@ In HD EEG reconstucted sesnors, 60s activity was extracted  from each time serie
 
 All spectral data were normalized to unit total power to ensure that the comparison focused on the distribution of frequency peaks (e.g., the occipital alpha or hippocampal delta) rather than absolute amplitude differences between scalp and intracranial sensors.
 
-Where later analyses use canonical bands, we define them as delta 1-4 Hz, theta 4-8 Hz, alpha 8-13 Hz, beta 13-30 Hz, low gamma 30-45 Hz, and high gamma 45-80 Hz. Gamma is split at 45 Hz to separate any residual line-noise effect from genuine high-frequency activity. We use 1 Hz as the lower bound throughout to aid the cross-modal comparison.
+Where later analyses use canonical bands, we define them as delta 1-4 Hz, theta 4-8 Hz, alpha 8-13 Hz, beta 13-30 Hz,  gamma 30-80 Hz. We use 1 Hz as the lower bound throughout to aid the cross-modal comparison.
 
 ###  Recovery of regional spectral organisation on uncorrected spectra
 
@@ -105,7 +105,17 @@ $$L_{\mathrm{ap}}(f) = b - \log_{10}(k + f^{\chi})$$
 
 with an additional knee parameter $k$.
 
-We selected the aperiodic mode per modality by Bayesian Information Criterion (BIC), as in @ameen2025TemporallyResolvedAnalyses
+We selected the aperiodic mode per modality by Bayesian Information Criterion (BIC). Both modes are fit to every channel spectrum with identical peak settings and frequency range, and the two fits are compared on each spectrum. Following @ameen2025TemporallyResolvedAnalyses, the BIC of a single spectrum under the Gaussian model (Foygel and Drton 2010) is
+
+$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
+
+where $N$ is the number of fitted frequency bins, MSE is the mean squared residual of the full model in log-power space (aperiodic plus all peaks; equivalently the square of specparam's RMSE error term), and $n_p$ is the number of free parameters. With up to eight peaks, $n_p = 3 n_{\mathrm{peaks}} + n_{\mathrm{ap}}$, where each peak contributes three parameters and $n_{\mathrm{ap}} = 2$ for the fixed model (offset, exponent) and $n_{\mathrm{ap}} = 3$ for the knee model (offset, knee, exponent). On the per-spectrum scale of Raftery (1995), as used by @ameen2025TemporallyResolvedAnalyses, an absolute BIC difference of 0--2 is weak evidence for the lower-BIC model, 2--6 is positive evidence, and above 6 is strong evidence.
+
+@ameen2025TemporallyResolvedAnalyses apply this criterion per spectrum and do not prescribe how to choose a single mode for a set of spectra. We extend it as follows. The channel set is held fixed within each modality, so the fixed and knee fits are paired observations on the same spectra. Treating channel spectra as independent fits, the total BIC of applying one mode to the whole modality is the sum of the per-spectrum BICs, so the dataset-level criterion is the summed paired difference
+
+$$\textstyle\sum_c \Delta\mathrm{BIC}_c = \sum_c \left(\mathrm{BIC}^{\mathrm{knee}}_c - \mathrm{BIC}^{\mathrm{fixed}}_c\right),$$
+
+over channels $c$; the mode with the smaller total BIC (negative sum favouring knee, positive favouring fixed) is selected for that modality. Because a summed criterion can be dominated by a few spectra, we additionally report two robustness diagnostics that do not drive the choice: the fraction of channels individually favouring each mode, with each channel's evidence graded on the Raftery scale above, and the mean per-channel $\Delta\mathrm{BIC}$ with its 95% confidence interval (Section 3.2.1).
 
 
 <!-- ; the knee model is therefore used for iEEG. HD-EEG
