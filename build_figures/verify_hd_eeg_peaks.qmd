@@ -1,0 +1,158 @@
+---
+title: "Verify: source HD-EEG specparam fit and peak extraction"
+format:
+  typst:
+    number-sections: false
+    toc: false
+jupyter: spectral-comparison-3.14
+execute:
+  echo: true
+  output: true
+  cache: true
+  freeze: auto
+---
+
+Self-contained check of the **source HD-EEG** branch of
+`5_peak_prevalence_modelled_power.qmd`. It loads the normalized HD-EEG PSD table,
+fits specparam with the BIC-selected **fixed** aperiodic model, extracts the
+per-peak parameters and per-channel fit quality, and reports a summary — so the
+HD-EEG fit and peak extraction can be verified in isolation. Settings, fit range,
+and aperiodic mode are identical to the figure doc.
+
+```{python}
+#| label: config
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from specparam import SpectralGroupModel
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
+# Same normalized-PSD input the figure doc fits (one row per virtual sensor).
+HD_PSD_CSV = specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv"
+
+FREQ_RANGE = (1.0, 80.0)
+APERIODIC_MODE = "fixed"  # HD-EEG choice from the knee-vs-fixed BIC comparison
+SPECPARAM_SETTINGS = dict(
+    peak_width_limits=[1, 6],
+    max_n_peaks=8,
+    min_peak_height=0.5,
+    peak_threshold=3.0,
+)
+assert HD_PSD_CSV.exists(), f"missing {HD_PSD_CSV}"
+```
+
+```{python}
+#| label: helpers
+def load_psd_csv(path):
+    """Split the saved normalized-PSD table into (psd_matrix, freqs, metadata)."""
+    df = pd.read_csv(path, index_col=0)
+    num_cols = [c for c in df.columns if str(c).replace(".", "", 1).isdigit()]
+    freqs = np.array([float(c) for c in num_cols])
+    psd = df[num_cols].to_numpy(dtype=float)
+    meta = df[[c for c in df.columns if c not in num_cols]].copy()
+    meta.index = df.index
+    return psd, freqs, meta
+
+
+def extract_peaks(fg, meta):
+    """Tidy per-peak table: channel, region, Lobe, CF, PW, BW."""
+    peaks = np.atleast_2d(fg.get_params("peak"))  # (n_peaks, 4): [CF, PW, BW, ID]
+    peak_df = pd.DataFrame(peaks, columns=["CF", "PW", "BW", "ID"])
+    peak_df["ID"] = peak_df["ID"].astype(int)
+    peak_df["channel"] = meta.index.to_numpy()[peak_df["ID"].to_numpy()]
+    peak_df["region"] = (
+        meta["Region name"].astype(str).str.strip("'").to_numpy()[peak_df["ID"]]
+    )
+    peak_df["Lobe"] = meta["Lobe"].astype(str).to_numpy()[peak_df["ID"]]
+    return peak_df
+
+
+def channel_fit_quality(fg, channel_names):
+    """Per-channel R² (specparam) and MSE of the full log-power model."""
+    freqs = np.asarray(fg.data.freqs, dtype=float)
+    rows = []
+    for i, (channel, result) in enumerate(zip(channel_names, fg.results)):
+        ap = fg.modes.aperiodic.func(freqs, *np.asarray(result.aperiodic_fit, dtype=float))
+        peak_params = np.asarray(result.peak_fit, dtype=float).ravel()
+        peak = fg.modes.periodic.func(freqs, *peak_params) if peak_params.size else 0.0
+        residual = np.asarray(fg.data.power_spectra[i], dtype=float) - (ap + peak)
+        rows.append(
+            {
+                "channel": channel,
+                "gof_rsquared": result.metrics.get("gof_rsquared", np.nan),
+                "mse_log10": float(np.mean(residual**2)),
+                "n_peaks": int(len(result.peak_fit)),
+            }
+        )
+    return pd.DataFrame(rows)
+```
+
+## Fit and extract
+
+```{python}
+#| label: fit
+psd, freqs, meta = load_psd_csv(HD_PSD_CSV)
+fg = SpectralGroupModel(
+    **SPECPARAM_SETTINGS, aperiodic_mode=APERIODIC_MODE, verbose=False
+)
+fg.fit(freqs, psd, freq_range=list(FREQ_RANGE), n_jobs=1)
+
+peaks = extract_peaks(fg, meta)
+quality = channel_fit_quality(fg, meta.index.astype(str))
+```
+
+```{python}
+fg.report()
+```
+## Summary
+
+```{python}
+#| label: summary
+passed = (quality["gof_rsquared"] > 0.9) & (quality["mse_log10"] < 0.1)
+pd.DataFrame(
+    {
+        "value": [
+            HD_PSD_CSV.name,
+            APERIODIC_MODE,
+            f"{FREQ_RANGE[0]}-{FREQ_RANGE[1]} Hz",
+            len(meta),
+            len(peaks),
+            round(quality["n_peaks"].mean(), 2),
+            round(quality["gof_rsquared"].median(), 3),
+            round(quality["mse_log10"].median(), 4),
+            f"{passed.sum()}/{len(quality)} ({passed.mean():.1%})",
+        ]
+    },
+    index=[
+        "input",
+        "aperiodic mode",
+        "freq range",
+        "channels",
+        "total peaks",
+        "mean peaks/channel",
+        "median R²",
+        "median MSE",
+        "pass R²>0.9 & MSE<0.1",
+    ],
+)
+```
+
+## First peaks
+
+```{python}
+#| label: peek
+peaks.head(12)
+```
+
+## Write peaks table
+
+```{python}
+#| label: save
+out = specparam_dir / "verify_hd_eeg_peaks.csv"
+peaks.merge(
+    quality[["channel", "gof_rsquared", "mse_log10"]], on="channel"
+).to_csv(out, index=False)
+out.name
+```

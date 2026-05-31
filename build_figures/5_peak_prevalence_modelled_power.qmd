@@ -147,11 +147,37 @@ def assign_band(cf, bands=EEG_BANDS):
     return None
 
 
+def channel_fit_quality(fg, channel_names, dataset):
+    """Per-channel goodness of fit: R² and MSE of the full log-power model.
+
+    R² is specparam's own ``gof_rsquared``; MSE is the mean squared residual in
+    log10-power space, reconstructing the model from the fitted aperiodic and
+    peak parameters (same construction as the BIC build doc).
+    """
+    freqs = np.asarray(fg.data.freqs, dtype=float)
+    rows = []
+    for i, (channel, result) in enumerate(zip(channel_names, fg.results)):
+        ap = fg.modes.aperiodic.func(freqs, *np.asarray(result.aperiodic_fit, dtype=float))
+        peak_params = np.asarray(result.peak_fit, dtype=float).ravel()
+        peak = fg.modes.periodic.func(freqs, *peak_params) if peak_params.size else 0.0
+        residual = np.asarray(fg.data.power_spectra[i], dtype=float) - (ap + peak)
+        rows.append(
+            {
+                "channel": channel,
+                "dataset": dataset,
+                "gof_rsquared": result.metrics.get("gof_rsquared", np.nan),
+                "mse_log10": float(np.mean(residual**2)),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def fit_and_extract_peaks(path, dataset, mode):
     """Fit the selected aperiodic mode and return a tidy peak table.
 
     One row per fitted peak: channel, dataset, Region name, Lobe, mni_y, CF, PW,
-    BW, band. Also returns the per-channel metadata (the prevalence denominator).
+    BW, band. Also returns the per-channel metadata (the prevalence denominator)
+    and a per-channel fit-quality table (R², MSE).
     """
     psd, freqs, meta = load_psd_csv(path)
     meta = meta.assign(
@@ -174,7 +200,8 @@ def fit_and_extract_peaks(path, dataset, mode):
     keep = ["region", "Lobe", "mni_y", "dataset"]
     peak_df = peak_df.merge(meta[keep], left_on="channel", right_index=True, how="left")
     channels = meta[["region", "Lobe", "mni_y", "dataset"]].reset_index(names="channel")
-    return peak_df, channels
+    quality = channel_fit_quality(fg, meta.index.astype(str), dataset)
+    return peak_df, channels, quality
 
 
 def channel_band_table(peak_df, channels, bands=EEG_BANDS):
@@ -279,14 +306,16 @@ def ordered_region_band(region_power):
 
 ```{python}
 #| label: compute
-peak_tables, channel_tables = [], []
+peak_tables, channel_tables, quality_tables = [], [], []
 for dataset, path in INPUT_CSV.items():
-    pk, ch = fit_and_extract_peaks(path, dataset, SELECTED_MODE[dataset])
+    pk, ch, q = fit_and_extract_peaks(path, dataset, SELECTED_MODE[dataset])
     peak_tables.append(pk)
     channel_tables.append(channel_band_table(pk, ch))
+    quality_tables.append(q)
 
 all_peaks = pd.concat(peak_tables, ignore_index=True)
 channel_band = pd.concat(channel_tables, ignore_index=True)
+channel_quality = pd.concat(quality_tables, ignore_index=True)
 region_power = region_prevalence_power(channel_band)
 region_power_ord, region_order = ordered_region_band(region_power)
 
@@ -686,7 +715,13 @@ shown side by side.
 ```{python}
 #| label: fig-region-frequency-ridges
 #| output: true
-def plot_region_frequency_ridges(all_peaks, binwidth=1.0, scale=1.2, alpha=0.6):
+def plot_region_frequency_ridges(
+    all_peaks,
+    binwidth=1.0,
+    scale=1.2,
+    alpha=0.6,
+    title="Per-region peak-frequency distribution (histogram ridgeline)",
+):
     region_order = clustering_region_order()  # top → bottom
     lobe_of = region_lobe_map()
     d = all_peaks.assign(lobe=all_peaks["region"].map(lobe_of))
@@ -711,11 +746,7 @@ def plot_region_frequency_ridges(all_peaks, binwidth=1.0, scale=1.2, alpha=0.6):
         + facet_wrap("dataset", nrow=1)
         + scale_fill_manual(values=LOBE_COLORS, name="lobe")
         + scale_x_continuous(breaks=[1, 4, 8, 13, 30, 50, 80])
-        + labs(
-            x="peak centre frequency (Hz)",
-            y="",
-            title="Per-region peak-frequency distribution (histogram ridgeline)",
-        )
+        + labs(x="peak centre frequency (Hz)", y="", title=title)
         + theme_ridges()
         + theme(
             figure_size=(10, 12),
@@ -742,4 +773,51 @@ prevalence_rho.assign(
     spearman_rho=lambda d: d["spearman_rho"].round(3),
     p_value=lambda d: d["p_value"].round(4),
 )[["band_label", "spearman_rho", "p_value", "n"]]
+```
+
+## Per-region peak-frequency distribution — high-quality fits only
+
+The same ridgeline restricted to peaks from channels whose specparam fit passes
+a goodness-of-fit screen: **R² > 0.9 and MSE < 0.1** (log10-power). R² > 0.9 is
+the de-facto specparam/FOOOF threshold; specparam reports error as MAE rather
+than MSE, so the MSE < 0.1 cut is the squared-residual analogue (stricter on
+large local misfits). Channels failing either criterion drop out, so sparse or
+poorly-modelled regions thin or disappear.
+
+```{python}
+#| label: fig-region-frequency-ridges-hq
+#| output: true
+R2_MIN, MSE_MAX = 0.9, 0.1
+
+good_channels = channel_quality.loc[
+    (channel_quality["gof_rsquared"] > R2_MIN)
+    & (channel_quality["mse_log10"] < MSE_MAX),
+    ["dataset", "channel"],
+]
+all_peaks_hq = all_peaks.merge(good_channels, on=["dataset", "channel"], how="inner")
+
+ridge_hq_fig = save_lobe_colored(
+    plot_region_frequency_ridges(
+        all_peaks_hq,
+        title=(
+            "Per-region peak-frequency distribution "
+            f"(R² > {R2_MIN}, MSE < {MSE_MAX})"
+        ),
+    ),
+    [
+        fig_dir / f"region_frequency_ridges_high_quality.{ext}"
+        for ext in ("svg", "pdf", "png")
+    ],
+)
+ridge_hq_fig
+```
+
+```{python}
+#| label: hq-retention
+#| output: true
+n_total = channel_quality.groupby("dataset")["channel"].size()
+n_pass = good_channels.groupby("dataset")["channel"].size()
+pd.DataFrame(
+    {"n_channels": n_total, "n_pass": n_pass, "fraction_pass": (n_pass / n_total).round(3)}
+).reset_index()
 ```
