@@ -334,6 +334,7 @@ overlap_raw.mean().to_frame("mean overlap").T
 p = plot_overlap_heatmap(
     overlap_raw, title="iEEG vs HD-EEG overlap (uncorrected PSD)"
 )
+p.save(fig_dir / "afnan_overlap_raw_heatmap.pdf", width=6, height=10, dpi=300)
 p.save(fig_dir / "afnan_overlap_raw_heatmap.svg", width=6, height=10, dpi=300)
 p
 ```

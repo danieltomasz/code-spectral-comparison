@@ -55,9 +55,13 @@ For the HD-EEG data we applied the same procedure and kept the iEEG-derived inte
 
 As a second, complementary  approach, we mapped each region's normalised PSD onto the canonical bands defined above and took relative band power per region.
 
+Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2025QuantifyingRhythmicArrhythmic].
+
 #### Cross-modal correspondence on uncorrected spectra
 
-We quantified cross-modal agreement on the unit-power PSDs using the band-overlap metric of @afnan2024ValidationMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, we treated the iEEG atlas as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding HD-EEG standard deviation. The bin-wise overlap is
+This is the first of three cross-modal correspondence computations; the subtraction-based and modelled-peak versions are defined below and compared in @sec-concordance
+
+We quantified cross-modal agreement on the unit-power PSDs using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, we treated the iEEG atlas as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding HD-EEG standard deviation. The bin-wise overlap is
 
 $$
 \text{overlap}_r(f) =
@@ -78,11 +82,41 @@ The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and 
 We asked whether separating periodic from aperiodic activity changes the above picture. We addressed it in two linked ways: by modelling oscillatory peaks directly with specparam, and by removing the aperiodic background and recomputing the cross-modal overlap.
 
 
-#### specparam settings
+###  Aperiodic parametrisation and model selection
+
+We compare two aperiodic modes of fitting.  In **fixed** mode the aperiodic component
+is modelled in log-power space as
+
+$$L_{\mathrm{ap}}(f) = b - \chi \cdot \log_{10}(f)$$
+
+with offset $b$ and exponent $\chi$.. In **knee** mode,
+
+$$L_{\mathrm{ap}}(f) = b - \log_{10}(k + f^{\chi})$$
+
+with an additional knee parameter $k$. Here $k$ sets both the height of the low-frequency plateau and the corner frequency $f_k = k^{1/\chi}$ at which the spectrum bends from flat to $1/f^{\chi}$ behaviour (@fig-knee-misfit B, C). Fitting the fixed model to a spectrum that has a genuine knee forces a single line through both regimes and biases the exponent low, even when the fit's $R^2$ appears acceptable (@fig-knee-misfit A); this is what the per-modality model selection below is designed to avoid.
+
+![Geometry of the knee aperiodic model and the consequence of omitting it. All curves are real specparam fits to simulated spectra. (**A**) A spectrum generated with a genuine knee (true $f_k = 10$ Hz) fit in both modes. The knee model recovers the generating exponent ($\hat{\chi} = 2.0$), whereas the fixed model, lacking a plateau term, pivots a single line through plateau and slope and underestimates the exponent by ~39%, despite an apparently acceptable $R^2$. (**B**) Effect of the knee parameter $k$ at fixed exponent: larger $k$ lowers the plateau and shifts the corner frequency $f_k$ to higher values, while the high-frequency slope is unchanged. (**C**) Effect of the exponent $\chi$ at fixed knee: $\chi$ sets the high-frequency slope while the low-frequency plateau ($b - \log_{10} k$) is shared.](figures/chapter2/knee_misfit_combined.svg){#fig-knee-misfit width="100%" column="page"}
+
+
+Rather than choosing the aperiodic mode by visual inspection of the spectra, we informed the choice per modality with the Bayesian Information Criterion (BIC), which weighs each mode's fit against its number of parameters; the final choice also considered the size of the fit improvement and its robustness, since BIC alone can favour the knee on a negligible gain. Both modes are fit to every channel spectrum with identical peak settings and frequency range, and the two fits are compared on each spectrum. Following @ameen2025TemporallyResolvedAnalyses, the BIC of a single spectrum  is
+
+$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
+
+where $N$ is the number of fitted frequency bins (sample size), MSE is the mean squared residual of the full model in log-power space (aperiodic plus all peaks; equivalently the square of specparam's RMSE error term), and $n_p$ is the number of free parameters. With up to eight peaks, $n_p = 3 n_{\mathrm{peaks}} + n_{\mathrm{ap}}$, where each peak contributes three parameters and $n_{\mathrm{ap}} = 2$ for the fixed model (offset, exponent) and $n_{\mathrm{ap}} = 3$ for the knee model (offset, knee, exponent). On the per-spectrum scale of @raftery1995BayesianModelSelectiona, as used by @ameen2025TemporallyResolvedAnalyses, an absolute BIC difference of 0-2 is weak evidence for the lower-BIC model, 2-6 is positive evidence, and  610 is strong evidence,and above 10 is very strong evidence.
+
+@ameen2025TemporallyResolvedAnalyses apply this criterion per averaged spectrum and do not prescribe how to choose a single mode for a set of spectra. We extend it as follows. The channel set is held fixed within each modality, so the fixed and knee mode of  fits are paired observations on the same spectra, and the comparison is summarised at the channel level by two complementary quantities. 
+
+We report *fit quality*: the median $R^2$ and median MSE of each mode.
+
+ <!-- together with the paired per-channel improvement of the knee ($\Delta R^2$ and the percentage reduction in MSE). Because the knee adds a parameter it  might lowers MSE, so the *magnitude* of this improvement, not its sign, is what matters.  -->
+
+Second, *penalised selection*: the median and mean per-channel $\Delta\mathrm{BIC}_c = \mathrm{BIC}^{\mathrm{knee}}_c - \mathrm{BIC}^{\mathrm{fixed}}_c$ (negative favouring knee), with each channel additionally graded on the linear  scale above and the fraction of channels in each signed evidence category (strong, positive, or weak in favour of knee or fixed) reported. Fit quality and $\Delta\mathrm{BIC}$ must be read together, because the $N\log(\mathrm{MSE})$ term scales $\Delta\mathrm{BIC}$ with the number of fitted bins $N$, so a negligible relative MSE gain can still produce much higher  $\Delta\mathrm{BIC}$  when models are fitted on long frequency interval. Channels are not independent observations as they are nested within patients (iEEG, 106 patients) or subjects (HD-EEG, 19 subjects), so treating each channel as independent understates uncertainty. Each channel-level effect measure above is therefore reported with two 95% percentile bootstrap confidence intervals (10{,}000 resamples): a interval resampling channels with replacement, and a subject-clustered interval resampling whole subjects (keeping all of a subject's channels). The clustered interval is used for inference; the gap between the two exposes the pseudoreplication, which is severe in the 19-subject HD-EEG modality.
+
+####  Main analysis specparam settings
 
 PSDs were parameterised using specparam (formerly FOOOF; @donoghue2020ParameterizingNeuralPower) with the following shared settings:
 
-- Fitting frequency range: 1-80 Hz (primary); 1-45 Hz (range comparison
+- Fitting frequency range: 1-80 Hz <!-- (primary); 1-45 Hz (range comparison -->
   in Section )
 - Peak width limits: 1.0-8.0 Hz
 - Maximum number of peaks: 8
@@ -92,55 +126,35 @@ PSDs were parameterised using specparam (formerly FOOOF; @donoghue2020Parameteri
 Model fits were evaluated using R² and mean absolute error; fits with R² below 0.90 were flagged for inspection and the sensitivity of regional results to their inclusion or exclusion was assessed.
 
 
-###  Aperiodic parametrisation and model selection
-
-Two aperiodic models are used. In **fixed** mode the aperiodic component
-is modelled in log-power space as
-
-$$L_{\mathrm{ap}}(f) = b - \chi \cdot \log_{10}(f)$$
-
-with offset $b$ and exponent $\chi$.. In **knee** mode,
-
-$$L_{\mathrm{ap}}(f) = b - \log_{10}(k + f^{\chi})$$
-
-with an additional knee parameter $k$.
-
-We selected the aperiodic mode per modality by Bayesian Information Criterion (BIC). Both modes are fit to every channel spectrum with identical peak settings and frequency range, and the two fits are compared on each spectrum. Following @ameen2025TemporallyResolvedAnalyses, the BIC of a single spectrum under the Gaussian model (Foygel and Drton 2010) is
-
-$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
-
-where $N$ is the number of fitted frequency bins, MSE is the mean squared residual of the full model in log-power space (aperiodic plus all peaks; equivalently the square of specparam's RMSE error term), and $n_p$ is the number of free parameters. With up to eight peaks, $n_p = 3 n_{\mathrm{peaks}} + n_{\mathrm{ap}}$, where each peak contributes three parameters and $n_{\mathrm{ap}} = 2$ for the fixed model (offset, exponent) and $n_{\mathrm{ap}} = 3$ for the knee model (offset, knee, exponent). On the per-spectrum scale of Raftery (1995), as used by @ameen2025TemporallyResolvedAnalyses, an absolute BIC difference of 0--2 is weak evidence for the lower-BIC model, 2--6 is positive evidence, and above 6 is strong evidence.
-
-@ameen2025TemporallyResolvedAnalyses apply this criterion per spectrum and do not prescribe how to choose a single mode for a set of spectra. We extend it as follows. The channel set is held fixed within each modality, so the fixed and knee fits are paired observations on the same spectra. Treating channel spectra as independent fits, the total BIC of applying one mode to the whole modality is the sum of the per-spectrum BICs, so the dataset-level criterion is the summed paired difference
-
-$$\textstyle\sum_c \Delta\mathrm{BIC}_c = \sum_c \left(\mathrm{BIC}^{\mathrm{knee}}_c - \mathrm{BIC}^{\mathrm{fixed}}_c\right),$$
-
-over channels $c$; the mode with the smaller total BIC (negative sum favouring knee, positive favouring fixed) is selected for that modality. Because a summed criterion can be dominated by a few spectra, we additionally report two robustness diagnostics that do not drive the choice: the fraction of channels individually favouring each mode, with each channel's evidence graded on the Raftery scale above, and the mean per-channel $\Delta\mathrm{BIC}$ with its 95% confidence interval (Section 3.2.1).
-
-
-<!-- ; the knee model is therefore used for iEEG. HD-EEG
-source-reconstructed spectra are typically near-linear in log-log space
-across the fitted range, where the fixed model is the standard choice
-(Donoghue et al. 2020); the fixed model is therefore used for HD-EEG.
-BIC values for both modes are reported per modality (Section 3.2.1) as
-confirmation of these prior choices. -->
-
-#### Per-band peak prevalence
+#### Per-band peak prevalence and modelled power
 
 For each channel, we assigned the parameterised specparam peaks to canonical bands by their centre frequency. Peak prevalence in a region is the proportion of channels in that region with at least one peak in a given band.
 
+We also kept the parameters of the fitted peaks: centre frequency, amplitude, and bandwidth. We take the amplitude of the highest peak within a band as the modelled power of that band's rhythm, following @castanheira2025QuantifyingRhythmicArrhythmic, who retain the highest-amplitude Gaussian when more than one peak falls in the band. Channels with no fitted peak in a band are assigned a modelled power of zero rather than dropped. This keeps the channel set fixed across bands, but it leaves a spike of zeros in the distribution, so band-power comparisons use rank-based statistics. @castanheira2025QuantifyingRhythmicArrhythmic show in simulation that modelled power recovers oscillatory amplitude almost independently of the aperiodic exponent, whereas the residual obtained by subtracting the aperiodic fit (next subsection) inherits the error of that fit. We therefore carry modelled power as the periodic measure we trust by default, and the subtraction residual as the comparison.
 
-#### Broadband subtraction and recomputed overlap
+Modelled power exists only where specparam fits a peak, so the per-band prevalence above is also a fit-success rate. We report it separately for each modality. <!-- If the algorithm fits peaks less often in the source-reconstructed HD-EEG than in the iEEG, a difference in modelled power between modalities could reflect differential peak detection rather than a difference in the rhythm itself, and we read the modelled-power comparison with that rate in hand. -->
+
+Assigning peaks to fixed canonical bands by centre frequency is sensitive to peaks that sit near a band edge [@castanheira2025QuantifyingRhythmicArrhythmic], and source reconstruction can shift the estimated peak frequency. We therefore also report the distribution of peak centre frequencies per region per modality, and compare the regional dominant peak frequency across modalities directly, without binning.
+
+#### Cross-modal overlap before and after aperiodic correct
 
 We reconstructed the fitted aperiodic component on the fitted frequency grid and subtracted it from the empirical PSD in linear power space, giving the residual
 
 $$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f).$$
 
-This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which corresponds to the specparam convention, as a sensitivity comparison.
+This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, the variant used for  detrending in many studies, as a sensitivity comparison.
+
+Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models. 
+
+<!-- A difference in the residual overlap between modalities can therefore follow from that asymmetry in the fit rather than from the rhythms. For this reason we do not read the subtraction-based correspondence on its own, but against the modelled-peak correspondence. -->
+
+### Cross-modal concordance across correspondence measures {#sec-concordance}
+
+We now have three measures of which regional oscillatory features correspond across modalities, resting on different treatments of the aperiodic background: relative band power ignores it, the subtraction residual removes it with a fitted model, and modelled power never estimates it. We compare the regional cross-modal agreement under each. Where the three agree, the correspondence is robust to how the background is handled. Where they disagree, we take the modelled-peak result as the reference, because it does not depend on the accuracy of the aperiodic fit, whereas the subtraction measures can produce apparent oscillatory differences that follow from aperiodic-fit error rather than from the rhythm [@castanheira2025QuantifyingRhythmicArrhythmic].
 
 ###  Stability of aperiodic estimates
 
-Our last questions asks whether the regional aperiodic estimates agree across three methodological choices. Because some comparisons involve parameters that are not on a common scale, we quantify agreement by correlation, rank-based where the scales differ.
+Our last questions asks whether the regional aperiodic estimates agree across three methodological choices. Because some comparisons involve parameters that are not on a common scale, we quantify agreement by correlation, rank-based where the scales differ. This stability also bears on the oscillation comparison. 
 
 
 #### Knee vs fixed
