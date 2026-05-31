@@ -1,0 +1,460 @@
+---
+title: "Per-band peak prevalence and modelled power"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+Per-band peak prevalence and modelled power, fit with the aperiodic model that
+the BIC comparison selected for each modality (iEEG atlas → **knee**, source
+HD-EEG → **fixed**; see `bic_knee_vs_fixed_bootstrap_ci.qmd`). Each normalized
+channel PSD is fit once with its selected mode; specparam peaks are assigned to
+canonical bands by centre frequency, following
+@castanheira2025QuantifyingRhythmicArrhythmic. For each (channel, band):
+
+- **peak prevalence** — a region's prevalence in a band is the fraction of its
+  channels with at least one fitted peak in that band (i.e. the per-band
+  detection rate);
+- **modelled power** — the amplitude (log-power height above the aperiodic
+  component) of the *highest* peak in the band. The region-level amplitude
+  heatmap is the median over channels *that have a peak*, so detection rate and
+  amplitude are not confounded; the cross-modal correlation additionally uses
+  the zero-filled amplitude with rank statistics.
+
+Channels are pooled to the 38 bilateral regions of the shared atlas; the two
+modalities use the same 38 regions, so they can be paired directly. Regions are
+ordered posterior→anterior by mean MNI-y (the Mahjoory-style gradient).
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+from specparam import SpectralGroupModel
+from plotnine import (
+    aes,
+    element_blank,
+    element_text,
+    facet_wrap,
+    geom_abline,
+    geom_density,
+    geom_point,
+    geom_tile,
+    geom_vline,
+    ggplot,
+    labs,
+    scale_fill_cmap,
+    scale_fill_gradient2,
+    scale_fill_manual,
+    scale_x_continuous,
+    theme,
+    theme_bw,
+    theme_classic,
+)
+
+from pesco.experimental.clustering import EEG_BANDS, band_edges
+from pesco.bandpower import BAND_COLORS, BAND_LABELS
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
+fig_dir = Path("figures/chapter2")
+fig_dir.mkdir(parents=True, exist_ok=True)
+
+# Same peak settings and fit range as the model-selection build doc.
+FREQ_RANGE = (1.0, 80.0)
+SPECPARAM_SETTINGS = dict(
+    peak_width_limits=[1, 8],
+    max_n_peaks=8,
+    min_peak_height=0.1,
+    peak_threshold=3.0,
+)
+
+# Aperiodic mode chosen per modality by the BIC comparison.
+SELECTED_MODE = {"iEEG atlas": "knee", "source HD-EEG": "fixed"}
+BAND_ORDER = [b.name for b in EEG_BANDS]          # δ θ α β γ
+BAND_LABEL_ORDER = [BAND_LABELS[n] for n in BAND_ORDER]
+
+INPUT_CSV = {
+    "iEEG atlas": specparam_dir / "specparam_input_normalized_psd_ieeg.csv",
+    "source HD-EEG": specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv",
+}
+```
+
+```{python}
+#| label: helpers
+def load_psd_csv(path):
+    """Split a saved normalized-PSD table into (psd_matrix, freqs, metadata).
+
+    Frequency columns are numeric-named; everything else is metadata. The index
+    is the channel name.
+    """
+    df = pd.read_csv(path, index_col=0)
+    num_cols = [c for c in df.columns if str(c).replace(".", "", 1).isdigit()]
+    freqs = np.array([float(c) for c in num_cols])
+    psd = df[num_cols].to_numpy(dtype=float)
+    meta = df[[c for c in df.columns if c not in num_cols]].copy()
+    meta.index = df.index
+    return psd, freqs, meta
+
+
+def assign_band(cf, bands=EEG_BANDS):
+    """Canonical band name for a peak centre frequency; None if outside all bands.
+
+    Half-open [lo, hi) except the last band, which is closed [lo, hi].
+    """
+    for i, b in enumerate(bands):
+        if (b.lo <= cf < b.hi) or (i == len(bands) - 1 and cf == b.hi):
+            return b.name
+    return None
+
+
+def fit_and_extract_peaks(path, dataset, mode):
+    """Fit the selected aperiodic mode and return a tidy peak table.
+
+    One row per fitted peak: channel, dataset, Region name, Lobe, mni_y, CF, PW,
+    BW, band. Also returns the per-channel metadata (the prevalence denominator).
+    """
+    psd, freqs, meta = load_psd_csv(path)
+    meta = meta.assign(
+        dataset=dataset,
+        region=meta["Region name"].astype(str).str.strip("'"),
+        mni_y=pd.to_numeric(meta["mni_y"], errors="coerce"),
+    )
+
+    fg = SpectralGroupModel(**SPECPARAM_SETTINGS, aperiodic_mode=mode, verbose=False)
+    fg.fit(freqs, psd, freq_range=list(FREQ_RANGE), n_jobs=1)
+
+    peaks = fg.get_params("peak")  # (n_peaks, 4): [CF, PW, BW, ID]
+    peaks = np.atleast_2d(peaks)
+    peak_df = pd.DataFrame(peaks, columns=["CF", "PW", "BW", "ID"])
+    peak_df["ID"] = peak_df["ID"].astype(int)
+    peak_df["channel"] = meta.index.to_numpy()[peak_df["ID"].to_numpy()]
+    peak_df["band"] = peak_df["CF"].map(assign_band)
+    peak_df = peak_df.dropna(subset=["band"])
+
+    keep = ["region", "Lobe", "mni_y", "dataset"]
+    peak_df = peak_df.merge(
+        meta[keep], left_on="channel", right_index=True, how="left"
+    )
+    channels = meta[["region", "Lobe", "mni_y", "dataset"]].reset_index(
+        names="channel"
+    )
+    return peak_df, channels
+
+
+def channel_band_table(peak_df, channels, bands=EEG_BANDS):
+    """One row per (channel, band): has_peak and the band's modelled power.
+
+    modelled_power is the highest peak's amplitude in the band; channels with no
+    peak in the band get has_peak=False and modelled_power=NaN (the amplitude is
+    undefined where nothing was detected).
+    """
+    band_names = [b.name for b in bands]
+    best = (
+        peak_df.sort_values("PW", ascending=False)
+        .drop_duplicates(["channel", "band"])
+        .set_index(["channel", "band"])["PW"]
+    )
+    grid = (
+        channels.assign(key=1)
+        .merge(pd.DataFrame({"band": band_names, "key": 1}), on="key")
+        .drop(columns="key")
+    )
+    grid["modelled_power"] = grid.set_index(["channel", "band"]).index.map(best)
+    grid["has_peak"] = grid["modelled_power"].notna()
+    return grid
+
+
+def region_prevalence_power(channel_band):
+    """Collapse channels to regions: prevalence and median modelled power per band."""
+    g = channel_band.groupby(
+        ["dataset", "region", "Lobe", "band"], observed=True
+    )
+    out = g.agg(
+        n_channels=("channel", "nunique"),
+        prevalence=("has_peak", "mean"),
+        # amplitude where detected (separates amplitude from detection rate)
+        median_power=("modelled_power", "median"),
+        mni_y=("mni_y", "mean"),
+    ).reset_index()
+    return out
+
+
+def ordered_region_band(region_power):
+    """Add ordered categoricals: band labels (δ→γ) and posterior→anterior regions."""
+    d = region_power.copy()
+    region_y = (
+        d.groupby("region", observed=True)["mni_y"].mean().sort_values()
+    )
+    # ascending mni_y = posterior first; reverse so posterior sits at the top.
+    region_order = list(region_y.index[::-1])
+    d["region"] = pd.Categorical(d["region"], categories=region_order, ordered=True)
+    d["band_label"] = pd.Categorical(
+        d["band"].map(BAND_LABELS), categories=BAND_LABEL_ORDER, ordered=True
+    )
+    d["dataset"] = pd.Categorical(
+        d["dataset"], categories=["iEEG atlas", "source HD-EEG"], ordered=True
+    )
+    return d, region_order
+```
+
+```{python}
+#| label: compute
+peak_tables, channel_tables = [], []
+for dataset, path in INPUT_CSV.items():
+    pk, ch = fit_and_extract_peaks(path, dataset, SELECTED_MODE[dataset])
+    peak_tables.append(pk)
+    channel_tables.append(channel_band_table(pk, ch))
+
+all_peaks = pd.concat(peak_tables, ignore_index=True)
+channel_band = pd.concat(channel_tables, ignore_index=True)
+region_power = region_prevalence_power(channel_band)
+region_power_ord, region_order = ordered_region_band(region_power)
+
+# Persist the region-level table next to the model-selection outputs.
+region_power.to_csv(
+    specparam_dir / "specparam_peak_prevalence_modelled_power_by_region.csv",
+    index=False,
+)
+all_peaks.to_csv(
+    specparam_dir / "specparam_selected_model_peaks_by_channel.csv", index=False
+)
+```
+
+```{python}
+#| label: pairing
+def pair_region_band(region_power, value, x="iEEG atlas", y="source HD-EEG"):
+    """Wide table region×band with the value from each modality, + Spearman per band."""
+    wide = region_power.pivot_table(
+        index=["region", "band"], columns="dataset", values=value, observed=True
+    ).reset_index()
+    wide = wide.rename(columns={x: "x_value", y: "y_value"}).dropna(
+        subset=["x_value", "y_value"]
+    )
+    wide["band_label"] = pd.Categorical(
+        wide["band"].map(BAND_LABELS), categories=BAND_LABEL_ORDER, ordered=True
+    )
+    rows = []
+    for name in BAND_ORDER:
+        sub = wide[wide["band"] == name]
+        if len(sub) >= 3:
+            rho, p = stats.spearmanr(sub["x_value"], sub["y_value"])
+        else:
+            rho, p = np.nan, np.nan
+        rows.append({"band": name, "spearman_rho": rho, "p_value": p, "n": len(sub)})
+    return wide, pd.DataFrame(rows)
+
+
+prevalence_pairs, prevalence_rho = pair_region_band(region_power, "prevalence")
+```
+
+## Per-band peak prevalence
+
+```{python}
+#| label: fig-prevalence
+#| output: true
+def plot_prevalence_heatmap(d):
+    return (
+        ggplot(d, aes("band_label", "region", fill="prevalence"))
+        + geom_tile(color="white", size=0.3)
+        + facet_wrap("dataset", nrow=1)
+        + scale_fill_cmap(cmap_name="viridis", limits=(0, 1), name="prevalence")
+        + labs(x="band", y="", title="Per-band peak prevalence (selected model)")
+        + theme_bw()
+        + theme(
+            figure_size=(9, 9),
+            axis_text_y=element_text(size=6),
+            strip_text=element_text(size=9),
+            plot_title=element_text(size=11),
+        )
+    )
+
+
+prevalence_fig = plot_prevalence_heatmap(region_power_ord)
+for ext in ("svg", "pdf", "png"):
+    prevalence_fig.save(
+        fig_dir / f"peak_prevalence_heatmap.{ext}",
+        width=9, height=9, dpi=150, verbose=False,
+    )
+prevalence_fig
+```
+
+```{python}
+#| label: fig-prevalence-diff
+#| output: true
+def plot_prevalence_difference(prevalence_pairs, region_order):
+    d = prevalence_pairs.copy()
+    d["diff"] = d["y_value"] - d["x_value"]  # HD − iEEG
+    d["region"] = pd.Categorical(d["region"], categories=region_order, ordered=True)
+    lim = float(np.nanmax(np.abs(d["diff"])))
+    return (
+        ggplot(d, aes("band_label", "region", fill="diff"))
+        + geom_tile(color="white", size=0.3)
+        + scale_fill_gradient2(
+            low="#B2182B", mid="white", high="#2166AC",
+            midpoint=0, limits=(-lim, lim), name="HD − iEEG",
+        )
+        + labs(
+            x="band", y="",
+            title="Prevalence difference (source HD-EEG − iEEG atlas)",
+        )
+        + theme_bw()
+        + theme(
+            figure_size=(5.5, 9),
+            axis_text_y=element_text(size=6),
+            plot_title=element_text(size=11),
+        )
+    )
+
+
+prevalence_diff_fig = plot_prevalence_difference(prevalence_pairs, region_order)
+for ext in ("svg", "pdf", "png"):
+    prevalence_diff_fig.save(
+        fig_dir / f"peak_prevalence_difference_heatmap.{ext}",
+        width=5.5, height=9, dpi=150, verbose=False,
+    )
+prevalence_diff_fig
+```
+
+```{python}
+#| label: fig-prevalence-scatter
+#| output: true
+def plot_agreement_scatter(pairs, rho, value_name, title):
+    strip = {
+        BAND_LABELS[r["band"]]: f"{BAND_LABELS[r['band']]}\nρ={r['spearman_rho']:.2f}"
+        for _, r in rho.iterrows()
+    }
+    d = pairs.copy()
+    d["panel"] = pd.Categorical(
+        d["band_label"].astype(str).map(strip),
+        categories=[strip[lbl] for lbl in BAND_LABEL_ORDER],
+        ordered=True,
+    )
+    color = {strip[BAND_LABELS[n]]: BAND_COLORS[n] for n in BAND_ORDER}
+    return (
+        ggplot(d, aes("x_value", "y_value"))
+        + geom_abline(slope=1, intercept=0, linetype="dashed", color="#999999")
+        + geom_point(aes(fill="panel"), size=2.2, alpha=0.8, stroke=0, show_legend=False)
+        + scale_fill_manual(values=color, guide=None)
+        + facet_wrap("panel", nrow=1)
+        + labs(
+            x=f"iEEG atlas\n{value_name}", y=f"source HD-EEG\n{value_name}",
+            title=title,
+        )
+        + theme_classic()
+        + theme(
+            figure_size=(15, 3.3),
+            panel_spacing=0.04,
+            strip_background=element_blank(),
+        )
+    )
+
+
+prevalence_scatter = plot_agreement_scatter(
+    prevalence_pairs, prevalence_rho, "peak prevalence",
+    "Cross-modal prevalence agreement (one point per region)",
+)
+for ext in ("svg", "pdf", "png"):
+    prevalence_scatter.save(
+        fig_dir / f"peak_prevalence_agreement_scatter.{ext}",
+        width=15, height=3.3, dpi=150, verbose=False,
+    )
+prevalence_scatter
+```
+
+## Modelled band power
+
+```{python}
+#| label: fig-modelled-power
+#| output: true
+def plot_power_heatmap(d):
+    return (
+        ggplot(d, aes("band_label", "region", fill="median_power"))
+        + geom_tile(color="white", size=0.3)
+        + facet_wrap("dataset", nrow=1)
+        + scale_fill_cmap(cmap_name="magma", name="median\nmodelled\npower")
+        + labs(
+            x="band", y="",
+            title="Modelled band power (median peak amplitude where detected)",
+        )
+        + theme_bw()
+        + theme(
+            figure_size=(9, 9),
+            axis_text_y=element_text(size=6),
+            strip_text=element_text(size=9),
+            plot_title=element_text(size=11),
+        )
+    )
+
+
+power_fig = plot_power_heatmap(region_power_ord)
+for ext in ("svg", "pdf", "png"):
+    power_fig.save(
+        fig_dir / f"modelled_power_heatmap.{ext}",
+        width=9, height=9, dpi=150, verbose=False,
+    )
+power_fig
+```
+
+## Peak centre frequency (band-edge check)
+
+```{python}
+#| label: fig-centre-frequency
+#| output: true
+def plot_centre_frequency(all_peaks):
+    edges = band_edges()  # band lower edges + final upper edge
+    d = all_peaks.assign(
+        dataset=pd.Categorical(
+            all_peaks["dataset"],
+            categories=["iEEG atlas", "source HD-EEG"], ordered=True,
+        )
+    )
+    return (
+        ggplot(d, aes("CF", fill="dataset"))
+        + geom_vline(xintercept=edges, linetype="dashed", color="#999999", size=0.4)
+        + geom_density(alpha=0.45, color="none")
+        + scale_x_continuous(breaks=[1, 4, 8, 13, 30, 50, 80])
+        + labs(
+            x="peak centre frequency (Hz)", y="density", fill="",
+            title="Fitted peak centre frequencies vs canonical band edges",
+        )
+        + theme_bw()
+        + theme(figure_size=(8, 3.5), plot_title=element_text(size=11))
+    )
+
+
+cf_fig = plot_centre_frequency(all_peaks)
+for ext in ("svg", "pdf", "png"):
+    cf_fig.save(
+        fig_dir / f"peak_centre_frequency_distribution.{ext}",
+        width=8, height=3.5, dpi=150, verbose=False,
+    )
+cf_fig
+```
+
+## Cross-modal prevalence agreement (per band)
+
+```{python}
+#| label: tbl-prevalence-rho
+#| output: true
+prevalence_rho.assign(
+    band_label=lambda d: d["band"].map(BAND_LABELS),
+    spearman_rho=lambda d: d["spearman_rho"].round(3),
+    p_value=lambda d: d["p_value"].round(4),
+)[["band_label", "spearman_rho", "p_value", "n"]]
+```
