@@ -36,7 +36,10 @@ canonical bands by centre frequency, following
 
 Channels are pooled to the 38 bilateral regions of the shared atlas; the two
 modalities use the same 38 regions, so they can be paired directly. Regions are
-ordered posterior→anterior by mean MNI-y (the Mahjoory-style gradient).
+grouped into lobe blocks (Occipital, Parietal, Frontal, Temporal, then Insula)
+in the atlas ordering, and the y-axis labels are coloured by lobe (Occipital
+red, Parietal green, Frontal blue, Temporal/Insula black), matching the
+clustering-result heatmaps.
 
 ```{python}
 #| label: imports
@@ -50,14 +53,18 @@ from plotnine import (
     aes,
     element_blank,
     element_text,
+    facet_grid,
     facet_wrap,
     geom_abline,
+    geom_bin2d,
     geom_density,
     geom_point,
+    geom_segment,
     geom_tile,
     geom_vline,
     ggplot,
     labs,
+    scale_color_manual,
     scale_fill_cmap,
     scale_fill_gradient2,
     scale_fill_manual,
@@ -66,14 +73,31 @@ from plotnine import (
     theme_bw,
     theme_classic,
 )
+from ridgenine import geom_ridgeline, stat_binline, theme_ridges
 
 from pesco.experimental.clustering import EEG_BANDS, band_edges
-from pesco.bandpower import BAND_COLORS, BAND_LABELS
+from pesco.bandpower import BAND_COLORS, BAND_LABELS, LOBE_COLORS
 
 PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
 specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
+REGION_INFO_CSV = PROJECT_DIR / "data/Frauscher2018/RegionInformation.csv"
 fig_dir = Path("figures/chapter2")
 fig_dir.mkdir(parents=True, exist_ok=True)
+
+# Lobe block order used by the clustering-result heatmaps
+# (pesco.experimental.plotting._LOBE_ORDER); Insula falls to the end.
+LOBE_ORDER = ("Occipital", "Parietal", "Frontal", "Temporal")
+# Lobe label colours matching pesco.experimental.plotting._LOBE_COLORS;
+# Insula (absent there) defaults to black, as in the clustering heatmaps.
+LOBE_TEXT_COLORS = {
+    "Occipital": "red",
+    "Parietal": "green",
+    "Frontal": "#1f6feb",
+    "Temporal": "black",
+    "Insula": "black",
+}
+# Marker colours for the two modalities (dumbbell plot).
+DATASET_COLORS = {"iEEG atlas": "#2C7FB8", "source HD-EEG": "#E8546B"}
 
 # Same peak settings and fit range as the model-selection build doc.
 FREQ_RANGE = (1.0, 80.0)
@@ -148,12 +172,8 @@ def fit_and_extract_peaks(path, dataset, mode):
     peak_df = peak_df.dropna(subset=["band"])
 
     keep = ["region", "Lobe", "mni_y", "dataset"]
-    peak_df = peak_df.merge(
-        meta[keep], left_on="channel", right_index=True, how="left"
-    )
-    channels = meta[["region", "Lobe", "mni_y", "dataset"]].reset_index(
-        names="channel"
-    )
+    peak_df = peak_df.merge(meta[keep], left_on="channel", right_index=True, how="left")
+    channels = meta[["region", "Lobe", "mni_y", "dataset"]].reset_index(names="channel")
     return peak_df, channels
 
 
@@ -166,12 +186,14 @@ def channel_band_table(peak_df, channels, bands=EEG_BANDS):
     """
     band_names = [b.name for b in bands]
     best = (
-        peak_df.sort_values("PW", ascending=False)
+        peak_df
+        .sort_values("PW", ascending=False)
         .drop_duplicates(["channel", "band"])
         .set_index(["channel", "band"])["PW"]
     )
     grid = (
-        channels.assign(key=1)
+        channels
+        .assign(key=1)
         .merge(pd.DataFrame({"band": band_names, "key": 1}), on="key")
         .drop(columns="key")
     )
@@ -182,9 +204,7 @@ def channel_band_table(peak_df, channels, bands=EEG_BANDS):
 
 def region_prevalence_power(channel_band):
     """Collapse channels to regions: prevalence and median modelled power per band."""
-    g = channel_band.groupby(
-        ["dataset", "region", "Lobe", "band"], observed=True
-    )
+    g = channel_band.groupby(["dataset", "region", "Lobe", "band"], observed=True)
     out = g.agg(
         n_channels=("channel", "nunique"),
         prevalence=("has_peak", "mean"),
@@ -195,22 +215,66 @@ def region_prevalence_power(channel_band):
     return out
 
 
+def clustering_region_order(region_info_csv=REGION_INFO_CSV, lobe_order=LOBE_ORDER):
+    """Top→bottom region order matching the clustering-result heatmaps.
+
+    Regions are grouped into lobe blocks in ``lobe_order`` (Insula, absent from
+    that tuple, falls to the end); within a lobe they keep the atlas region
+    numbering. This reproduces ``pesco.experimental.plotting`` row order.
+    """
+    info = pd.read_csv(region_info_csv)
+    info["region"] = info["Region name"].astype(str).str.strip().str.strip("'")
+    info["lobe"] = info["Lobe"].astype(str).str.strip().str.strip("'")
+    rank = {lo: i for i, lo in enumerate(lobe_order)}
+    info["__lobe_rank"] = info["lobe"].map(lambda l: rank.get(l, len(lobe_order)))
+    # stable sort keeps the atlas region order (encounter order) within each lobe
+    return info.sort_values("__lobe_rank", kind="stable")["region"].tolist()
+
+
+def region_lobe_map(region_info_csv=REGION_INFO_CSV):
+    """Map each display region name to its lobe (for colouring y-axis labels)."""
+    info = pd.read_csv(region_info_csv)
+    region = info["Region name"].astype(str).str.strip().str.strip("'")
+    lobe = info["Lobe"].astype(str).str.strip().str.strip("'")
+    return dict(zip(region, lobe))
+
+
+def save_lobe_colored(plot, paths, dpi=150):
+    """Draw a heatmap, colour its y-axis region labels by lobe, save, return the figure.
+
+    plotnine themes one colour across all tick labels, so the per-lobe colouring
+    of the clustering heatmaps is applied on the drawn matplotlib axes instead.
+    """
+    fig = plot.draw(show=False)
+    lobe_of = region_lobe_map()
+    for ax in fig.axes:
+        for label in ax.get_yticklabels():
+            lobe = lobe_of.get(label.get_text())
+            if lobe:
+                label.set_color(LOBE_TEXT_COLORS.get(lobe, "black"))
+    for path in paths:
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+    return fig
+
+
 def ordered_region_band(region_power):
-    """Add ordered categoricals: band labels (δ→γ) and posterior→anterior regions."""
+    """Add ordered categoricals: band labels (δ→γ) and clustering-style regions.
+
+    Returns the dataframe plus the y-axis category order (reversed lobe order, so
+    the first lobe block — Occipital — sits at the top of the tile plot).
+    """
     d = region_power.copy()
-    region_y = (
-        d.groupby("region", observed=True)["mni_y"].mean().sort_values()
-    )
-    # ascending mni_y = posterior first; reverse so posterior sits at the top.
-    region_order = list(region_y.index[::-1])
-    d["region"] = pd.Categorical(d["region"], categories=region_order, ordered=True)
+    # top→bottom = clustering order; plotnine draws the first category at the
+    # bottom, so reverse to put Occipital at the top.
+    y_order = list(reversed(clustering_region_order()))
+    d["region"] = pd.Categorical(d["region"], categories=y_order, ordered=True)
     d["band_label"] = pd.Categorical(
         d["band"].map(BAND_LABELS), categories=BAND_LABEL_ORDER, ordered=True
     )
     d["dataset"] = pd.Categorical(
         d["dataset"], categories=["iEEG atlas", "source HD-EEG"], ordered=True
     )
-    return d, region_order
+    return d, y_order
 ```
 
 ```{python}
@@ -285,12 +349,10 @@ def plot_prevalence_heatmap(d):
     )
 
 
-prevalence_fig = plot_prevalence_heatmap(region_power_ord)
-for ext in ("svg", "pdf", "png"):
-    prevalence_fig.save(
-        fig_dir / f"peak_prevalence_heatmap.{ext}",
-        width=9, height=9, dpi=150, verbose=False,
-    )
+prevalence_fig = save_lobe_colored(
+    plot_prevalence_heatmap(region_power_ord),
+    [fig_dir / f"peak_prevalence_heatmap.{ext}" for ext in ("svg", "pdf", "png")],
+)
 prevalence_fig
 ```
 
@@ -322,12 +384,13 @@ def plot_prevalence_difference(prevalence_pairs, region_order):
     )
 
 
-prevalence_diff_fig = plot_prevalence_difference(prevalence_pairs, region_order)
-for ext in ("svg", "pdf", "png"):
-    prevalence_diff_fig.save(
-        fig_dir / f"peak_prevalence_difference_heatmap.{ext}",
-        width=5.5, height=9, dpi=150, verbose=False,
-    )
+prevalence_diff_fig = save_lobe_colored(
+    plot_prevalence_difference(prevalence_pairs, region_order),
+    [
+        fig_dir / f"peak_prevalence_difference_heatmap.{ext}"
+        for ext in ("svg", "pdf", "png")
+    ],
+)
 prevalence_diff_fig
 ```
 
@@ -402,12 +465,10 @@ def plot_power_heatmap(d):
     )
 
 
-power_fig = plot_power_heatmap(region_power_ord)
-for ext in ("svg", "pdf", "png"):
-    power_fig.save(
-        fig_dir / f"modelled_power_heatmap.{ext}",
-        width=9, height=9, dpi=150, verbose=False,
-    )
+power_fig = save_lobe_colored(
+    plot_power_heatmap(region_power_ord),
+    [fig_dir / f"modelled_power_heatmap.{ext}" for ext in ("svg", "pdf", "png")],
+)
 power_fig
 ```
 
@@ -445,6 +506,230 @@ for ext in ("svg", "pdf", "png"):
         width=8, height=3.5, dpi=150, verbose=False,
     )
 cf_fig
+```
+
+## Peak size vs centre frequency
+
+```{python}
+#| label: fig-size-frequency
+#| output: true
+def plot_peak_size_frequency(all_peaks, bins=40):
+    edges = band_edges()
+    d = all_peaks.assign(
+        dataset=pd.Categorical(
+            all_peaks["dataset"],
+            categories=["iEEG atlas", "source HD-EEG"], ordered=True,
+        )
+    )
+    return (
+        ggplot(d, aes("CF", "PW"))
+        + geom_bin2d(bins=bins)
+        + geom_vline(xintercept=edges, linetype="dashed", color="#999999", size=0.3)
+        + scale_fill_cmap(cmap_name="plasma", name="count")
+        + facet_wrap("dataset", nrow=1)
+        + scale_x_continuous(breaks=[1, 4, 8, 13, 30, 50, 80])
+        + labs(
+            x="peak centre frequency (Hz)",
+            y="peak size (log-power height above aperiodic)",
+            title="Peak size vs centre frequency (binned count, selected model)",
+        )
+        + theme_bw()
+        + theme(figure_size=(11, 4.5), plot_title=element_text(size=11))
+    )
+
+
+size_freq_fig = plot_peak_size_frequency(all_peaks)
+for ext in ("svg", "pdf", "png"):
+    size_freq_fig.save(
+        fig_dir / f"peak_size_vs_frequency.{ext}",
+        width=11, height=4.5, dpi=150, verbose=False,
+    )
+size_freq_fig
+```
+
+## Peak size vs centre frequency, per lobe
+
+Same binned density, faceted by lobe (rows) and modality (columns). Each bin's
+count is divided by the number of channels in that lobe and modality, so the
+colour is **peaks per channel** and lobes of different size are comparable.
+
+```{python}
+#| label: fig-size-frequency-lobe
+#| output: true
+LOBE_FACET_ORDER = list(LOBE_ORDER) + ["Insula"]
+
+
+def plot_peak_size_frequency_by_lobe(all_peaks, channel_band, bins=30):
+    # Channels per (modality, lobe) is the normalisation denominator; taken from
+    # the full channel list so channels with no peak still count.
+    n_channels = (
+        channel_band.assign(
+            Lobe=channel_band["Lobe"].astype(str).str.strip().str.strip("'")
+        )
+        .groupby(["dataset", "Lobe"], observed=True)["channel"]
+        .nunique()
+        .rename("n_channels")
+        .reset_index()
+    )
+    d = all_peaks.assign(
+        Lobe=all_peaks["Lobe"].astype(str).str.strip().str.strip("'")
+    ).merge(n_channels, on=["dataset", "Lobe"], how="left")
+    d["weight"] = 1.0 / d["n_channels"]
+    d["Lobe"] = pd.Categorical(d["Lobe"], categories=LOBE_FACET_ORDER, ordered=True)
+    d["dataset"] = pd.Categorical(
+        d["dataset"], categories=["iEEG atlas", "source HD-EEG"], ordered=True
+    )
+    return (
+        ggplot(d, aes("CF", "PW"))
+        + geom_bin2d(aes(weight="weight"), bins=bins)
+        + geom_vline(xintercept=band_edges(), linetype="dashed", color="#999999", size=0.25)
+        + scale_fill_cmap(cmap_name="plasma", name="peaks per\nchannel")
+        + facet_grid("Lobe ~ dataset")
+        + scale_x_continuous(breaks=[1, 4, 8, 13, 30, 50, 80])
+        + labs(
+            x="peak centre frequency (Hz)",
+            y="peak size (log-power height above aperiodic)",
+            title="Peak size vs centre frequency per lobe (count per channel)",
+        )
+        + theme_bw()
+        + theme(figure_size=(9, 12), plot_title=element_text(size=11))
+    )
+
+
+size_freq_lobe_fig = plot_peak_size_frequency_by_lobe(all_peaks, channel_band)
+for ext in ("svg", "pdf", "png"):
+    size_freq_lobe_fig.save(
+        fig_dir / f"peak_size_vs_frequency_by_lobe.{ext}",
+        width=9, height=12, dpi=150, verbose=False,
+    )
+size_freq_lobe_fig
+```
+
+## Dominant peak frequency per region
+
+For each region and modality, the dominant frequency is the centre frequency of
+the single highest-amplitude (largest PW) peak among that region's channels. The
+dumbbell connects the iEEG and source HD-EEG dominant frequency for each region;
+regions follow the same lobe order and label colouring as the heatmaps.
+
+```{python}
+#| label: fig-dominant-frequency-dumbbell
+#| output: true
+def region_dominant_frequency(all_peaks):
+    """Centre frequency of the highest-PW peak per (modality, region)."""
+    idx = all_peaks.groupby(["dataset", "region"], observed=True)["PW"].idxmax()
+    return all_peaks.loc[idx, ["dataset", "region", "Lobe", "CF", "PW"]].reset_index(
+        drop=True
+    )
+
+
+def plot_dominant_frequency_dumbbell(all_peaks):
+    dom = region_dominant_frequency(all_peaks)
+    y_order = list(reversed(clustering_region_order()))
+    dom["region"] = pd.Categorical(dom["region"], categories=y_order, ordered=True)
+    dom["dataset"] = pd.Categorical(
+        dom["dataset"], categories=["iEEG atlas", "source HD-EEG"], ordered=True
+    )
+    # Wide form for the connecting segment (regions present in both modalities).
+    wide = (
+        dom.pivot_table(index="region", columns="dataset", values="CF", observed=True)
+        .dropna(subset=["iEEG atlas", "source HD-EEG"])
+        .reset_index()
+    )
+    wide["region"] = pd.Categorical(wide["region"], categories=y_order, ordered=True)
+    return (
+        ggplot()
+        + geom_vline(xintercept=band_edges(), linetype="dashed", color="#cccccc", size=0.3)
+        + geom_segment(
+            wide,
+            aes(x="iEEG atlas", xend="source HD-EEG", y="region", yend="region"),
+            color="#bdbdbd",
+            size=1.5,
+        )
+        + geom_point(dom, aes("CF", "region", color="dataset"), size=3, stroke=0)
+        + scale_color_manual(values=DATASET_COLORS, name="")
+        + scale_x_continuous(breaks=[1, 4, 8, 13, 30, 50, 80])
+        + labs(
+            x="dominant peak frequency (Hz)",
+            y="",
+            title="Dominant peak frequency per region (highest-amplitude peak)",
+        )
+        + theme_bw()
+        + theme(
+            figure_size=(8, 9),
+            axis_text_y=element_text(size=6),
+            plot_title=element_text(size=11),
+            legend_position="top",
+        )
+    )
+
+
+dumbbell_fig = save_lobe_colored(
+    plot_dominant_frequency_dumbbell(all_peaks),
+    [
+        fig_dir / f"dominant_frequency_dumbbell.{ext}"
+        for ext in ("svg", "pdf", "png")
+    ],
+)
+dumbbell_fig
+```
+
+## Per-region peak-frequency distribution (ridgeline)
+
+A joy-plot / ridgeline view built with `ridgenine` (`stat_binline` +
+`geom_ridgeline`): one histogram ridge per region of the peak centre
+frequencies, normalised so every region peaks at the same height (`ndensity`,
+i.e. shape not count). `scale` sets how far neighbouring ridges overlap. Ridges
+follow the heatmap lobe order, are filled by lobe, and the two modalities are
+shown side by side.
+
+```{python}
+#| label: fig-region-frequency-ridges
+#| output: true
+def plot_region_frequency_ridges(all_peaks, binwidth=1.0, scale=1.2, alpha=0.6):
+    region_order = clustering_region_order()  # top → bottom
+    lobe_of = region_lobe_map()
+    d = all_peaks.assign(lobe=all_peaks["region"].map(lobe_of))
+    # Discrete y: plotnine draws the first category at the bottom, so reverse the
+    # clustering order to put Occipital on top.
+    d["region"] = pd.Categorical(
+        d["region"], categories=list(reversed(region_order)), ordered=True
+    )
+    d["dataset"] = pd.Categorical(
+        d["dataset"], categories=["iEEG atlas", "source HD-EEG"], ordered=True
+    )
+    d["lobe"] = pd.Categorical(
+        d["lobe"], categories=list(LOBE_ORDER) + ["Insula"], ordered=True
+    )
+    return (
+        ggplot(d, aes(x="CF", y="region", fill="lobe"))
+        + geom_vline(xintercept=band_edges(), linetype="dashed", color="#dddddd", size=0.25)
+        + geom_ridgeline(
+            stat=stat_binline(binwidth=binwidth),
+            scale=scale, color="white", size=0.2, alpha=alpha,
+        )
+        + facet_wrap("dataset", nrow=1)
+        + scale_fill_manual(values=LOBE_COLORS, name="lobe")
+        + scale_x_continuous(breaks=[1, 4, 8, 13, 30, 50, 80])
+        + labs(
+            x="peak centre frequency (Hz)",
+            y="",
+            title="Per-region peak-frequency distribution (histogram ridgeline)",
+        )
+        + theme_ridges()
+        + theme(
+            figure_size=(10, 12),
+            axis_text_y=element_text(size=6),
+            plot_title=element_text(size=11),
+        )
+    )
+
+
+ridge_fig = save_lobe_colored(
+    plot_region_frequency_ridges(all_peaks),
+    [fig_dir / f"region_frequency_ridges.{ext}" for ext in ("svg", "pdf", "png")],
+)
+ridge_fig
 ```
 
 ## Cross-modal prevalence agreement (per band)

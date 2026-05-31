@@ -24,7 +24,9 @@ dependencies = [
     "atlasreader",
     "pymc",
     "bambi",
-    "jupyter-cache"]
+    "jupyter-cache",
+    "ridgenine",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -58,6 +60,7 @@ members = [
 pesco = { workspace = true, editable = true }
 gedai = { git = "https://github.com/neurotuning/gedai" }
 ggsegpy = { git = "https://github.com/ggsegverse/ggsegpy.git" }
+ridgenine = { git = "https://github.com/briandconnelly/ridgenine" }
 
 [tool.ruff]
 line-length = 88

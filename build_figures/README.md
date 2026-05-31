@@ -24,7 +24,7 @@ data/  ──►  pesco plot fns  ──►  build doc (here)  ──►  build_
 | `afnan_overlap.qmd` | Afnan band-overlap / regions-per-lobe | `afnan_overlap_raw_heatmap.svg` (+ overlap/regions variants) |
 | `bandpower.qmd` | relative band-power correlation grid | `*_relative_band_power_correlations_*.svg` (not yet wired into prose) |
 | `bic_knee_vs_fixed.qmd` | Ameen-style fixed-vs-knee aperiodic BIC selection | none (tables only → `data/interim/specparam_model_selection/`) |
-| `5_peak_prevalence_modelled_power.qmd` | specparam peaks from the BIC-selected mode (iEEG knee / HD fixed) | `peak_prevalence_heatmap.svg`, `peak_prevalence_difference_heatmap.svg`, `peak_prevalence_agreement_scatter.svg`, `modelled_power_heatmap.svg`, `peak_centre_frequency_distribution.svg` |
+| `5_peak_prevalence_modelled_power.qmd` | specparam peaks from the BIC-selected mode (iEEG knee / HD fixed) | `peak_prevalence_heatmap.svg`, `peak_prevalence_difference_heatmap.svg`, `peak_prevalence_agreement_scatter.svg`, `modelled_power_heatmap.svg`, `peak_centre_frequency_distribution.svg`, `peak_size_vs_frequency.svg`, `peak_size_vs_frequency_by_lobe.svg`, `dominant_frequency_dumbbell.svg`, `region_frequency_ridges.svg` |
 | _relative_power_ — **TBD** | Afnan fig2 relative PSD | `relative_power/fig2a_relative_psd.svg` |
 
 ### Not produced here
