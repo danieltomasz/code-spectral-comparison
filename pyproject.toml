@@ -26,6 +26,7 @@ dependencies = [
     "bambi",
     "jupyter-cache",
     "ridgenine",
+    "duckdb",
 ]
 
 [project.optional-dependencies]

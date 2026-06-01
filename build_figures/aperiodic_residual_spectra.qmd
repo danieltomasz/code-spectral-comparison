@@ -1,0 +1,142 @@
+---
+title: "Oscillatory residual after removing the aperiodic component"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+Oscillatory residual after subtracting the specparam aperiodic component, in two
+conventions, **loaded from the DuckDB feature store** (`00_specparam_features.qmd`
+must be rendered first) — no refitting here. The store is keyed by a hash of the
+`pesco.config` settings, so these curves are guaranteed to come from the current
+canonical fit.
+
+- **log (flattened)** — $L_{\mathrm{osc}}(f) = \log_{10}\mathrm{PSD}(f) -
+  L_{\mathrm{ap}}(f)$.
+- **linear (normalised)** — $\mathrm{PSD}_{\mathrm{osc}}(f) =
+  (\mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f)) / \sum_f \mathrm{PSD}(f)$.
+
+Note (per @castanheira2025QuantifyingRhythmicArrhythmic): these *detrended*
+residuals conflate the rhythmic and aperiodic components and are shown here for
+visualisation / cross-modal overlap, **not** as the primary rhythmic-power
+estimate — for that use the modelled specparam peak power (`peaks.PW`).
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from plotnine import (
+    aes,
+    element_text,
+    facet_grid,
+    geom_hline,
+    geom_line,
+    geom_vline,
+    ggplot,
+    labs,
+    scale_color_manual,
+    scale_x_log10,
+    theme,
+    theme_bw,
+)
+
+from pesco import config, store
+from pesco.experimental.clustering import band_edges
+from pesco.bandpower import LOBE_COLORS
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DB_PATH = PROJECT_DIR / "data/interim/analysis.duckdb"
+fig_dir = Path("figures/chapter2")
+fig_dir.mkdir(parents=True, exist_ok=True)
+
+LOBE_ORDER = ["Occipital", "Parietal", "Frontal", "Temporal", "Insula"]
+RESID_LABELS = {
+    "log": "log  (L_osc = log10 PSD / PSD_ap)",
+    "linear": "linear  ((PSD − PSD_ap) / ΣPSD)",
+}
+PARAMS_HASH = store.params_hash(
+    config.SPECPARAM_SETTINGS, config.FREQ_RANGE, config.SELECTED_MODE
+)
+```
+
+```{python}
+#| label: load
+con = store.open_db(DB_PATH)
+features = store.load(con, "features", PARAMS_HASH)
+channels = store.load(con, "channels", PARAMS_HASH)[["channel", "dataset", "Lobe"]]
+con.close()
+
+feat = features.merge(channels, on=["channel", "dataset"], how="left")
+feat["psd"] = 10.0 ** feat["log_psd"]
+feat["psd_ap"] = 10.0 ** feat["ap_log"]
+feat["log"] = feat["log_psd"] - feat["ap_log"]
+total = feat.groupby(["dataset", "channel"])["psd"].transform("sum")
+feat["linear"] = (feat["psd"] - feat["psd_ap"]) / total
+```
+
+```{python}
+#| label: aggregate
+def lobe_mean(feat, residual_type):
+    g = (
+        feat.groupby(["dataset", "Lobe", "freq"], observed=True)[residual_type]
+        .mean()
+        .reset_index(name="value")
+    )
+    g["residual_type"] = RESID_LABELS[residual_type]
+    return g
+
+
+residual_curves = pd.concat(
+    [lobe_mean(feat, "log"), lobe_mean(feat, "linear")], ignore_index=True
+)
+residual_curves["Lobe"] = pd.Categorical(
+    residual_curves["Lobe"], categories=LOBE_ORDER, ordered=True
+)
+residual_curves["dataset"] = pd.Categorical(
+    residual_curves["dataset"], categories=config.DATASETS, ordered=True
+)
+```
+
+## Per-lobe mean oscillatory residual
+
+```{python}
+#| label: fig-residual-spectra
+#| output: true
+residual_fig = (
+    ggplot(residual_curves, aes("freq", "value", color="Lobe"))
+    + geom_hline(yintercept=0, color="#bbbbbb", size=0.4)
+    + geom_vline(xintercept=band_edges(), linetype="dashed", color="#e6e6e6", size=0.25)
+    + geom_line(size=0.8)
+    + facet_grid("residual_type ~ dataset", scales="free_y")
+    + scale_color_manual(values=LOBE_COLORS, name="lobe")
+    + scale_x_log10(breaks=[1, 4, 8, 13, 30, 80])
+    + labs(
+        x="frequency (Hz)",
+        y="oscillatory residual",
+        title="Oscillatory residual after aperiodic removal (per-lobe mean)",
+    )
+    + theme_bw()
+    + theme(figure_size=(11, 7), plot_title=element_text(size=11))
+)
+for ext in ("svg", "pdf", "png"):
+    residual_fig.save(
+        fig_dir / f"aperiodic_residual_spectra.{ext}",
+        width=11, height=7, dpi=150, verbose=False,
+    )
+residual_fig
+```

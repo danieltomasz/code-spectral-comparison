@@ -1,0 +1,203 @@
+---
+title: "H3.2 — Fitting-range effect on the aperiodic exponent"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+Per-channel agreement between the **fixed-mode** exponent fit over 1–80 Hz and
+over 1–45 Hz, per modality, from the cached `aperiodic` tables of the two runs
+(no refit). We report Pearson and Spearman correlation, a Bland–Altman plot
+(mean vs difference — the range effect is largely a systematic shift a scatter
+hides), and the per-region mean shift $\Delta\chi = \chi_{1\text{–}80} -
+\chi_{1\text{–}45}$ to test whether it is uniform or region-dependent.
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+from plotnine import (
+    aes,
+    element_text,
+    facet_wrap,
+    geom_abline,
+    geom_hline,
+    geom_point,
+    geom_text,
+    geom_tile,
+    ggplot,
+    labs,
+    scale_fill_gradient2,
+    theme,
+    theme_bw,
+)
+
+from pesco import config, store
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DB_PATH = PROJECT_DIR / "data/interim/analysis.duckdb"
+fig_dir = Path("figures/chapter2")
+fig_dir.mkdir(parents=True, exist_ok=True)
+LOBE_ORDER = ["Occipital", "Parietal", "Frontal", "Temporal", "Insula"]
+
+H_FULL = store.params_hash(
+    config.SPECPARAM_SETTINGS, config.FREQ_RANGE, config.SELECTED_MODE
+)
+```
+
+```{python}
+#| label: load
+con = store.open_db(DB_PATH)
+H_45 = store.find_run(con, label="range_1-45")
+full = store.load(con, "aperiodic", H_FULL).query("mode == 'fixed'")
+narrow = store.load(con, "aperiodic", H_45).query("mode == 'fixed'")
+channels = store.load(con, "channels", H_FULL)[["channel", "dataset", "region", "Lobe"]]
+con.close()
+
+paired = (
+    full[["channel", "dataset", "exponent"]]
+    .rename(columns={"exponent": "chi_1_80"})
+    .merge(
+        narrow[["channel", "dataset", "exponent"]].rename(
+            columns={"exponent": "chi_1_45"}
+        ),
+        on=["channel", "dataset"],
+    )
+    .merge(channels, on=["channel", "dataset"], how="left")
+)
+paired["delta"] = paired["chi_1_80"] - paired["chi_1_45"]
+paired["mean_chi"] = (paired["chi_1_80"] + paired["chi_1_45"]) / 2
+paired["dataset"] = pd.Categorical(paired["dataset"], config.DATASETS, ordered=True)
+```
+
+```{python}
+#| label: correlations
+#| output: true
+rows = []
+for ds, g in paired.groupby("dataset", observed=True):
+    r, _ = stats.pearsonr(g["chi_1_45"], g["chi_1_80"])
+    rho, _ = stats.spearmanr(g["chi_1_45"], g["chi_1_80"])
+    rows.append(
+        {
+            "dataset": ds,
+            "n_channels": len(g),
+            "median_1_80": round(g["chi_1_80"].median(), 3),
+            "median_1_45": round(g["chi_1_45"].median(), 3),
+            "mean_delta": round(g["delta"].mean(), 3),
+            "pearson_r": round(r, 3),
+            "spearman_rho": round(rho, 3),
+        }
+    )
+range_corr = pd.DataFrame(rows)
+range_corr
+```
+
+```{python}
+#| label: fig-scatter-ba
+#| output: true
+ann = range_corr.assign(
+    label=lambda d: "r=" + d["pearson_r"].map("{:.2f}".format)
+    + "  ρ=" + d["spearman_rho"].map("{:.2f}".format),
+    x=paired.groupby("dataset", observed=True)["chi_1_45"].min().values,
+    y=paired.groupby("dataset", observed=True)["chi_1_80"].max().values,
+)
+scatter = (
+    ggplot(paired, aes("chi_1_45", "chi_1_80"))
+    + geom_abline(slope=1, intercept=0, linetype="dashed", color="#999999")
+    + geom_point(size=1.2, alpha=0.4, stroke=0, color="#2C7FB8")
+    + geom_text(ann, aes("x", "y", label="label"), ha="left", va="top", size=9)
+    + facet_wrap("dataset", scales="free")
+    + labs(
+        x="exponent χ (1–45 Hz)", y="exponent χ (1–80 Hz)",
+        title="Fitting-range agreement of the fixed exponent",
+    )
+    + theme_bw()
+    + theme(figure_size=(9, 4.2), plot_title=element_text(size=11))
+)
+ba = (
+    ggplot(paired, aes("mean_chi", "delta"))
+    + geom_hline(yintercept=0, color="#999999", linetype="dashed")
+    + geom_point(size=1.2, alpha=0.4, stroke=0, color="#E8546B")
+    + facet_wrap("dataset", scales="free")
+    + labs(
+        x="mean exponent  (χ₁₋₈₀ + χ₁₋₄₅)/2",
+        y="Δχ = χ₁₋₈₀ − χ₁₋₄₅",
+        title="Bland–Altman: range effect is a systematic shift",
+    )
+    + theme_bw()
+    + theme(figure_size=(9, 4.2), plot_title=element_text(size=11))
+)
+for name, f, h in [("h3_fitting_range_scatter", scatter, 4.2),
+                   ("h3_fitting_range_bland_altman", ba, 4.2)]:
+    for ext in ("svg", "pdf", "png"):
+        f.save(fig_dir / f"{name}.{ext}", width=9, height=h, dpi=150, verbose=False)
+scatter
+```
+
+```{python}
+#| label: fig-ba
+#| output: true
+ba
+```
+
+```{python}
+#| label: fig-region-delta
+#| output: true
+region_delta = (
+    paired.groupby(["dataset", "Lobe", "region"], observed=True)["delta"]
+    .mean()
+    .reset_index()
+)
+order = (
+    channels.assign(
+        lobe_rank=lambda d: d["Lobe"].map(
+            {lo: i for i, lo in enumerate(LOBE_ORDER)}
+        )
+    )
+    .drop_duplicates("region")
+    .sort_values(["lobe_rank", "region"])["region"]
+    .tolist()
+)
+region_delta["region"] = pd.Categorical(region_delta["region"], order, ordered=True)
+region_delta["dataset"] = pd.Categorical(
+    region_delta["dataset"], config.DATASETS, ordered=True
+)
+lim = float(np.nanmax(np.abs(region_delta["delta"])))
+region_fig = (
+    ggplot(region_delta, aes("dataset", "region", fill="delta"))
+    + geom_tile(color="white", size=0.3)
+    + scale_fill_gradient2(
+        low="#2166AC", mid="white", high="#B2182B",
+        midpoint=0, limits=(-lim, lim), name="mean Δχ",
+    )
+    + labs(x="", y="", title="Per-region mean range shift Δχ (1–80 − 1–45)")
+    + theme_bw()
+    + theme(
+        figure_size=(5, 9),
+        axis_text_y=element_text(size=6),
+        plot_title=element_text(size=11),
+    )
+)
+for ext in ("svg", "pdf", "png"):
+    region_fig.save(
+        fig_dir / f"h3_fitting_range_region_delta.{ext}",
+        width=5, height=9, dpi=150, verbose=False,
+    )
+region_fig
+```

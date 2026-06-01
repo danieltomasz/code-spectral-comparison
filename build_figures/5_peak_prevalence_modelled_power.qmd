@@ -821,3 +821,220 @@ pd.DataFrame(
     {"n_channels": n_total, "n_pass": n_pass, "fraction_pass": (n_pass / n_total).round(3)}
 ).reset_index()
 ```
+
+## Sensitivity: alternative specparam settings
+
+Refit from the (verified-clean) normalized PSD with a looser, EEG-tuned peak
+configuration, leaving all results above unchanged. Only the specparam settings
+differ; the selected aperiodic mode per modality is the same (iEEG knee, HD-EEG
+fixed).
+
+```{python}
+#| label: alt-settings-refit
+ALT_FREQ_RANGE = (1.0, 80.0)
+ALT_SPECPARAM_SETTINGS = dict(
+    peak_width_limits=[1, 12],
+    max_n_peaks=8,
+    min_peak_height=0.15,
+    peak_threshold=2.0,
+)
+
+
+def refit_peaks(settings, freq_range):
+    """Reload each normalized PSD, refit the selected mode, return peaks + quality."""
+    peak_frames, quality_frames = [], []
+    for dataset, path in INPUT_CSV.items():
+        psd, freqs, meta = load_psd_csv(path)
+        fg = SpectralGroupModel(
+            **settings, aperiodic_mode=SELECTED_MODE[dataset], verbose=False
+        )
+        fg.fit(freqs, psd, freq_range=list(freq_range), n_jobs=1)
+
+        pk = pd.DataFrame(
+            np.atleast_2d(fg.get_params("peak")), columns=["CF", "PW", "BW", "ID"]
+        )
+        pk["ID"] = pk["ID"].astype(int)
+        ids = pk["ID"].to_numpy()
+        pk["channel"] = meta.index.astype(str).to_numpy()[ids]
+        pk["dataset"] = dataset
+        pk["region"] = meta["Region name"].astype(str).str.strip("'").to_numpy()[ids]
+        pk["Lobe"] = meta["Lobe"].astype(str).to_numpy()[ids]
+        pk["band"] = pk["CF"].map(assign_band)
+        peak_frames.append(pk.dropna(subset=["band"]))
+        quality_frames.append(channel_fit_quality(fg, meta.index.astype(str), dataset))
+    return (
+        pd.concat(peak_frames, ignore_index=True),
+        pd.concat(quality_frames, ignore_index=True),
+    )
+
+
+all_peaks_alt, channel_quality_alt = refit_peaks(
+    ALT_SPECPARAM_SETTINGS, ALT_FREQ_RANGE
+)
+```
+
+```{python}
+#| label: alt-settings-quality
+#| output: true
+def quality_summary(quality, label):
+    g = quality.groupby("dataset")
+    return pd.DataFrame(
+        {
+            "settings": label,
+            "median_r2": g["gof_rsquared"].median().round(3),
+            "median_mse": g["mse_log10"].median().round(4),
+            "pass_R2>0.9_MSE<0.1": (
+                g.apply(
+                    lambda d: ((d["gof_rsquared"] > 0.9) & (d["mse_log10"] < 0.1)).mean(),
+                    include_groups=False,
+                ).round(3)
+            ),
+        }
+    ).reset_index()
+
+
+pd.concat(
+    [
+        quality_summary(channel_quality, "default"),
+        quality_summary(channel_quality_alt, "alt (wider peaks, lower thresh)"),
+    ],
+    ignore_index=True,
+)
+```
+
+```{python}
+#| label: fig-region-frequency-ridges-alt
+#| output: true
+ridge_alt_fig = save_lobe_colored(
+    plot_region_frequency_ridges(
+        all_peaks_alt,
+        title="Per-region peak-frequency distribution (alt specparam settings)",
+    ),
+    [
+        fig_dir / f"region_frequency_ridges_alt_settings.{ext}"
+        for ext in ("svg", "pdf", "png")
+    ],
+)
+ridge_alt_fig
+```
+
+## How `peak_threshold` and `min_peak_height` change detected peaks
+
+Isolating the two detection thresholds (peak width fixed at `[1, 8]`): the
+default `peak_threshold=3.0, min_peak_height=0.10` vs the looser
+`peak_threshold=2.0, min_peak_height=0.15`. Example HD-EEG spectra are chosen
+where the looser thresholds add the most peaks; each panel overlays the
+normalized spectrum, both full model fits, and the detected peak centres
+(markers on each model curve) so it is visible *where* in the spectrum the extra
+peaks appear.
+
+```{python}
+#| label: fig-threshold-illustration
+#| output: true
+from plotnine import geom_line, scale_x_log10
+
+SETTINGS_STRICT = dict(
+    peak_width_limits=[1, 8], max_n_peaks=8, min_peak_height=0.10, peak_threshold=3.0
+)
+SETTINGS_LOOSE = dict(
+    peak_width_limits=[1, 8], max_n_peaks=8, min_peak_height=0.15, peak_threshold=2.0
+)
+# Wider peaks + fewer peaks: lets one broad Gaussian cover a hump instead of
+# tiling it with several narrow ones.
+SETTINGS_WIDE = dict(
+    peak_width_limits=[1, 10], max_n_peaks=8, min_peak_height=0.15, peak_threshold=2.0
+)
+LAB_STRICT = "thr 3.0 / min_h 0.10 / w[1,8]"
+LAB_LOOSE = "thr 2.0 / min_h 0.15 / w[1,8]"
+LAB_WIDE = "thr 2.5 / min_h 0.15 / w[2,12] / max 6"
+ILLUS_DATASET = "source HD-EEG"
+N_EXAMPLES = 6
+
+
+def fit_group(path, mode, settings):
+    psd, freqs, meta = load_psd_csv(path)
+    fg = SpectralGroupModel(**settings, aperiodic_mode=mode, verbose=False)
+    fg.fit(freqs, psd, freq_range=list(FREQ_RANGE), n_jobs=1)
+    return fg, meta
+
+
+def model_curve(fg, i):
+    """Full log-power model (aperiodic + peaks) for spectrum i."""
+    freqs = np.asarray(fg.data.freqs, dtype=float)
+    r = fg.results[i]
+    ap = fg.modes.aperiodic.func(freqs, *np.asarray(r.aperiodic_fit, dtype=float))
+    pp = np.asarray(r.peak_fit, dtype=float).ravel()
+    peak = fg.modes.periodic.func(freqs, *pp) if pp.size else np.zeros_like(freqs)
+    return ap + peak
+
+
+fg_strict, meta_ill = fit_group(
+    INPUT_CSV[ILLUS_DATASET], SELECTED_MODE[ILLUS_DATASET], SETTINGS_STRICT
+)
+fg_loose, _ = fit_group(
+    INPUT_CSV[ILLUS_DATASET], SELECTED_MODE[ILLUS_DATASET], SETTINGS_LOOSE
+)
+fg_wide, _ = fit_group(
+    INPUT_CSV[ILLUS_DATASET], SELECTED_MODE[ILLUS_DATASET], SETTINGS_WIDE
+)
+freqs_ill = np.asarray(fg_strict.data.freqs, dtype=float)
+n_strict = np.array([len(r.peak_fit) for r in fg_strict.results])
+n_loose = np.array([len(r.peak_fit) for r in fg_loose.results])
+n_wide = np.array([len(r.peak_fit) for r in fg_wide.results])
+examples = np.argsort(-(n_loose - n_strict))[:N_EXAMPLES]
+channels = meta_ill.index.astype(str).to_numpy()
+
+fits = [(fg_strict, LAB_STRICT), (fg_loose, LAB_LOOSE), (fg_wide, LAB_WIDE)]
+line_rows, point_rows = [], []
+for i in examples:
+    panel = f"{channels[i]}  (n {n_strict[i]}/{n_loose[i]}/{n_wide[i]})"
+    data = np.asarray(fg_strict.data.power_spectra[i], dtype=float)
+    curves = {lab: model_curve(fg_, i) for fg_, lab in fits}
+    for f, d in zip(freqs_ill, data):
+        line_rows.append((panel, f, d, "spectrum"))
+    for lab, curve in curves.items():
+        for f, v in zip(freqs_ill, curve):
+            line_rows.append((panel, f, v, lab))
+    for fg_, lab in fits:
+        pk = np.atleast_2d(np.asarray(fg_.results[i].peak_fit, dtype=float))
+        for cf in (pk[:, 0] if pk.size else []):
+            point_rows.append((panel, lab, float(cf), float(np.interp(cf, freqs_ill, curves[lab]))))
+
+KIND_ORDER = ["spectrum", LAB_STRICT, LAB_LOOSE, LAB_WIDE]
+KIND_COLORS = {
+    "spectrum": "#999999",
+    LAB_STRICT: "#2C7FB8",
+    LAB_LOOSE: "#E8546B",
+    LAB_WIDE: "#1B9E77",
+}
+line_df = pd.DataFrame(line_rows, columns=["panel", "freq", "power", "kind"])
+line_df["kind"] = pd.Categorical(line_df["kind"], categories=KIND_ORDER, ordered=True)
+point_df = pd.DataFrame(point_rows, columns=["panel", "kind", "CF", "power"])
+point_df["kind"] = pd.Categorical(point_df["kind"], categories=KIND_ORDER, ordered=True)
+
+threshold_fig = (
+    ggplot(line_df, aes("freq", "power", color="kind"))
+    + geom_vline(xintercept=band_edges(), linetype="dashed", color="#e6e6e6", size=0.25)
+    + geom_line(size=0.6)
+    + geom_point(point_df, aes("CF", "power", color="kind"), size=2.4)
+    + facet_wrap("panel", scales="free_y")
+    + scale_color_manual(values=KIND_COLORS, name="")
+    + scale_x_log10(breaks=[1, 4, 8, 13, 30, 80])
+    + labs(
+        x="frequency (Hz)",
+        y="log10 power (normalized)",
+        title=(
+            "Peak detection: strict vs loose thresholds vs wider peaks "
+            "(panel n = strict/loose/wide)"
+        ),
+    )
+    + theme_bw()
+    + theme(figure_size=(12, 7), legend_position="top", plot_title=element_text(size=11))
+)
+for ext in ("svg", "pdf", "png"):
+    threshold_fig.save(
+        fig_dir / f"peak_threshold_minheight_examples.{ext}",
+        width=12, height=7, dpi=150, verbose=False,
+    )
+threshold_fig
+```

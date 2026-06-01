@@ -1,0 +1,262 @@
+---
+title: "Per-lobe rhythmic power: clustered bootstrap, residual vs modelled (log/linear)"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+Per-lobe oscillatory power in 2 Hz bins, with a **subject-clustered** bootstrap
+(resample whole subjects/patients, never channels). Four extractors are compared
+— two *quantities* × two *extraction modes* — all derived from the DuckDB
+feature store (no refit):
+
+| | log | linear |
+|---|---|---|
+| **detrended residual** | `log_psd − ap_log` | `(PSD − PSD_ap) / ΣPSD` |
+| **modelled rhythmic** | `peak_log` (periodic model) | `PSD_ap·(10^{peak_log} − 1) / ΣPSD` |
+
+Per @castanheira2025QuantifyingRhythmicArrhythmic the **modelled** rows are the
+recommended component-independent rhythmic-power estimate; the detrended residual
+is shown for contrast (it conflates rhythmic + aperiodic). Log and linear are
+*different units* — shown side by side, not subtracted. The statistical
+comparison is **iEEG − HD-EEG** within each extractor (two-sample clustered
+bootstrap; difference map below).
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from plotnine import (
+    aes,
+    element_text,
+    facet_grid,
+    facet_wrap,
+    geom_hline,
+    geom_line,
+    geom_point,
+    geom_ribbon,
+    geom_tile,
+    geom_vline,
+    ggplot,
+    labs,
+    scale_color_manual,
+    scale_fill_gradient2,
+    scale_fill_manual,
+    theme,
+    theme_bw,
+)
+
+from pesco import config, store, crossmodal
+from pesco.bandpower import LOBE_COLORS
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DB_PATH = PROJECT_DIR / "data/interim/analysis.duckdb"
+fig_dir = Path("figures/chapter2")
+fig_dir.mkdir(parents=True, exist_ok=True)
+
+BIN_WIDTH = 2.0
+B = 2000
+LOBE_ORDER = ["Occipital", "Parietal", "Frontal", "Temporal", "Insula"]
+EXTRACTORS = {  # column in feat -> display label (ordered)
+    "resid_log": "residual · log",
+    "resid_lin": "residual · linear",
+    "mod_log": "modelled · log",
+    "mod_lin": "modelled · linear",
+}
+EXTRACTOR_ORDER = list(EXTRACTORS.values())
+PARAMS_HASH = store.params_hash(
+    config.SPECPARAM_SETTINGS, config.FREQ_RANGE, config.SELECTED_MODE
+)
+```
+
+```{python}
+#| label: load-and-extract
+con = store.open_db(DB_PATH)
+features = store.load(con, "features", PARAMS_HASH)
+channels = store.load(con, "channels", PARAMS_HASH)[
+    ["channel", "dataset", "subject", "Lobe"]
+]
+con.close()
+
+feat = features.merge(channels, on=["channel", "dataset"], how="left")
+psd = 10.0 ** feat["log_psd"]
+psd_ap = 10.0 ** feat["ap_log"]
+total = feat.assign(psd=psd).groupby(["dataset", "channel"])["psd"].transform("sum")
+
+feat["resid_log"] = feat["log_psd"] - feat["ap_log"]
+feat["resid_lin"] = (psd - psd_ap) / total
+feat["mod_log"] = feat["peak_log"]
+feat["mod_lin"] = (psd_ap * (10.0 ** feat["peak_log"] - 1.0)) / total
+```
+
+```{python}
+#| label: binned-matrices
+def binned_matrix(feat, dataset, col):
+    """channel × bin matrix for one modality/extractor, + subject/lobe per row."""
+    sub = feat.loc[feat["dataset"] == dataset, ["channel", "freq", col]]
+    wide = sub.pivot(index="channel", columns="freq", values=col).sort_index(axis=1)
+    centers, binned = crossmodal.bin_spectrum(
+        wide.columns.to_numpy(float), wide.to_numpy(float), BIN_WIDTH
+    )
+    meta = channels[channels["dataset"] == dataset].set_index("channel")
+    return {
+        "centers": centers,
+        "M": binned,
+        "subject": meta.loc[wide.index, "subject"].to_numpy(),
+        "lobe": meta.loc[wide.index, "Lobe"].to_numpy(),
+    }
+
+
+mats = {
+    (col, ds): binned_matrix(feat, ds, col)
+    for col in EXTRACTORS
+    for ds in config.DATASETS
+}
+centers = mats[("resid_log", config.DATASETS[0])]["centers"]
+```
+
+```{python}
+#| label: bootstrap-state
+state_rows = []
+for col, label in EXTRACTORS.items():
+    for ds in config.DATASETS:
+        d = mats[(col, ds)]
+        for lobe in LOBE_ORDER:
+            rows = d["lobe"] == lobe
+            if rows.sum() == 0:
+                continue
+            point, lo, hi = crossmodal.cluster_bootstrap_cell_means(
+                d["M"][rows], d["subject"][rows], B=B, seed=3
+            )
+            state_rows.append(
+                pd.DataFrame(
+                    {
+                        "extractor": label,
+                        "dataset": ds,
+                        "Lobe": lobe,
+                        "freq": d["centers"],
+                        "mean": point,
+                        "lo": lo,
+                        "hi": hi,
+                    }
+                )
+            )
+state = pd.concat(state_rows, ignore_index=True)
+state["extractor"] = pd.Categorical(state["extractor"], EXTRACTOR_ORDER, ordered=True)
+state["dataset"] = pd.Categorical(state["dataset"], config.DATASETS, ordered=True)
+state["Lobe"] = pd.Categorical(state["Lobe"], LOBE_ORDER, ordered=True)
+```
+
+```{python}
+#| label: cluster-permutation
+# Maris–Oostenveld cluster permutation across frequency, per (extractor, lobe).
+# Exchangeable unit = subject: per-bin Welch t between iEEG-patient and HD-subject
+# means, thresholded into frequency clusters whose mass is tested against a
+# subject-relabelling null. Controls family-wise error over the ~40 bins.
+perm_rows = []
+for col, label in EXTRACTORS.items():
+    a, b = mats[(col, "iEEG atlas")], mats[(col, "source HD-EEG")]
+    for lobe in LOBE_ORDER:
+        ra, rb = a["lobe"] == lobe, b["lobe"] == lobe
+        _, A = crossmodal.subject_means(a["M"][ra], a["subject"][ra])
+        _, Bm = crossmodal.subject_means(b["M"][rb], b["subject"][rb])
+        if A.shape[0] < 2 or Bm.shape[0] < 2:
+            continue
+        res = crossmodal.cluster_permutation_freq(A, Bm, n_perm=2000, seed=3)
+        perm_rows.append(
+            pd.DataFrame(
+                {
+                    "extractor": label,
+                    "Lobe": lobe,
+                    "freq": a["centers"],
+                    "t": res["t_obs"],
+                    "significant": res["sig"],
+                }
+            )
+        )
+diff = pd.concat(perm_rows, ignore_index=True)
+diff["extractor"] = pd.Categorical(diff["extractor"], EXTRACTOR_ORDER, ordered=True)
+diff["Lobe"] = pd.Categorical(diff["Lobe"], LOBE_ORDER, ordered=True)
+diff.to_csv(
+    PROJECT_DIR / "data/interim/specparam_model_selection/"
+    "lobe_residual_rhythmic_diff_clusterperm.csv",
+    index=False,
+)
+```
+
+## State spectra — per-lobe mean with subject-clustered 95% CI
+
+```{python}
+#| label: fig-state
+#| output: true
+state_fig = (
+    ggplot(state, aes("freq", "mean", color="Lobe", fill="Lobe"))
+    + geom_hline(yintercept=0, color="#bbbbbb", size=0.3)
+    + geom_ribbon(aes(ymin="lo", ymax="hi"), alpha=0.18, color="none")
+    + geom_line(size=0.7)
+    + facet_grid("extractor ~ dataset", scales="free_y")
+    + scale_color_manual(values=LOBE_COLORS, name="lobe")
+    + scale_fill_manual(values=LOBE_COLORS, guide=None)
+    + labs(
+        x="frequency (Hz, 2-Hz bins)",
+        y="oscillatory power (extractor units)",
+        title="Per-lobe oscillatory power (subject-clustered bootstrap mean ± 95% CI)",
+    )
+    + theme_bw()
+    + theme(figure_size=(10, 11), plot_title=element_text(size=11))
+)
+for ext in ("svg", "pdf", "png"):
+    state_fig.save(
+        fig_dir / f"lobe_oscillatory_state_bootstrap.{ext}",
+        width=10, height=11, dpi=150, verbose=False,
+    )
+state_fig
+```
+
+## Cross-modal difference (iEEG − HD-EEG): frequency cluster permutation
+
+```{python}
+#| label: fig-diff
+#| output: true
+lim = float(np.nanpercentile(np.abs(diff["t"]), 99))
+diff_fig = (
+    ggplot(diff, aes("freq", "Lobe", fill="t"))
+    + geom_tile()
+    + geom_point(
+        diff[diff["significant"]], aes("freq", "Lobe"), size=0.5, color="black"
+    )
+    + facet_wrap("extractor", ncol=1)
+    + scale_fill_gradient2(
+        low="#2166AC", mid="white", high="#B2182B",
+        midpoint=0, limits=(-lim, lim), name="Welch t\n(iEEG − HD)",
+    )
+    + labs(
+        x="frequency (Hz, 2-Hz bins)",
+        y="",
+        title="Cross-modal difference (dots: frequency clusters, permutation p < 0.05)",
+    )
+    + theme_bw()
+    + theme(figure_size=(9, 11), plot_title=element_text(size=11))
+)
+for ext in ("svg", "pdf", "png"):
+    diff_fig.save(
+        fig_dir / f"lobe_oscillatory_diff_bootstrap.{ext}",
+        width=9, height=11, dpi=150, verbose=False,
+    )
+diff_fig
+```

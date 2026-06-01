@@ -1,0 +1,377 @@
+---
+title: "Aperiodic model selection (alt peak-fit settings): knee vs fixed bootstrap CIs"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+Re-run of the knee-vs-fixed BIC model comparison with a **looser, wider peak-fit
+configuration**, to check whether the per-modality aperiodic-mode choice is
+stable to the peak settings. Everything else matches
+`bic_knee_vs_fixed_bootstrap_ci.qmd`: each normalized channel PSD is fit twice
+(fixed and knee), scored with the Ameen-style BIC
+[@ameen2025TemporallyResolvedAnalyses]
+$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
+and the per-channel $\Delta\mathrm{BIC}=\mathrm{BIC}_\mathrm{knee}-
+\mathrm{BIC}_\mathrm{fixed}$ is summarised with both a naive channel-level and an
+honest subject-clustered percentile bootstrap. Inputs are the same verified
+normalized-PSD tables; only the specparam peak settings differ:
+
+```{python}
+#| label: settings
+#| echo: true
+ALT_SPECPARAM_SETTINGS = dict(
+    peak_width_limits=[1, 10],
+    max_n_peaks=8,
+    min_peak_height=0.15,
+    peak_threshold=2.0,
+)
+```
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import scipy.io as sio
+from specparam import SpectralGroupModel
+from IPython.display import Markdown
+from plotnine import (
+    aes,
+    element_text,
+    facet_grid,
+    geom_errorbarh,
+    geom_point,
+    geom_vline,
+    ggplot,
+    labs,
+    theme,
+    theme_bw,
+)
+
+seed = 3
+B = 10000
+CI = 95
+FREQ_RANGE = (1.0, 80.0)
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DATA_PATH_IEEG = PROJECT_DIR / "data/Frauscher2018"
+specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
+# Outputs go to a separate folder so the canonical model-selection files stay put.
+out_dir = PROJECT_DIR / "data/interim/specparam_model_selection_alt_peakfit"
+out_dir.mkdir(parents=True, exist_ok=True)
+fig_dir = Path("figures")
+fig_dir.mkdir(exist_ok=True)
+
+INPUT_CSV = {
+    "iEEG atlas": specparam_dir / "specparam_input_normalized_psd_ieeg.csv",
+    "source HD-EEG": specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv",
+}
+```
+
+```{python}
+#| label: fit-bic
+def load_psd_csv(path):
+    """Split a saved normalized-PSD table into (psd_matrix, freqs, channel_names)."""
+    df = pd.read_csv(path, index_col=0)
+    num_cols = [c for c in df.columns if str(c).replace(".", "", 1).isdigit()]
+    freqs = np.array([float(c) for c in num_cols])
+    psd = df[num_cols].to_numpy(dtype=float)
+    return psd, freqs, df.index.astype(str).to_numpy()
+
+
+def fit_pair_bic(psd, freqs, channels, dataset, settings, freq_range=FREQ_RANGE):
+    """Fit fixed and knee modes; Ameen-style per-channel BIC, R², MSE, MAE."""
+    rows = []
+    for mode in ("fixed", "knee"):
+        fg = SpectralGroupModel(**settings, aperiodic_mode=mode, verbose=False)
+        fg.fit(freqs, psd, freq_range=list(freq_range), n_jobs=1)
+        ff = np.asarray(fg.data.freqs, dtype=float)
+        n = ff.size
+        for i, (channel, r) in enumerate(zip(channels, fg.results)):
+            ap = fg.modes.aperiodic.func(ff, *np.asarray(r.aperiodic_fit, dtype=float))
+            pp = np.asarray(r.peak_fit, dtype=float).ravel()
+            peak = fg.modes.periodic.func(ff, *pp) if pp.size else 0.0
+            residual = np.asarray(fg.data.power_spectra[i], dtype=float) - (ap + peak)
+            mse = float(np.mean(residual**2))
+            n_p = int(len(r.aperiodic_fit) + np.asarray(r.peak_fit).size)
+            bic = n * np.log(max(mse, np.finfo(float).tiny)) + n_p * np.log(n)
+            rows.append(
+                {
+                    "dataset": dataset,
+                    "channel": channel,
+                    "aperiodic_model": mode,
+                    "bic": bic,
+                    "gof_rsquared": r.metrics.get("gof_rsquared", np.nan),
+                    "error_mae": r.metrics.get("error_mae", np.nan),
+                    "mse_log10": mse,
+                    "n_peaks": int(len(r.peak_fit)),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+model_values = pd.concat(
+    [
+        fit_pair_bic(*load_psd_csv(path), dataset, ALT_SPECPARAM_SETTINGS)
+        for dataset, path in INPUT_CSV.items()
+    ],
+    ignore_index=True,
+)
+model_values.to_csv(
+    out_dir / "specparam_fixed_knee_model_values_by_channel.csv", index=False
+)
+```
+
+```{python}
+#| label: bootstrap-defs
+def bic_evidence(delta_bic):
+    """Raftery-style evidence categories for an absolute BIC difference."""
+    delta_bic = abs(float(delta_bic))
+    if delta_bic < 2:
+        return "weak"
+    if delta_bic < 6:
+        return "positive"
+    return "strong"
+
+
+def add_subject(paired, ieeg_matfile=DATA_PATH_IEEG / "WakefulnessMatlabFile.mat"):
+    """Attach the subject/patient cluster id to each channel."""
+    paired = paired.copy()
+    paired["subject"] = pd.NA
+
+    is_hd = paired["dataset"] == "source HD-EEG"
+    paired.loc[is_hd, "subject"] = (
+        paired.loc[is_hd, "channel"].astype(str).str.split("_").str[0]
+    )
+
+    mat = sio.loadmat(ieeg_matfile, variable_names=["ChannelName", "Patient"])
+    ch_names = [str(x[0][0]) for x in mat["ChannelName"]]
+    patients = mat["Patient"].ravel()
+    patient_of = {c: f"ieeg_p{p}" for c, p in zip(ch_names, patients)}
+    is_ie = paired["dataset"] == "iEEG atlas"
+    paired.loc[is_ie, "subject"] = (
+        paired.loc[is_ie, "channel"].astype(str).map(patient_of)
+    )
+
+    assert paired["subject"].notna().all(), "unmapped channels"
+    return paired
+
+
+def paired_metrics(model_values):
+    """Per-channel paired fixed/knee metrics: ΔBIC, ΔR², MSE ratio, + subject."""
+    piv = model_values.pivot_table(
+        index=["dataset", "channel"],
+        columns="aperiodic_model",
+        values=["bic", "gof_rsquared", "mse_log10"],
+        aggfunc="first",
+    ).reset_index()
+    piv.columns = ["_".join(c).strip("_") for c in piv.columns]
+    piv = piv.dropna(subset=["bic_fixed", "bic_knee"])
+    piv["delta_bic"] = piv["bic_knee"] - piv["bic_fixed"]
+    piv["delta_r2"] = piv["gof_rsquared_knee"] - piv["gof_rsquared_fixed"]
+    piv["mse_ratio"] = piv["mse_log10_knee"] / piv["mse_log10_fixed"]
+    return add_subject(piv)
+
+
+def _percentiles(boot, ci):
+    lo, hi = (100 - ci) / 2, 100 - (100 - ci) / 2
+    return float(np.percentile(boot, lo)), float(np.percentile(boot, hi))
+
+
+def bootstrap_channel(values, fn, B=B, ci=CI, seed=seed):
+    """Naive channel-level percentile bootstrap of statistic ``fn``."""
+    v = np.asarray(values, dtype=float)
+    n = v.size
+    rng = np.random.default_rng(seed)
+    boot = np.array([fn(v[rng.integers(0, n, n)]) for _ in range(B)])
+    lo, hi = _percentiles(boot, ci)
+    return float(fn(v)), lo, hi
+
+
+def bootstrap_cluster(values, subjects, fn, B=B, ci=CI, seed=seed):
+    """Subject-clustered percentile bootstrap: resample whole subjects."""
+    v = np.asarray(values, dtype=float)
+    s = np.asarray(subjects)
+    uniq = np.unique(s)
+    groups = {u: v[s == u] for u in uniq}
+    rng = np.random.default_rng(seed)
+    boot = np.array(
+        [
+            fn(np.concatenate([groups[u] for u in rng.choice(uniq, uniq.size, True)]))
+            for _ in range(B)
+        ]
+    )
+    lo, hi = _percentiles(boot, ci)
+    return float(fn(v)), lo, hi
+
+
+STAT_DEFS = [
+    ("median_delta_bic", "delta_bic", np.median),
+    ("mean_delta_bic", "delta_bic", np.mean),
+    ("median_delta_r2", "delta_r2", np.median),
+    ("median_mse_reduction_pct", "mse_ratio", lambda x: (1.0 - np.median(x)) * 100.0),
+]
+
+
+def bootstrap_summary(paired):
+    """Point estimate + channel CI + subject-clustered CI for each statistic."""
+    rows = []
+    for dataset, g in paired.groupby("dataset", observed=True):
+        for name, col, fn in STAT_DEFS:
+            point, c_lo, c_hi = bootstrap_channel(g[col], fn)
+            _, s_lo, s_hi = bootstrap_cluster(g[col], g["subject"], fn)
+            rows.append(
+                {
+                    "dataset": dataset,
+                    "statistic": name,
+                    "n_channels": int(len(g)),
+                    "n_subjects": int(g["subject"].nunique()),
+                    "point": point,
+                    "channel_ci_lo": c_lo,
+                    "channel_ci_hi": c_hi,
+                    "subject_ci_lo": s_lo,
+                    "subject_ci_hi": s_hi,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def fit_quality_table(model_values):
+    """Descriptive median fit metrics per dataset and aperiodic mode."""
+    return (
+        model_values.groupby(["dataset", "aperiodic_model"], observed=True)
+        .agg(
+            median_r2=("gof_rsquared", "median"),
+            median_mse_log10=("mse_log10", "median"),
+            median_mae=("error_mae", "median"),
+            median_n_peaks=("n_peaks", "median"),
+        )
+        .reset_index()
+    )
+
+
+def build_forest_plot(summary):
+    """Forest plot of ΔBIC point estimates with channel vs subject CIs."""
+    d = summary[summary["statistic"].isin(["median_delta_bic", "mean_delta_bic"])]
+    long = pd.concat(
+        [
+            d.assign(ci_type="channel", ci_lo=d["channel_ci_lo"], ci_hi=d["channel_ci_hi"]),
+            d.assign(ci_type="subject", ci_lo=d["subject_ci_lo"], ci_hi=d["subject_ci_hi"]),
+        ],
+        ignore_index=True,
+    )
+    long["statistic"] = long["statistic"].map(
+        {"median_delta_bic": "median", "mean_delta_bic": "mean"}
+    )
+    return (
+        ggplot(long, aes("point", "dataset"))
+        + geom_vline(xintercept=0, linetype="dashed", color="grey")
+        + geom_errorbarh(aes(xmin="ci_lo", xmax="ci_hi"), height=0.2)
+        + geom_point(size=2.5)
+        + facet_grid("statistic ~ ci_type", scales="free_x")
+        + labs(
+            x="ΔBIC (knee − fixed),  negative favours knee",
+            y="",
+            title=f"Alt peak-fit: bootstrap {CI}% CI of per-channel ΔBIC (B={B:,})",
+        )
+        + theme_bw()
+        + theme(plot_title=element_text(size=10))
+    )
+```
+
+```{python}
+#| label: compute
+paired = paired_metrics(model_values)
+bic_bootstrap = bootstrap_summary(paired)
+bic_fit_quality = fit_quality_table(model_values)
+
+bic_bootstrap.to_csv(out_dir / "specparam_fixed_knee_bootstrap_ci.csv", index=False)
+bic_fit_quality.to_csv(out_dir / "specparam_fixed_knee_fit_quality.csv", index=False)
+```
+
+## Selected model per modality (alt peak-fit)
+
+```{python}
+#| label: selected-mode-text
+#| output: true
+dbic = bic_bootstrap.set_index(["dataset", "statistic"])
+lines = []
+for dataset in ["iEEG atlas", "source HD-EEG"]:
+    med = dbic.loc[(dataset, "median_delta_bic")]
+    mean = dbic.loc[(dataset, "mean_delta_bic")]
+    choice = "knee" if med["point"] < 0 else "fixed"
+    lines.append(
+        f"- **{dataset}** → **{choice}** "
+        f"({int(med['n_subjects'])} subjects, {int(med['n_channels'])} channels). "
+        f"median ΔBIC = {med['point']:.1f} "
+        f"(subject CI [{med['subject_ci_lo']:.1f}, {med['subject_ci_hi']:.1f}]); "
+        f"mean ΔBIC = {mean['point']:.1f} "
+        f"(subject CI [{mean['subject_ci_lo']:.1f}, {mean['subject_ci_hi']:.1f}])."
+    )
+Markdown(
+    "Negative ΔBIC favours knee; the mode is chosen by the sign of the median. "
+    f"CIs are subject-clustered ({CI}% percentile bootstrap, B={B:,}).\n\n"
+    + "\n".join(lines)
+)
+```
+
+## Fit quality (descriptive)
+
+```{python}
+#| label: fit-quality-table
+#| output: true
+bic_fit_quality.round(4)
+```
+
+## ΔBIC and effect-size summary
+
+```{python}
+#| label: bootstrap-summary-table
+#| output: true
+bic_bootstrap.assign(
+    point=lambda d: d["point"].round(3),
+    channel_ci_lo=lambda d: d["channel_ci_lo"].round(3),
+    channel_ci_hi=lambda d: d["channel_ci_hi"].round(3),
+    subject_ci_lo=lambda d: d["subject_ci_lo"].round(3),
+    subject_ci_hi=lambda d: d["subject_ci_hi"].round(3),
+)[
+    [
+        "dataset",
+        "statistic",
+        "n_channels",
+        "n_subjects",
+        "point",
+        "channel_ci_lo",
+        "channel_ci_hi",
+        "subject_ci_lo",
+        "subject_ci_hi",
+    ]
+]
+```
+
+```{python}
+#| label: forest-plot
+#| output: true
+forest = build_forest_plot(bic_bootstrap)
+for ext in ("svg", "pdf", "png"):
+    forest.save(
+        fig_dir / f"bic_knee_vs_fixed_alt_peakfit.{ext}",
+        width=7, height=4, dpi=150, verbose=False,
+    )
+forest
+```

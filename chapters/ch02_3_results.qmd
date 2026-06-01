@@ -17,6 +17,8 @@ peak-detection tests.
 Applying the same procedure to the HD-EEG source-reconstructed data yielded 11 spectral groups, but their structure differed  from iEEG. There were seven clusters with with peak in  alpha 8-12 Hz dufferentiated by the amplitude of athe peak, indicating that the clustering over-segmented a single alpha-dominated continuum rather than resolving distinct bands, No distinct theta or beta clusters emerged (the band labels along the top axis are frequency guides, not cluster identities), and the sharp notch at 50 Hz reflects line-noise removal. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart. @fig-ieeg-clusters presents the two clustering solutions side by side.
 
 The cluster " band peak frequency" is the argmax of each cluster's spectrum relative to the no-peak baseline, which labels a cluster by its strongest oscillatory deviation and is only meaningful where a cluster carries a genuine peak. In the HD-EEG data only the δ and α clusters showed a clear bump above the aperiodic background; the remaining high-frequency clusters were distinguished not by a gamma oscillation but by a shallower aperiodic slope, producing an elevated broadband tail. For these clusters the elevated gamma shouldnt be read as genuine gamma oscillations. Whereas the iEEG atlas resolved a full bank of band-specific oscillatory clusters (δ→γ), the HD-EEG cluster structure was therefore dominated by alpha power and aperiodic slope.. @fig-ieeg-clusters presents these clustering results side by side.
+<!-- REVIEW: duplicate figure callout — line 17 already says "@fig-ieeg-clusters presents the two clustering solutions side by side." Drop one. Classic LLM duplication. Also stray ".." double period. -->
+
 
 ![Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the seven iEEG clusters and Panel B shows the 11 HD-EEG clusters. In both modalities, one no-peak cluster is visible. HD-EEG shows more clusters, most of them distinguished only by the average power of the alpha peak. In the iEEG clusters, the knee is visible; reconstructed sources have more straightforward 1/f-like characteristics.](figures/chapter2/combined_clusters_psd.svg){#fig-ieeg-clusters width="100%" column="page"}
 
@@ -33,6 +35,8 @@ Lobar differences presented as spectrum are presented below.
 The cluster solution and the no-peak set were themselves sensitive to preprocessing and to the chosen fitting range: small changes in the upper or lower bound altered both the number of clusters and the membership and shape of the no-peak reference set (especially in hd eeg reconstructed sources where some configuratrion werent able to find the so called no-peak set ).
 
 The 22 frequency intervals of @frauscher2018AtlasNormalIntracranial were defined so that each interval contained at least 4% of the total mean power in iEEG. When this data-driven rule was applied to the source-reconstructed HD-EEG spectra it failed to reproduce that structure: it yielded 21 intervals rather than 22 and, critically, placed five separate intervals above 31.75 Hz where the original atlas defines a single 31.75-80 Hz interval. This gamma over-segmentation is a consequence of the normalisation step. Because each channel spectrum is normalised to unit in-band integral, only spectral shape is retained and absolute power is discarded; channels then contribute to the mean in proportion to how their unit mass is distributed across frequency rather than to their signal strength. Source-reconstructed spectra have a shallower aperiodic slope and a relatively flat high-frequency noise floor, so a larger share of each channel's mass falls at high frequency, and low-SNR channels with weak alpha are the flattest and contribute the most relative gamma power. The averaged normalised spectrum is thus inflated above ~30 Hz and the cumulative-4% rule carves this noise-dominated tail into spurious narrow intervals. A robustness check confirmed the mechanism: replacing the mean with a median reference spectrum and restricting derivation to the physiological band (≤45 Hz) collapsed the spurious gamma intervals.
+<!-- REVIEW: "confirmed the mechanism" overstates. A robustness check is consistent with the mechanism; it doesn't confirm it. Soften to "supports"/"is consistent with". -->
+
 
 For this reason the 4% condition does not transfer to source-reconstructed data, and data-driven HD-EEG intervals are not directly comparable with the iEEG atlas. To preserve cross-modal comparability, the fixed 22 intervals of @frauscher2018AtlasNormalIntracranial were retained for both modalities in all regional peak-detection tests (@fig-hdeeg-reg_dfiff).
 
@@ -62,7 +66,8 @@ Having established the uncorrected picture, we ask whether separating periodic f
 
 #### Model-fit quality and low-quality sources
 
-Both aperiodic modes were fit to every channel spectrum and compared before any band averaging, separating raw fit quality from penalised model selection (@tbl-model-selection). In the intracranial atlas the knee gave a large fit improvement — median $R^2$ rose from 0.93 (fixed) to 0.98 (knee) and per-channel MSE fell by 77% — so it is decisively preferred: median $\Delta\mathrm{BIC}$ (knee − fixed) = −225 (subject-clustered 95% CI [−242, −208]), with 96% of the 1,772 channels (106 patients) strongly favouring the knee. In source HD-EEG the knee improved fit only marginally: median $R^2$ rose from 0.942 to 0.948 ($\Delta R^2 = 0.005$) and MSE fell by ~7%. Its per-channel $\Delta\mathrm{BIC}$ was nonetheless formally 'strong' (median −7.7 — a Bayes factor of ≈50:1, or ~98% posterior probability for the knee per spectrum), but this is an artefact of the $N\log(\mathrm{MSE})$ term: with $N = 159$ fitted bins, even a 7% MSE reduction clears the Raftery 'strong' threshold once the single extra-parameter penalty is paid.
+Both aperiodic modes were fit to every channel spectrum and compared before any band averaging, separating raw fit quality from penalised model selection (@tbl-model-selection). In the intracranial atlas the knee gave a large fit improvement — median $R^2$ rose from 0.93 (fixed) to 0.98 (knee) and per-channel MSE fell by 77% — so it is decisively preferred: <!-- REVIEW: "decisively preferred" — numbers carry it (96%, ΔBIC −225), but the adverb editorialises. Consider plain "preferred". -->
+median $\Delta\mathrm{BIC}$ (knee − fixed) = −225 (subject-clustered 95% CI [−242, −208]), with 96% of the 1,772 channels (106 patients) strongly favouring the knee. In source HD-EEG the knee improved fit only marginally: median $R^2$ rose from 0.942 to 0.948 ($\Delta R^2 = 0.005$) and MSE fell by ~7%. Its per-channel $\Delta\mathrm{BIC}$ was nonetheless formally 'strong' (median −7.7 — a Bayes factor of ≈50:1, or ~98% posterior probability for the knee per spectrum), but this is an artefact of the $N\log(\mathrm{MSE})$ term: with $N = 159$ fitted bins, even a 7% MSE reduction clears the Raftery 'strong' threshold once the single extra-parameter penalty is paid.
 
 ```{=typst}
 #figure(
@@ -100,25 +105,104 @@ The HD-EEG preference is also fragile. With only 19 subjects, resampling channel
 
 #### Per-band peak prevalence from specparam
 
-<!-- PLACEHOLDER: cross-modal comparison of peak prevalence per band and region (specparam peaks). Where do the two modalities agree/disagree once peaks are modelled explicitly rather than read off the raw PSD. -->
+Once oscillations are modelled explicitly, peak prevalence — the fraction of a region's channels carrying at least one fitted peak in a band — diverges sharply between modalities (@fig-peak-prevalence). Source HD-EEG is dominated by alpha: mean prevalence across regions is 0.63 in alpha but only 0.11 in theta, 0.05 in gamma and 0.01 in delta. The iEEG atlas is broader, with substantial beta (0.40), gamma (0.26) and alpha (0.24) prevalence. The difference map (HD − iEEG) is strongly positive in alpha — HD detects alpha peaks far more often, especially in posterior regions — and negative across beta and gamma, where iEEG detects high-frequency peaks that the source fit does not recover.
+
+Cross-modal agreement of the regional prevalence *pattern* (Spearman across the 38 bilateral regions) is confined to the low and mid bands: alpha $\rho = 0.60$ and beta $\rho = 0.47$, against delta $\rho = 0.04$, theta $\rho = -0.07$ and gamma $\rho = -0.25$ (@fig-prevalence-scatter). In alpha the points sit above the identity line — HD detects alpha in more regions than iEEG — yet the two modalities still rank regions consistently. This mirrors the uncorrected relative-band-power result (alpha strongest, gamma anti-correlated), now with the aperiodic background modelled out rather than carried in the power.
+
+Because modelled power exists only where a peak is fitted, prevalence is also the peak-detection rate and must be read alongside the amplitude and centre-frequency descriptors. Mean peaks per channel were similar across modalities (iEEG 1.45, HD 1.37 under the main settings), but 99.7% of iEEG channels passed the $R^2 > 0.9$ screen against only 74.0% of HD channels, with the missing HD peaks concentrated in the high-frequency bands where the source spectrum is flattest.
+
+![Per-band peak prevalence by region and modality (specparam peaks, BIC-selected aperiodic mode). Regions are grouped by lobe; cell colour is the fraction of a region's channels with at least one peak in the band.](figures/chapter2/peak_prevalence_heatmap.svg){#fig-peak-prevalence width="100%" column="page"}
+
+![Prevalence difference (source HD-EEG − iEEG atlas). Blue: HD detects the band more often (strong in alpha); red: iEEG more often (beta/gamma).](figures/chapter2/peak_prevalence_difference_heatmap.svg){#fig-prevalence-diff width="70%"}
+
+![Cross-modal agreement of regional peak prevalence, one facet per band. Each point is a bilateral region; dashed line is identity; strip labels give the per-band Spearman $\rho$ across regions.](figures/chapter2/peak_prevalence_agreement_scatter.svg){#fig-prevalence-scatter width="100%" column="page"}
+
+**Modelled power.** <!-- REVIEW: "tells the same story in amplitude that prevalence tells in detection" — LLM-style parallelism/cliché. State the finding directly. -->
+The amplitude of the highest peak per band (median across the channels that carry a peak) tells the same story in amplitude that prevalence tells in detection: posterior alpha carries the largest modelled power in HD-EEG, while in iEEG the amplitude is spread across beta in frontal and central regions (@fig-modelled-power).
+
+![Modelled band power by region and modality: median amplitude (log-power height above the aperiodic component) of the highest peak in each band, over channels with a detected peak.](figures/chapter2/modelled_power_heatmap.svg){#fig-modelled-power width="100%" column="page"}
+
+**Centre frequency and dominant rhythm.** Because canonical-band assignment is sensitive to peaks near a band edge, we also examined the fitted centre frequencies directly. The HD-EEG centre-frequency distribution is a sharp alpha mode at ~10 Hz, sitting squarely against the 8 and 13 Hz band edges, whereas iEEG peaks are broadly distributed with an additional high-gamma cluster near 70 Hz (@fig-centre-freq). The per-region dominant peak frequency — the centre frequency of the single highest-amplitude peak — is alpha-locked across almost all regions in HD-EEG but scatters into beta and gamma for several frontal and temporal regions in iEEG (@fig-dominant-dumbbell). The full per-region distribution of peak frequencies confirms a narrow posterior alpha ridge in HD against broader, multimodal iEEG ridges (@fig-region-ridges).
+
+![Distribution of fitted peak centre frequencies per modality, against the canonical band edges (dashed). HD-EEG shows a single sharp ~10 Hz alpha mode; iEEG is broad with a high-gamma cluster.](figures/chapter2/peak_centre_frequency_distribution.svg){#fig-centre-freq width="80%"}
+
+![Dominant peak frequency per region: the centre frequency of the highest-amplitude peak, connecting iEEG (blue) and source HD-EEG (red) for each region. Regions follow the lobe order and colouring of the heatmaps.](figures/chapter2/dominant_frequency_dumbbell.svg){#fig-dominant-dumbbell width="70%"}
+
+![Per-region distribution of peak centre frequencies (histogram ridgeline, normalised per region), filled by lobe. HD-EEG (right) is a narrow posterior alpha ridge; iEEG (left) is broader and multimodal.](figures/chapter2/region_frequency_ridges.svg){#fig-region-ridges width="100%" column="page"}
+
+Pooling all regions, <!-- REVIEW: "makes the contrast immediate" — LLM flourish. Cut or replace with neutral "shows". -->
+the joint distribution of peak amplitude and centre frequency (@fig-size-freq) makes the contrast immediate: HD-EEG peaks form one dense high-amplitude alpha mode at ~10 Hz with a sparse low-amplitude tail above it, whereas iEEG peaks spread along the frequency axis at moderate amplitude, with a distinct beta/low-gamma body and a high-gamma cluster near 70 Hz.
+
+![Peak size (amplitude) vs centre frequency, binned density per modality (all regions pooled). HD-EEG is a single high-amplitude alpha mode; iEEG is spread across frequency with a high-gamma cluster.](figures/chapter2/peak_size_vs_frequency.svg){#fig-size-freq width="100%" column="page"}
+
+Jointly resolving peak amplitude and centre frequency per lobe (@fig-size-freq-lobe) confirms that the two descriptors are not redundant. In HD-EEG the per-channel peak density concentrates into a single tall alpha column in occipital and parietal lobes — high amplitude at ~10 Hz — and thins sharply elsewhere. In iEEG the density is spread along the frequency axis at moderate amplitude, with frontal and temporal lobes carrying beta and low-gamma peaks that have no HD-EEG counterpart. Normalising to peaks per channel makes the lobes comparable despite their different channel counts, and shows the cross-modal divergence is one of *where in the spectrum* rhythms occur, not merely how strong they are.
+
+![Peak size (amplitude) vs centre frequency, binned density per lobe (rows) and modality (columns), normalised to peaks per channel so lobes of different size are comparable. HD-EEG concentrates in a posterior alpha column; iEEG spreads across frequency, with frontal/temporal beta-gamma.](figures/chapter2/peak_size_vs_frequency_by_lobe.svg){#fig-size-freq-lobe width="100%" column="page"}
 
 #### Cross-modal overlap before and after aperiodic correction
 
-<!-- PLACEHOLDER: the H2 result proper. Report the change in band-overlap after subtracting the aperiodic component, per band and region, against the uncorrected overlap from 3.1.2. State whether overlap improves (as Afnan 2023 found for MEG) or degrades, and in which bands/regions. Log-ratio sensitivity comparison. -->
+Removing the aperiodic component changes the cross-modal picture, and the change depends on how the oscillatory residual is defined. We computed the per-lobe oscillatory spectrum in 2 Hz bins under four extractors — the detrended residual and the modelled (specparam-peak) power, each in a log and a linear form — and compared modalities with a subject-clustered bootstrap (per-lobe mean ± 95% CI, @fig-residual-state) and a frequency cluster-permutation test (Maris-Oostenveld, resampling whole subjects) that controls the family-wise error across frequency (@fig-residual-diff).
+
+The **modelled** rhythmic power — the measure that does not depend on the accuracy of the aperiodic fit — shows iEEG and HD-EEG differing in a contiguous beta/low-gamma cluster (~25-48 Hz, iEEG higher) across most lobes, and a parietal alpha cluster (~10-12 Hz) where HD-EEG is higher; occipital high-gamma is again higher in iEEG. The **detrended residual** reproduces the beta excess but adds a broad high-frequency cluster (~55-80 Hz) in which HD-EEG appears systematically higher than iEEG across every lobe. This high-frequency block is present in the residual but absent from the modelled measure, identifying it as aperiodic-tail/noise leakage rather than a rhythm — exactly the conflation that @castanheira2025QuantifyingRhythmicArrhythmic predict for detrended spectra.
+<!-- REVIEW: "exactly the conflation that ... predict" overstates the match. "the kind of conflation ... describe" is safer. -->
+ The log and linear residuals agree on the sign and location of the clusters but differ in magnitude, as expected from their different units.
+
+We therefore read the modelled-peak comparison as the substantive cross-modal result: the rhythms that survive aperiodic separation correspond across modalities chiefly in the alpha band, with a beta/low-gamma offset, whereas the apparent high-frequency cross-modal difference in the subtraction residual is an artefact of the aperiodic background rather than a difference in oscillatory activity.
+
+![Per-lobe oscillatory power in 2 Hz bins (subject-clustered bootstrap mean ± 95% CI), for the four extractors (rows: detrended residual / modelled, in log and linear form) and the two modalities (columns). Lines coloured by lobe.](figures/chapter2/lobe_oscillatory_state_bootstrap.svg){#fig-residual-state width="100%" column="page"}
+
+![Cross-modal difference (iEEG − HD-EEG) per extractor: Welch $t$ over lobe × 2 Hz bin; black dots mark frequency clusters significant under subject-level permutation ($p<0.05$, family-wise controlled). The high-frequency HD-higher cluster appears only in the residual, not the modelled, rows.](figures/chapter2/lobe_oscillatory_diff_bootstrap.svg){#fig-residual-diff width="80%" column="page"}
 
 
-### H3: Stability of aperiodic estimates
+### Stability of aperiodic estimates
 
 Finally, we ask how far the aperiodic estimates themselves depend on the modelling choices made to obtain them.
 
 #### Knee vs fixed
 
-<!-- PLACEHOLDER: per-modality Pearson/Spearman between knee- and fixed-model exponents across channels. If relevant, whether the fixed exponent tracks knee frequency (cf. Ameen 2025). -->
+<!-- REVIEW: "exactly as the model-selection result predicts" — overstated certainty. "consistent with the model-selection result" fits the descriptive register. -->
+The two aperiodic modes return very different exponents in the iEEG atlas and nearly identical ones in source HD-EEG, exactly as the model-selection result predicts. In iEEG the knee exponent (median $\chi = 3.30$) is far steeper than the fixed exponent (median $\chi = 1.94$), and the two correlate only moderately across channels (Pearson $r = 0.49$, Spearman $\rho = 0.45$): forcing a single line through a spectrum that has a genuine knee biases the exponent low and does so by a channel-specific amount, so the fixed estimate is not a faithful rescaling of the knee estimate. In HD-EEG, where the knee is essentially absent, the two exponents coincide (median 0.94 vs 0.93) and agree tightly across channels ($r = 0.88$, $\rho = 0.92$). Colouring each channel by its fitted knee frequency (@fig-knee-vs-fixed) shows the iEEG gap widens where the knee sits higher, consistent with the fixed exponent partly absorbing the knee [@ameen2025TemporallyResolvedAnalyses]. The exponent one reports in iEEG is therefore a modelling choice, not a fixed property of the spectrum — reinforcing the per-modality mode selection.
+
+![Knee- vs fixed-model aperiodic exponent per channel, one panel per modality (dashed line = identity). Points coloured by the fitted knee frequency. iEEG exponents diverge between modes; HD-EEG exponents coincide.](figures/chapter2/h3_knee_vs_fixed_exponent.svg){#fig-knee-vs-fixed width="100%" column="page"}
 
 #### Fitting range
 
-<!-- PLACEHOLDER: per-channel agreement between 1-80 and 1-45 Hz fixed-mode exponents; magnitude and direction of the range effect; whether uniform or ROI-dependent. -->
+The upper edge of the fit window matters mainly for iEEG. Narrowing the fixed-mode range from 1-80 Hz to 1-45 Hz lowered the iEEG exponent by a mean $\Delta\chi = +0.47$ (median 1.94 → 1.50), a large and consistent shift: the two estimates correlate well in rank ($r = 0.77$, $\rho = 0.76$) but sit off the identity line, and the Bland-Altman plot [@bland1986StatisticalMethodsAssessing] (@fig-range-ba) shows the difference is an approximately constant positive offset rather than noise — the steeper high-frequency portion of the iEEG spectrum pulls the 1-80 Hz exponent up. In HD-EEG the range had essentially no effect ($\Delta\chi = -0.04$; $r = 0.91$, $\rho = 0.93$), because the source spectrum is already close to a single power law over the whole band. The per-region map of $\Delta\chi$ (@fig-range-region) shows the iEEG shift is broadly distributed rather than confined to one lobe. Cross-modal exponent comparisons must therefore hold the fit range fixed, and are only meaningful below ~45 Hz where the two modalities behave comparably.
+
+![Fitting-range agreement of the fixed exponent: χ over 1-45 Hz vs 1-80 Hz, per modality (dashed = identity).](figures/chapter2/h3_fitting_range_scatter.svg){#fig-range-scatter width="100%" column="page"}
+
+![Bland-Altman of the range effect: mean exponent vs $\Delta\chi = \chi_{1\text{-}80} - \chi_{1\text{-}45}$. The iEEG shift is a near-constant positive offset; HD-EEG is centred on zero.](figures/chapter2/h3_fitting_range_bland_altman.svg){#fig-range-ba width="100%" column="page"}
+
+![Per-region mean range shift $\Delta\chi$. The iEEG offset is broadly distributed across regions; HD-EEG is near zero everywhere.](figures/chapter2/h3_fitting_range_region_delta.svg){#fig-range-region width="45%"}
 
 #### IRASA vs specparam
 
-<!-- PLACEHOLDER: Pearson/Spearman between IRASA (2-40 Hz) and specparam fixed-mode exponents refit over 2-40 Hz, in HD-EEG. -->
+As a cross-method check in HD-EEG, the specparam fixed-mode exponent (refit over 2-40 Hz) and the IRASA fractal exponent over the same band agree almost perfectly across channels (Pearson $r = 0.97$, Spearman $\rho = 0.96$; median 1.00 vs 1.06), with specparam marginally shallower (@fig-irasa). The recovered aperiodic slope is thus essentially method-independent in the source data:
+<!-- REVIEW: "agree almost perfectly" + "essentially method-independent" — two superlatives for one r=0.97. Keep one, e.g. "agree closely (r=0.97)". -->
+ the cross-modal and range effects above are properties of the spectra, not artefacts of the specparam parameterisation.
+
+![HD-EEG aperiodic exponent from specparam (fixed, 2-40 Hz) vs IRASA (2-40 Hz), one point per channel; dashed line is identity.](figures/chapter2/hd_exponent_specparam_vs_irasa.svg){#fig-irasa width="60%"}
+
+#### Summary
+
+```{=typst}
+#figure(
+  table(
+    columns: 5,
+    align: (left, center, center, center, center),
+    stroke: none,
+    inset: (x: 7pt, y: 4pt),
+    table.hline(stroke: 0.8pt),
+    table.header([*Comparison*], [*Modality*], [*Pearson r*], [*Spearman ρ*], [*n ch.*]),
+    table.hline(stroke: 0.5pt),
+    [knee vs fixed χ], [iEEG], [0.49], [0.45], [1772],
+    [], [HD-EEG], [0.88], [0.92], [1444],
+    [range 1-80 vs 1-45 (fixed χ)], [iEEG], [0.77], [0.76], [1772],
+    [], [HD-EEG], [0.91], [0.93], [1444],
+    [IRASA vs specparam (2-40)], [HD-EEG], [0.97], [0.96], [1444],
+    table.hline(stroke: 0.8pt),
+  ),
+  caption: [Stability of the aperiodic exponent across modelling choices. Per-channel Pearson and Spearman correlations within each modality.],
+  kind: table,
+) <tbl-aperiodic-stability>
+```

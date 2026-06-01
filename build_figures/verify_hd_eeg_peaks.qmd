@@ -13,11 +13,15 @@ execute:
 ---
 
 Self-contained check of the **source HD-EEG** branch of
-`5_peak_prevalence_modelled_power.qmd`. It loads the normalized HD-EEG PSD table,
-fits specparam with the BIC-selected **fixed** aperiodic model, extracts the
-per-peak parameters and per-channel fit quality, and reports a summary — so the
-HD-EEG fit and peak extraction can be verified in isolation. Settings, fit range,
-and aperiodic mode are identical to the figure doc.
+`5_peak_prevalence_modelled_power.qmd`. Instead of reading the cached normalized
+PSD CSV, it rebuilds the input from the raw Mantini source signals — exactly as
+the clustering / BIC notebooks do: `load_sources` → `compute_psd` (Welch) →
+`relative_psd_df` (unit in-band normalisation) — so any artefact baked into the
+CSV would show up here. It then fits specparam with the BIC-selected **fixed**
+aperiodic model and converts the fit with `pesco.spectral.specparam2pandas`
+(one row per fitted peak, carrying aperiodic params + per-spectrum metrics).
+`specparam2pandas` exposes specparam's native error as **MAE** (`error_mae`), so
+the quality screen here is R² > 0.9 & MAE < 0.1 (the figure doc uses MSE).
 
 ```{python}
 #| label: config
@@ -27,101 +31,110 @@ import numpy as np
 import pandas as pd
 from specparam import SpectralGroupModel
 
+from pesco.io import load_sources
+from pesco.preprocess import compute_psd
+from pesco.bandpower import relative_psd_df
+from pesco.spectral import specparam2pandas
+
 PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
 specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
-# Same normalized-PSD input the figure doc fits (one row per virtual sensor).
-HD_PSD_CSV = specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv"
+DATA_PATH_SOURCES = PROJECT_DIR / "data/Mantini2018"  # raw HD-EEG source signals
 
-FREQ_RANGE = (1.0, 80.0)
+FREQ_RANGE = (1, 80.0)
 APERIODIC_MODE = "fixed"  # HD-EEG choice from the knee-vs-fixed BIC comparison
 SPECPARAM_SETTINGS = dict(
-    peak_width_limits=[1, 6],
+    peak_width_limits=[1, 12],
     max_n_peaks=8,
-    min_peak_height=0.5,
-    peak_threshold=3.0,
+    min_peak_height=0.15,
+    peak_threshold=2.0,
 )
-assert HD_PSD_CSV.exists(), f"missing {HD_PSD_CSV}"
+assert DATA_PATH_SOURCES.exists(), f"missing {DATA_PATH_SOURCES}"
 ```
 
 ```{python}
 #| label: helpers
-def load_psd_csv(path):
-    """Split the saved normalized-PSD table into (psd_matrix, freqs, metadata)."""
-    df = pd.read_csv(path, index_col=0)
-    num_cols = [c for c in df.columns if str(c).replace(".", "", 1).isdigit()]
-    freqs = np.array([float(c) for c in num_cols])
-    psd = df[num_cols].to_numpy(dtype=float)
-    meta = df[[c for c in df.columns if c not in num_cols]].copy()
-    meta.index = df.index
-    return psd, freqs, meta
+def attach_metadata(sp, meta):
+    """Add channel / region / Lobe to a specparam2pandas table via its ID column.
 
+    ``ID`` is the row index of the fitted spectrum, so it maps straight onto the
+    metadata rows in fit order.
+    """
+    sp = sp.copy()
+    ids = sp["ID"].to_numpy()
+    sp["channel"] = meta.index.astype(str).to_numpy()[ids]
+    sp["region"] = meta["Region name"].astype(str).str.strip("'").to_numpy()[ids]
+    sp["Lobe"] = meta["Lobe"].astype(str).to_numpy()[ids]
+    return sp
+```
 
-def extract_peaks(fg, meta):
-    """Tidy per-peak table: channel, region, Lobe, CF, PW, BW."""
-    peaks = np.atleast_2d(fg.get_params("peak"))  # (n_peaks, 4): [CF, PW, BW, ID]
-    peak_df = pd.DataFrame(peaks, columns=["CF", "PW", "BW", "ID"])
-    peak_df["ID"] = peak_df["ID"].astype(int)
-    peak_df["channel"] = meta.index.to_numpy()[peak_df["ID"].to_numpy()]
-    peak_df["region"] = (
-        meta["Region name"].astype(str).str.strip("'").to_numpy()[peak_df["ID"]]
-    )
-    peak_df["Lobe"] = meta["Lobe"].astype(str).to_numpy()[peak_df["ID"]]
-    return peak_df
+## Load raw signals → Welch PSD → normalise
 
+```{python}
+#| label: load
+raw, meta = load_sources(DATA_PATH_SOURCES)
+# load_sources returns metadata row-aligned with the channel order; key it by
+# channel name so it joins onto the PSD table.
+assert len(meta) == len(raw.ch_names)
+meta = meta.set_axis(pd.Index(raw.ch_names, name="ch_name"))
 
-def channel_fit_quality(fg, channel_names):
-    """Per-channel R² (specparam) and MSE of the full log-power model."""
-    freqs = np.asarray(fg.data.freqs, dtype=float)
-    rows = []
-    for i, (channel, result) in enumerate(zip(channel_names, fg.results)):
-        ap = fg.modes.aperiodic.func(freqs, *np.asarray(result.aperiodic_fit, dtype=float))
-        peak_params = np.asarray(result.peak_fit, dtype=float).ravel()
-        peak = fg.modes.periodic.func(freqs, *peak_params) if peak_params.size else 0.0
-        residual = np.asarray(fg.data.power_spectra[i], dtype=float) - (ap + peak)
-        rows.append(
-            {
-                "channel": channel,
-                "gof_rsquared": result.metrics.get("gof_rsquared", np.nan),
-                "mse_log10": float(np.mean(residual**2)),
-                "n_peaks": int(len(result.peak_fit)),
-            }
-        )
-    return pd.DataFrame(rows)
+freqs, psd_raw = compute_psd(
+    raw.get_data(), raw.info["sfreq"], fmin=FREQ_RANGE[0], fmax=FREQ_RANGE[1]
+)
+psd_df = pd.DataFrame(
+    psd_raw, index=pd.Index(raw.ch_names, name="ch_name"), columns=freqs
+).join(meta)
+
+# Unit in-band normalisation — the actual specparam input (matches the figure doc).
+psd_norm = relative_psd_df(psd_df, freqs)
+psd = psd_norm[list(freqs)].to_numpy(dtype=float)
+meta = psd_norm[[c for c in psd_norm.columns if isinstance(c, str)]]
+print(f"channels {psd.shape[0]} | freqs {freqs[0]:.1f}-{freqs[-1]:.1f} Hz "
+      f"({psd.shape[1]} bins, Δf={np.median(np.diff(freqs)):.3f})")
 ```
 
 ## Fit and extract
 
 ```{python}
 #| label: fit
-psd, freqs, meta = load_psd_csv(HD_PSD_CSV)
 fg = SpectralGroupModel(
     **SPECPARAM_SETTINGS, aperiodic_mode=APERIODIC_MODE, verbose=False
 )
 fg.fit(freqs, psd, freq_range=list(FREQ_RANGE), n_jobs=1)
 
-peaks = extract_peaks(fg, meta)
-quality = channel_fit_quality(fg, meta.index.astype(str))
+# pesco.spectral.specparam2pandas → long table, one row per fitted peak; spectra
+# with no peak still appear (NaN peak columns), each carrying its aperiodic
+# params and per-spectrum fit metrics.
+sp = attach_metadata(specparam2pandas(fg), meta)
+
+# Peaks only, and a one-row-per-channel fit-quality table for the screen.
+peaks = sp.dropna(subset=["CF"]).reset_index(drop=True)
+quality = sp.groupby(["ID", "channel"], as_index=False).agg(
+    gof_rsquared=("gof_rsquared", "first"),
+    error_mae=("error_mae", "first"),
+    n_peaks=("CF", lambda s: int(s.notna().sum())),
+)
 ```
 
 ```{python}
 fg.report()
 ```
+
 ## Summary
 
 ```{python}
 #| label: summary
-passed = (quality["gof_rsquared"] > 0.9) & (quality["mse_log10"] < 0.1)
+passed = (quality["gof_rsquared"] > 0.9) & (quality["error_mae"] < 0.1)
 pd.DataFrame(
     {
         "value": [
-            HD_PSD_CSV.name,
+            "Mantini2018 (raw → Welch PSD → relative)",
             APERIODIC_MODE,
             f"{FREQ_RANGE[0]}-{FREQ_RANGE[1]} Hz",
             len(meta),
             len(peaks),
             round(quality["n_peaks"].mean(), 2),
             round(quality["gof_rsquared"].median(), 3),
-            round(quality["mse_log10"].median(), 4),
+            round(quality["error_mae"].median(), 4),
             f"{passed.sum()}/{len(quality)} ({passed.mean():.1%})",
         ]
     },
@@ -133,8 +146,8 @@ pd.DataFrame(
         "total peaks",
         "mean peaks/channel",
         "median R²",
-        "median MSE",
-        "pass R²>0.9 & MSE<0.1",
+        "median MAE",
+        "pass R²>0.9 & MAE<0.1",
     ],
 )
 ```
@@ -152,7 +165,7 @@ peaks.head(12)
 #| label: save
 out = specparam_dir / "verify_hd_eeg_peaks.csv"
 peaks.merge(
-    quality[["channel", "gof_rsquared", "mse_log10"]], on="channel"
+    quality[["channel", "gof_rsquared", "error_mae"]], on="channel"
 ).to_csv(out, index=False)
 out.name
 ```
