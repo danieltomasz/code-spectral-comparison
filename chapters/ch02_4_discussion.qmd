@@ -1,14 +1,30 @@
 ## Discussion
+The main lesson of this study is methodological as much as empirical. The comparison between the iEEG atlas and source-reconstructed HD-EEG does not reduce to a single question of whether one dataset reproduces the other. Rather, it shows that different spectral techniques turn the same data into different comparison objects. A band-power map, a fitted peak, a residual after aperiodic correction, a dominant centre frequency, and an aperiodic exponent are all summaries of the spectrum, but they are not interchangeable summaries.
 
-This chapter does not aim to provide a definitive validation of
-source-reconstructed HD-EEG against intracranial EEG. Rather, it asks
-whether large-scale regional spectral organisation is sufficiently
-preserved to support cautious comparison, whether separating oscillatory
-and broadband components changes that comparison, and whether the
-broadband estimates themselves are stable across methodological choices.
-The chapter is therefore evaluated not by whether it eliminates all
-ambiguity, but by whether it makes the sources of ambiguity explicit and
-tests their consequences.
+This matters because the two modalities did not differ only in overall quality or strength of signal. Source-reconstructed HD-EEG produced a narrow, high-amplitude alpha-dominated pattern, whereas the iEEG atlas showed a broader distribution of peaks across alpha, beta, low gamma, and high gamma, together with a different aperiodic shape. Depending on the descriptor, this contrast can look like partial cross-modal recovery, failure to recover high-frequency rhythms, or a change in the apparent oscillatory pattern after aperiodic correction. The result is therefore not one stable answer hidden behind several analyses, but a demonstration that the answer depends on how "oscillation," "frequency", and "agreement" are operationalised.
+
+The discussion follows this methodological thread. The alpha pattern is the most robust point of convergence across descriptors, but the interpretation of beta and gamma activity changes across relative power, fitted peaks, and subtraction residuals. Similarly, the aperiodic exponent is not a fixed property waiting to be read from the spectrum: in iEEG it depends strongly on whether the spectrum is treated as fixed or knee-shaped, while in source HD-EEG it is more stable across methods. The chapter therefore uses the cross-modal comparison not only to ask what HD-EEG can recover from iEEG, but also to show which spectral conclusions are robust to the analytical route used to obtain them.
+
+### Branching Paths
+
+What to say about clusterisation criteria  how the changes can be explained (difference in cente frequencies, method used in the source reoconstruction)
+
+Much more publication than when this project has started 
+
+Groweing scope needs to end somewhere 
+visual understanstanding and visualisation are really important ,we put much of the visualiton presenting similar informatotion but from the differrnt angle
+
+Challenge in sumarising multivatiate information and data reduction in analysis and data presentation 
+
+Obstacles that can darken the way
+(x,y z plot per bands) challenge per data visualisation 
+
+Avoiding relative power - compositional dat simples, 
+
+
+untransformed relative power maps strictly as a descriptive summary (
+
+maybe specparam without normalizing?
 
 ###  What is recovered, what is not
 
@@ -223,5 +239,7 @@ The posterior-to-anterior frequency gradient recovered here is consistent with r
 
 Further idea - comparing reconstructured sources and other modalties over sensors and differeing atlases 
 
- -->
+### Further steps 
+
+
 ## References

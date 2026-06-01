@@ -56,6 +56,7 @@ For the HD-EEG data we applied the same procedure and kept the iEEG-derived inte
 As a second, complementary  approach, we mapped each region's normalised PSD onto the canonical bands defined above and took relative band power per region.
 
 Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2025QuantifyingRhythmicArrhythmic].
+Relative band powers are also compositional — within each region the five bands are normalised to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We therefore report the cross-modal correlations of these maps as descriptive measures of spatial agreement rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure.
 
 #### Cross-modal correspondence on uncorrected spectra
 

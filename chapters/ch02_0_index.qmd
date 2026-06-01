@@ -5,10 +5,10 @@
 
 {{< include ch02_2_methods.qmd >}}
 
-{{< include ch02_3_results_wip.qmd >}}
+{{< include ch02_3_results.qmd >}}
 
-<!-- {{< include ch02_4_discussion.qmd >}}
- -->
+{{< include ch02_4_discussion.qmd >}}
+
 
 ## References
 
