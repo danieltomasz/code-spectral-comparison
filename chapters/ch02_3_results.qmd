@@ -26,9 +26,9 @@ The cluster " band peak frequency" is the argmax of each cluster's spectrum rela
 
 Lobar differences presented as spectrum are presented below.
 
-![Differences per lobes in intracranial data](figures/chapter2/intracranial data_lobar_differences.svg){#fig-ieeg-reg_dfiff width="100%" column="page"}
+![Differences per lobes in intracranial data](figures/chapter2/intracranial_data_lobar_differences.svg){#fig-ieeg-reg_dfiff width="100%" column="page"}
 
-![Differences per lobes in reconstruncted sources data](figures/chapter2/reconstructed sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
+![Differences per lobes in reconstruncted sources data](figures/chapter2/reconstructed_sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
 
 #### Clustering stability and data driven intervals 
 

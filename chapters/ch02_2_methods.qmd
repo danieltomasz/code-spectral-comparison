@@ -58,7 +58,7 @@ As a second, complementary  approach, we mapped each region's normalised PSD ont
 Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2025QuantifyingRhythmicArrhythmic].
 Relative band powers are also compositional — within each region the five bands are normalised to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We therefore report the cross-modal correlations of these maps as descriptive measures of spatial agreement rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure.
 
-#### Cross-modal correspondence on uncorrected spectra
+#### Cross-modal correspondence on relative PSD spectra
 
 This is the first of three cross-modal correspondence computations; the subtraction-based and modelled-peak versions are defined below and compared in @sec-concordance
 
@@ -83,7 +83,7 @@ The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and 
 We asked whether separating periodic from aperiodic activity changes the above picture. We addressed it in two linked ways: by modelling oscillatory peaks directly with specparam, and by removing the aperiodic background and recomputing the cross-modal overlap.
 
 
-###  Aperiodic parametrisation and model selection
+####  Aperiodic parametrisation and model selection
 
 We compare two aperiodic modes of fitting.  In **fixed** mode the aperiodic component
 is modelled in log-power space as
@@ -137,7 +137,7 @@ Modelled power exists only where specparam fits a peak, so the per-band prevalen
 
 Assigning peaks to fixed canonical bands by centre frequency is sensitive to peaks that sit near a band edge [@castanheira2025QuantifyingRhythmicArrhythmic], and source reconstruction can shift the estimated peak frequency. We therefore also report the distribution of peak centre frequencies per region per modality, and compare the regional dominant peak frequency across modalities directly, without binning.
 
-#### Cross-modal overlap before and after aperiodic correct
+#### Cross-modal overlap before and after aperiodic correction
 
 We reconstructed the fitted aperiodic component on the fitted frequency grid and subtracted it from the empirical PSD in linear power space, giving the residual
 
