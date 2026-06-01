@@ -46,10 +46,13 @@ matplotlib.use("Agg")
 from plotnine import (
     aes,
     element_text,
+    element_rect,
+    element_blank,
     facet_grid,
     ggplot,
     scale_fill_cmap,
     theme,
+    theme_gray,
 )
 from plotnine.facets.labelling import labeller
 from ggsegpy.geom_brain import geom_brain
@@ -374,20 +377,29 @@ maps_fig = (
         labeller=labeller(band_facet=_strip, modality_facet=_strip),
     )
     + scale_fill_cmap(cmap_name=PSD_COLORSCALE, limits=(0, 1), name="within-band\nrel. PSD")
+    + theme_gray() # Apply the exact standard/default plotnine theme
     + theme(
         strip_text=element_text(size=9, weight="bold", family="sans-serif"),
+        axis_text_x=element_blank(),
+        axis_text_y=element_blank(),
+        axis_ticks=element_blank(),
+        axis_title_x=element_blank(),
+        axis_title_y=element_blank(),
+        panel_grid_major=element_blank(),
+        panel_grid_minor=element_blank(),
         legend_position="right",
         legend_title=element_text(size=8, family="sans-serif"),
         legend_text=element_text(size=7, family="sans-serif"),
         legend_key_height=38,
         legend_key_width=12,
         panel_spacing_x=0.02,
-        panel_spacing_y=0.14,
+        panel_spacing_y=0.04, # Tight spacing now that axes are gone
+        plot_margin=0.01,
     )
 )
-maps_fig.save(fig_dir / "relative_psd_maps_horizontal.pdf", width=16, height=7, verbose=False)
-maps_fig.save(fig_dir / "relative_psd_maps_horizontal.svg", width=16, height=7, verbose=False)
-maps_fig.save(fig_dir / "relative_psd_maps_horizontal.png", width=16, height=7, dpi=150, verbose=False)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.pdf", width=15, height=3.0, verbose=False)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.svg", width=15, height=3.0, verbose=False)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.png", width=15, height=3.0, dpi=150, verbose=False)
 maps_fig
 ```
 
