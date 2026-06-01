@@ -56,17 +56,22 @@ from plotnine import (
 )
 from plotnine.facets.labelling import labeller
 from ggsegpy.geom_brain import geom_brain
+from specparam import SpectralGroupModel
 
 from pesco.atlases import load_frauscher
 from pesco.bandpower import (
+    BAND_LABELS,
+    add_roi_hemisphere_labels,
     compare_region_band_power,
     plot_band_power_correlation_grid,
     region_band_power,
     relative_band_power_by_channel,
 )
+from pesco.config import FREQ_RANGE, SELECTED_MODE, SPECPARAM_SETTINGS
 from pesco.io import load_sources, prepare_psd
 from pesco.pipeline import DatasetCtx
 from pesco.preprocess import compute_psd
+from pesco.spectral import remove_aperiodic
 
 seed = 3
 np.random.seed(seed)
@@ -376,7 +381,13 @@ maps_fig = (
         "modality_facet ~ band_facet",
         labeller=labeller(band_facet=_strip, modality_facet=_strip),
     )
-    + scale_fill_cmap(cmap_name=PSD_COLORSCALE, limits=(0, 1), name="within-band\nrel. PSD")
+    + scale_fill_cmap(
+        cmap_name=PSD_COLORSCALE,
+        limits=(0, 1),
+        breaks=[0.0, 0.5, 1.0],
+        labels=["0\nlow", "0.5", "1\nhigh"],
+        name="within-band\nrel. PSD",
+    )
     + theme_gray() # Apply the exact standard/default plotnine theme
     + theme(
         strip_text=element_text(size=9, weight="bold", family="sans-serif"),
@@ -390,17 +401,178 @@ maps_fig = (
         legend_position="right",
         legend_title=element_text(size=8, family="sans-serif"),
         legend_text=element_text(size=7, family="sans-serif"),
-        legend_key_height=38,
-        legend_key_width=12,
+        legend_key_height=46,
+        legend_key_width=14,
         panel_spacing_x=0.02,
         panel_spacing_y=0.04, # Tight spacing now that axes are gone
         plot_margin=0.01,
     )
 )
-maps_fig.save(fig_dir / "relative_psd_maps_horizontal.pdf", width=15, height=3.0, verbose=False)
-maps_fig.save(fig_dir / "relative_psd_maps_horizontal.svg", width=15, height=3.0, verbose=False)
-maps_fig.save(fig_dir / "relative_psd_maps_horizontal.png", width=15, height=3.0, dpi=150, verbose=False)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.pdf", width=15, height=3.4, verbose=False)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.svg", width=15, height=3.4, verbose=False)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.png", width=15, height=3.4, dpi=150, verbose=False)
 maps_fig
+```
+
+# Figures 3 & 4 — aperiodic-removed (oscillatory residual) band power
+
+The same two views, but on the *periodic* part of the spectrum. Each channel is
+fit with `specparam` in its BIC-selected aperiodic mode (`pesco.config`: iEEG
+knee, HD-EEG fixed); we subtract the fitted aperiodic component in linear units
+and normalise by total power (`pesco.spectral.remove_aperiodic`, `mode="linear"`),
+so the per-band value is the channel's oscillatory power in that band as a
+fraction of total power — directly comparable to the uncorrected relative band
+power above. One specparam fit per modality feeds both figures.
+
+```{python}
+#| label: residual-fit
+#| output: false
+def band_sums(osc: np.ndarray, ffreqs: np.ndarray) -> pd.DataFrame:
+    """Sum the normalised oscillatory residual within each canonical band."""
+    last = BANDS[-1][0]
+    cols = {}
+    for name, lo, hi in BANDS:
+        mask = (ffreqs >= lo) & (ffreqs <= hi if name == last else ffreqs < hi)
+        cols[name] = np.nansum(osc[:, mask], axis=1)
+    return pd.DataFrame(cols)
+
+
+# Fit once per modality (BIC-selected mode), keep the linear oscillatory residual.
+RESID_SPECS = [
+    ("iEEG atlas", "iEEG", ieeg_psd_df, ieeg_f, "ChannelRegion"),
+    ("source HD-EEG", "HD-EEG source", hd_psd_df, hd_f, "region_number"),
+]
+
+resid_roi_long = []
+resid_tidy = []
+for dataset, modality, psd_df, freqs, region_col in RESID_SPECS:
+    fg = SpectralGroupModel(
+        **SPECPARAM_SETTINGS, aperiodic_mode=SELECTED_MODE[dataset], verbose=False
+    )
+    fg.fit(
+        np.asarray(freqs, dtype=float),
+        psd_df[list(freqs)].to_numpy(dtype=float),
+        freq_range=list(FREQ_RANGE),
+        n_jobs=1,
+    )
+    ffreqs, osc = remove_aperiodic(fg, mode="linear")
+    bs = band_sums(osc, ffreqs)
+
+    # (a) maps: per-region mean keyed by the integer atlas id → frauscher_id
+    roi = bs.assign(**{region_col: psd_df[region_col].to_numpy()})
+    roi = (
+        roi.groupby(region_col)[BAND_ORDER]
+        .mean()
+        .rename_axis("frauscher_id")
+        .reset_index()
+    )
+    resid_roi_long.append(roi_to_labels(roi, modality))
+
+    # (b) scatter: tidy per-channel table matching relative_band_power_by_channel
+    meta_cols = [c for c in ["Region name", "Lobe", "hemisphere", "mni_x"] if c in psd_df]
+    meta = add_roi_hemisphere_labels(psd_df[meta_cols]).reset_index(drop=True)
+    meta.insert(0, "channel", psd_df.index.astype(str))
+    meta["dataset"] = dataset
+    for name, _, _ in BANDS:
+        df = meta.copy()
+        df["band"] = name
+        df["band_label"] = BAND_LABELS[name]
+        df["relative_power"] = bs[name].to_numpy()
+        resid_tidy.append(df)
+
+# Scatter pairing: reuse the raw pipeline verbatim on the residual band table.
+resid_by_channel = pd.concat(resid_tidy, ignore_index=True)
+resid_region_bilateral = region_band_power(
+    resid_by_channel, summary="mean", roi_level="bilateral"
+)
+resid_paired, resid_correlations = compare_region_band_power(
+    resid_region_bilateral,
+    x_dataset="source HD-EEG",
+    y_dataset="iEEG atlas",
+    roi_col="roi_bilateral",
+    n_label="n_regions",
+)
+```
+
+```{python}
+#| label: fig-residual-correlation-bilateral
+#| output: true
+#| fig-width: 15
+#| fig-height: 3.3
+#| fig-cap: "Cross-modal correspondence of the aperiodic-removed (oscillatory residual) band power. Each panel is one canonical band; each point is one bilateral MICCAI region, source HD-EEG oscillatory residual on x and the iEEG atlas on y. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). Strip labels give the per-band Pearson r. The residual is the specparam linear oscillatory power (band fraction of total), with the BIC-selected aperiodic component removed."
+resid_scatter = plot_band_power_correlation_grid(
+    resid_paired,
+    resid_correlations,
+    color_by="lobe",
+    method="pearson",
+    identity_line=True,
+    x_label="source HD-EEG\noscillatory residual",
+    y_label="iEEG atlas\noscillatory residual",
+    title="Aperiodic-removed: bilateral regional oscillatory-residual correspondence",
+)
+resid_scatter.save(
+    fig_dir / "residual_relative_band_power_correlations_bilateral.svg",
+    verbose=False,
+)
+resid_scatter
+```
+
+```{python}
+#| label: fig-residual-psd-maps
+#| fig-cap: "Group-average oscillatory residual per ROI (aperiodic component removed), faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). The column header gives the band and its interval and labels both rows. Colour is each band's residual min–max normalised across both modalities (per-band shared scale), so the within-band spatial pattern is comparable across modalities. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown."
+resid_plot_df = pd.concat(resid_roi_long, ignore_index=True)
+resid_plot_df["band"] = pd.Categorical(
+    resid_plot_df["band"], categories=BAND_ORDER, ordered=True
+)
+
+rfacet = resid_plot_df.copy()
+rgrp = rfacet.groupby("band", observed=True)["value"]
+rvmin, rvmax = rgrp.transform("min"), rgrp.transform("max")
+rfacet["value_scaled"] = np.where(
+    rvmax > rvmin, (rfacet["value"] - rvmin) / (rvmax - rvmin), 0.5
+)
+rfacet["band_facet"] = rfacet["band"].astype(str).map(band_facet)
+rfacet["modality_facet"] = rfacet["modality"].map(modality_facet)
+rfacet = rfacet[["label", "value_scaled", "band_facet", "modality_facet"]]
+
+resid_maps_fig = (
+    ggplot(rfacet, aes(fill="value_scaled"))
+    + geom_brain(atlas=atlas, mapping=aes(fill="value_scaled"), hemi="left", show_legend=True)
+    + facet_grid(
+        "modality_facet ~ band_facet",
+        labeller=labeller(band_facet=_strip, modality_facet=_strip),
+    )
+    + scale_fill_cmap(
+        cmap_name=PSD_COLORSCALE,
+        limits=(0, 1),
+        breaks=[0.0, 0.5, 1.0],
+        labels=["0\nlow", "0.5", "1\nhigh"],
+        name="within-band\nosc. residual",
+    )
+    + theme_gray()
+    + theme(
+        strip_text=element_text(size=9, weight="bold", family="sans-serif"),
+        axis_text_x=element_blank(),
+        axis_text_y=element_blank(),
+        axis_ticks=element_blank(),
+        axis_title_x=element_blank(),
+        axis_title_y=element_blank(),
+        panel_grid_major=element_blank(),
+        panel_grid_minor=element_blank(),
+        legend_position="right",
+        legend_title=element_text(size=8, family="sans-serif"),
+        legend_text=element_text(size=7, family="sans-serif"),
+        legend_key_height=46,
+        legend_key_width=14,
+        panel_spacing_x=0.02,
+        panel_spacing_y=0.04,
+        plot_margin=0.01,
+    )
+)
+resid_maps_fig.save(fig_dir / "residual_psd_maps_horizontal.pdf", width=15, height=3.4, verbose=False)
+resid_maps_fig.save(fig_dir / "residual_psd_maps_horizontal.svg", width=15, height=3.4, verbose=False)
+resid_maps_fig.save(fig_dir / "residual_psd_maps_horizontal.png", width=15, height=3.4, dpi=150, verbose=False)
+resid_maps_fig
 ```
 
 ## Notes
