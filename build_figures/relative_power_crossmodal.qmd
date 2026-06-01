@@ -1,0 +1,404 @@
+---
+title: "Uncorrected relative band power: cross-modal correspondence and PSD maps"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+execute:
+  echo: false
+  output: true
+  cache: true
+  freeze: auto
+---
+
+Two horizontal figures on the same uncorrected relative-power maps:
+
+1. **Correspondence scatter** — one panel per canonical band (bands as columns);
+   each point is a bilateral MICCAI region, source HD-EEG relative power on x and
+   the iEEG atlas on y, coloured by lobe, with a solid per-band OLS fit, a dashed
+   identity line (y = x), and the per-band Pearson r in the strip.
+2. **Relative-PSD maps** — a single faceted `geom_brain`: bands as columns, the
+   two modalities as rows (iEEG top, HD-EEG bottom). Each column header
+   `band (interval)` labels both rows. Colour is per-band min–max normalised
+   across both modalities, so one shared colourbar keeps every band's
+   within-band spatial pattern legible.
+
+Relative band powers are compositional (per-channel normalised to a fixed
+total), so the bands are not independent — the per-band correlations are
+descriptive, and no per-region t-test is reported (it is not valid on the raw
+proportions).
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")
+
+from plotnine import (
+    aes,
+    element_text,
+    facet_grid,
+    ggplot,
+    scale_fill_cmap,
+    theme,
+)
+from plotnine.facets.labelling import labeller
+from ggsegpy.geom_brain import geom_brain
+
+from pesco.atlases import load_frauscher
+from pesco.bandpower import (
+    compare_region_band_power,
+    plot_band_power_correlation_grid,
+    region_band_power,
+    relative_band_power_by_channel,
+)
+from pesco.io import load_sources, prepare_psd
+from pesco.pipeline import DatasetCtx
+from pesco.preprocess import compute_psd
+
+seed = 3
+np.random.seed(seed)
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DATA_PATH_IEEG = PROJECT_DIR / "data/Frauscher2018"
+DATA_PATH_SOURCES = PROJECT_DIR / "data/Mantini2018"
+
+fig_dir = Path("figures/chapter2/relative_power")
+fig_dir.mkdir(parents=True, exist_ok=True)
+```
+
+# Figure 1 — cross-modal correspondence scatter
+
+Computed on the full 0.5-80 Hz range via the `pesco.bandpower` helpers, which
+use the five canonical bands (δ θ α β γ, single γ 30-80 Hz).
+
+```{python}
+#| label: scatter-freq-range
+FREQ_RANGE_SCATTER = (0.5, 80.0)
+```
+
+## Load data
+
+Load the raw iEEG atlas (Frauscher) PSD with region metadata — no bandpass, no
+normalization, so power stays in raw units for the relative-power step.
+
+```{python}
+#| label: scatter-load-ieeg
+#| output: false
+ieeg_raw = DatasetCtx(name="intracranial data (raw)")
+ieeg_raw.f, ieeg_raw.psd = prepare_psd(
+    matfile=DATA_PATH_IEEG / "WakefulnessMatlabFile.mat",
+    region_dict_file=DATA_PATH_IEEG / "RegionInformation.csv",
+    frauscher_bandpass=False,
+    normalize=False,
+)
+assert ieeg_raw.psd is not None
+```
+
+Load the HD-EEG source-reconstructed data (Mantini), compute a PSD per source
+channel over the same frequency range, and assemble a channel × frequency
+dataframe with the source metadata joined on.
+
+```{python}
+#| label: scatter-load-hd
+#| output: false
+sources_raw, sources_meta = load_sources(DATA_PATH_SOURCES)
+hd_data = sources_raw.get_data()
+hd_fs = sources_raw.info["sfreq"]
+hd_f_scatter, hd_psd_scatter = compute_psd(
+    hd_data, hd_fs, fmin=FREQ_RANGE_SCATTER[0], fmax=FREQ_RANGE_SCATTER[1]
+)
+
+hd_psd_df_scatter = pd.DataFrame(
+    hd_psd_scatter,
+    index=pd.Index(sources_raw.ch_names, name="ch_name"),
+    columns=hd_f_scatter,
+).join(sources_meta)
+```
+
+## Relative band power per region
+
+Compute relative band power for every channel in each dataset, pool them, then
+average channels within each bilateral MICCAI region. `compare_region_band_power`
+pairs the two datasets region-by-region.
+
+```{python}
+#| label: uncorrected-relative-bandpower-bilateral
+#| output: false
+ieeg_raw_band_power = relative_band_power_by_channel(
+    ieeg_raw.psd, ieeg_raw.f, dataset="iEEG atlas"
+)
+hd_raw_band_power = relative_band_power_by_channel(
+    hd_psd_df_scatter, hd_f_scatter, dataset="source HD-EEG"
+)
+
+raw_band_power_by_channel = pd.concat(
+    [ieeg_raw_band_power, hd_raw_band_power], ignore_index=True
+)
+raw_region_band_power_bilateral = region_band_power(
+    raw_band_power_by_channel, summary="mean", roi_level="bilateral"
+)
+
+(
+    raw_band_power_paired_bilateral,
+    raw_band_power_correlations_bilateral,
+) = compare_region_band_power(
+    raw_region_band_power_bilateral,
+    x_dataset="source HD-EEG",
+    y_dataset="iEEG atlas",
+    roi_col="roi_bilateral",
+    n_label="n_regions",
+)
+```
+
+## Correlation grid figure
+
+One scatter panel per band (band shown in the facet strip with its Pearson r):
+source HD-EEG vs iEEG atlas relative band power, one point per bilateral region,
+coloured by anatomical lobe with a single black OLS fit line per panel. A dashed
+`y = x` identity line shows any systematic offset between the two modalities.
+
+```{python}
+#| label: fig-uncorrected-correlation-bilateral
+#| output: true
+#| fig-width: 15
+#| fig-height: 3.3
+#| fig-cap: "Cross-modal correspondence of uncorrected relative band power. Each panel is one canonical band; each point is one bilateral MICCAI region, with source HD-EEG relative power on the x-axis and the iEEG atlas on the y-axis. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). Strip labels give the per-band Pearson r."
+fig_scatter = plot_band_power_correlation_grid(
+    raw_band_power_paired_bilateral,
+    raw_band_power_correlations_bilateral,
+    color_by="lobe",
+    method="pearson",
+    identity_line=True,
+    x_label="source HD-EEG\nrelative band power",
+    y_label="iEEG atlas\nrelative band power",
+    title="Uncorrected PSD: bilateral regional relative band-power correspondence",
+)
+fig_scatter.save(
+    fig_dir / "uncorrected_relative_band_power_correlations_bilateral.svg",
+    verbose=False,
+)
+fig_scatter
+```
+
+# Figure 2 — relative-PSD cortical maps
+
+Following @afnan2023ValidatingMEGSource sec. 2.9: per channel, relative PSD
+bin = `PSD(f) / Σ_f PSD(f)`; the per-band value is the sum of those bins across
+the band (the fraction of total power in the band, in [0, 1]). Within each band
+the two modalities share a colour scale spanning that band's joint min-max.
+
+The HD-EEG sources were high-pass filtered at 1 Hz, so the maps use a 1-80 Hz
+range. Gamma is a single 30-80 Hz band, matching the scatter and the rest of
+the chapter.
+
+```{python}
+#| label: maps-config
+FREQ_RANGE_MAPS = (1.0, 80.0)
+BANDS = [
+    ("δ", 1.0, 4.0),
+    ("θ", 4.0, 8.0),
+    ("α", 8.0, 13.0),
+    ("β", 13.0, 30.0),
+    ("γ", 30.0, 80.0),
+]
+BAND_ORDER = [b[0] for b in BANDS]
+```
+
+## Load both modalities (1-80 Hz)
+
+```{python}
+#| label: maps-load-ieeg
+#| output: false
+# iEEG: normalize=False → keep raw V²/Hz; we normalise to unit-integral below
+# so the integration logic is shared with the HD modality.
+ieeg_f, ieeg_psd_df = prepare_psd(
+    matfile=DATA_PATH_IEEG / "WakefulnessMatlabFile.mat",
+    region_dict_file=DATA_PATH_IEEG / "RegionInformation.csv",
+    frauscher_bandpass=False,
+    normalize=False,
+    freq_range=FREQ_RANGE_MAPS,
+)
+```
+
+```{python}
+#| label: maps-load-hd
+#| output: false
+hd_f, hd_psd = compute_psd(
+    sources_raw.get_data(),
+    sources_raw.info["sfreq"],
+    fmin=FREQ_RANGE_MAPS[0],
+    fmax=FREQ_RANGE_MAPS[1],
+)
+assert np.isclose(ieeg_f[0], hd_f[0]) and np.isclose(ieeg_f[-1], hd_f[-1]), (
+    "iEEG and HD frequency grids must align for relative PSD comparability"
+)
+hd_psd_df = pd.DataFrame(
+    hd_psd, index=pd.Index(sources_raw.ch_names, name="ch_name"), columns=hd_f
+).join(sources_meta)
+```
+
+## Per-channel band-relative power and per-ROI mean
+
+```{python}
+#| label: maps-band-rel-power
+#| output: false
+def band_relative_power(
+    psd_df: pd.DataFrame, freqs: np.ndarray, region_col: str
+) -> pd.DataFrame:
+    """Per-channel fraction of total power in each canonical band."""
+    freqs = np.asarray(freqs, dtype=float)
+    psd = psd_df[list(freqs)].to_numpy(dtype=float)
+    rel = psd / psd.sum(axis=-1, keepdims=True)    # bare ratio, sums to 1
+
+    out = {}
+    last_name = BANDS[-1][0]
+    for name, lo, hi in BANDS:
+        mask = (freqs >= lo) & (freqs <= hi if name == last_name else freqs < hi)
+        out[name] = rel[:, mask].sum(axis=1)       # ∈ [0, 1]
+
+    band_df = pd.DataFrame(out, index=psd_df.index)
+    band_df[region_col] = psd_df[region_col].to_numpy()
+    return band_df
+
+
+ieeg_bands = band_relative_power(ieeg_psd_df, ieeg_f, region_col="ChannelRegion")
+hd_bands = band_relative_power(hd_psd_df, hd_f, region_col="region_number")
+
+# Group average per ROI (frauscher_id 1-38). Bilateral ROIs collapse —
+# Afnan averages over all channels in a ROI regardless of hemisphere.
+ieeg_roi = (
+    ieeg_bands.groupby("ChannelRegion")[BAND_ORDER]
+    .mean()
+    .rename_axis("frauscher_id")
+    .reset_index()
+)
+hd_roi = (
+    hd_bands.groupby("region_number")[BAND_ORDER]
+    .mean()
+    .rename_axis("frauscher_id")
+    .reset_index()
+)
+```
+
+## Map ROI values onto the Frauscher 38-region atlas
+
+```{python}
+#| label: maps-atlas
+#| output: false
+atlas = load_frauscher()
+core = atlas.core[["label", "frauscher_id", "region", "hemi"]]
+
+
+def roi_to_labels(roi_df: pd.DataFrame, modality: str) -> pd.DataFrame:
+    """Long: one row per (atlas label, band) with the ROI mean attached."""
+    merged = core.merge(roi_df, on="frauscher_id", how="left")
+    long = merged.melt(
+        id_vars=["label", "frauscher_id", "region", "hemi"],
+        value_vars=BAND_ORDER,
+        var_name="band",
+        value_name="value",
+    )
+    long["modality"] = modality
+    return long
+
+
+ieeg_long = roi_to_labels(ieeg_roi, "iEEG")
+hd_long = roi_to_labels(hd_roi, "HD-EEG source")
+plot_df = pd.concat([ieeg_long, hd_long], ignore_index=True)
+plot_df["band"] = pd.Categorical(plot_df["band"], categories=BAND_ORDER, ordered=True)
+```
+
+## Faceted map grid — combine the modalities, facet by band × modality
+
+Combine the two modalities into one long frame and let `geom_brain` facet it:
+columns are bands, rows are modalities (iEEG top, HD-EEG bottom), and the
+`band (interval)` column header labels both rows. `brain_join` replicates the
+atlas per facet, so the full surface appears in every panel.
+
+A faceted plot shares one fill scale across all panels, but relative power is
+~3× larger in alpha than in gamma, so a single absolute scale would wash out
+the high-frequency maps. We therefore min–max normalise each band across both
+modalities, so every panel uses the full colour range and the within-band
+spatial pattern stays legible; the shared colourbar is then the per-band
+relative value (0 = that band's lowest region, 1 = its highest). This is the
+per-band shared scale of @afnan2023ValidatingMEGSource, expressed as one 0–1 bar.
+
+```{python}
+#| label: maps-facet-df
+#| output: false
+PSD_COLORSCALE = "viridis"
+
+# Order-keyed strip labels: brain_join drops the ordered Categorical, so prefix
+# a sort key ("0 · ", "A · ") and strip it back off in the labeller.
+band_facet = {n: f"{i} · {n} ({lo:g}-{hi:g} Hz)" for i, (n, lo, hi) in enumerate(BANDS)}
+modality_facet = {"iEEG": "A · iEEG", "HD-EEG source": "B · HD-EEG"}
+
+facet_df = plot_df.copy()
+# Per-band min–max across both modalities → one shared 0–1 colour scale that
+# preserves each band's within-band spatial contrast (== per-band scaling).
+grp = facet_df.groupby("band", observed=True)["value"]
+vmin, vmax = grp.transform("min"), grp.transform("max")
+facet_df["value_scaled"] = np.where(
+    vmax > vmin, (facet_df["value"] - vmin) / (vmax - vmin), 0.5
+)
+facet_df["band_facet"] = facet_df["band"].astype(str).map(band_facet)
+facet_df["modality_facet"] = facet_df["modality"].map(modality_facet)
+
+# brain_join auto-detects join columns from common names (label, region, hemi);
+# keep only the atlas key + fill + facet vars so it joins on `label` alone and
+# treats band/modality purely as facet-replication variables.
+facet_df = facet_df[["label", "value_scaled", "band_facet", "modality_facet"]]
+```
+
+```{python}
+#| label: fig-relative-psd-maps
+#| fig-cap: "Group average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). The column header gives the band and its interval and labels both rows. Colour is each band's relative power min-max normalised across both modalities (the per-band shared scale of Afnan 2023, shown as one 0-1 bar), so the within-band spatial pattern is comparable across modalities; absolute magnitude differs across bands and is not encoded. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown."
+def _strip(s: str) -> str:
+    return s.split(" · ", 1)[1]
+
+maps_fig = (
+    ggplot(facet_df, aes(fill="value_scaled"))
+    + geom_brain(atlas=atlas, mapping=aes(fill="value_scaled"), hemi="left", show_legend=True)
+    + facet_grid(
+        "modality_facet ~ band_facet",
+        labeller=labeller(band_facet=_strip, modality_facet=_strip),
+    )
+    + scale_fill_cmap(cmap_name=PSD_COLORSCALE, limits=(0, 1), name="within-band\nrel. PSD")
+    + theme(
+        strip_text=element_text(size=9, weight="bold", family="sans-serif"),
+        legend_position="right",
+        legend_title=element_text(size=8, family="sans-serif"),
+        legend_text=element_text(size=7, family="sans-serif"),
+        legend_key_height=38,
+        legend_key_width=12,
+        panel_spacing_x=0.02,
+        panel_spacing_y=0.14,
+    )
+)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.pdf", width=16, height=7, verbose=False)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.svg", width=16, height=7, verbose=False)
+maps_fig.save(fig_dir / "relative_psd_maps_horizontal.png", width=16, height=7, dpi=150, verbose=False)
+maps_fig
+```
+
+## Notes
+
+- Hippocampus (r37) and amygdala (r38) are present in the Frauscher 38-ROI iEEG
+  atlas but lack 2D cortical-surface geometry in the bundled ggsegpy atlas;
+  `geom_brain` warns and skips them.
+- No per-region t-test is reported: relative band powers are compositional
+  (per-channel normalised to a fixed total), so the bands are not independent
+  and a per-band t-test on the raw proportions is not valid.
+- Gamma is a single 30-80 Hz band here, matching the scatter and the rest of
+  the chapter. The lower/higher-γ split that visualises the HD noise-floor
+  inflation stays in the standalone Fig 6 / supplementary.
