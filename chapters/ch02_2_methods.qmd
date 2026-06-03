@@ -43,29 +43,31 @@ Where later analyses use canonical bands, we define them as delta 1-4 Hz, theta 
 
 #### Knee and fixed mode of specpram fit 
 
-Introdudeced by @donoghue2020ParameterizingNeuralPower `specpaparam method` is based on decompsiditon of the signal into so called aperiodic part and a sum of peaks modelled as gussians, 
+Introduced by @donoghue2020ParameterizingNeuralPower, the *specparam* (formerly FOOOF) method  and toolbox decomposes the log power spectrum into an aperiodic component $L(f)$ and a sum of $N$ peaks, each modelled as a Gaussian (@fig-specparam A):
 
-$ P = $  
+$$\hat{P}(f) = L(f) + \sum_{n=1}^{N} a_n \exp\!\left(-\frac{(f-\mu_n)^2}{2\sigma_n^2}\right),$$
+
+where each peak $n$ contributes an amplitude $a_n$, centre frequency $\mu_n$, and width $\sigma_n$.
 
 We compare two aperiodic modes of fitting.  In **fixed** mode the aperiodic component
 is modelled in log-power space as
 
 $$L_{\mathrm{ap}}(f) = b - \chi \cdot \log_{10}(f)$$
 
-with offset $b$ and exponent $\chi$.. In **knee** mode,
+where the offset $b$ sets the overall broadband level (the vertical position of the line) and the exponent $\chi$ its slope. In **knee** mode,
 
 $$L_{\mathrm{ap}}(f) = b - \log_{10}(k + f^{\chi})$$
 
 with an additional knee parameter $k$. Here $k$ sets both the height of the low-frequency plateau and the corner frequency $f_k = k^{1/\chi}$ at which the spectrum bends from flat to $1/f^{\chi}$ behaviour (@fig-knee-misfit B, C). Fitting the fixed model to a spectrum that has a genuine knee forces a single line through both regimes and biases the exponent low, even when the fit's $R^2$ appears acceptable (@fig-knee-misfit A); this is what the per-modality model selection below is designed to avoid.
 
-![](figures/chapter2/diagrams/specparam_parameterization.svg)
+![Decomposition and aperiodic parameters of the specparam model. (**A**) A single power spectrum (grey) is decomposed into an aperiodic component $L(f)$ (blue dashed) and a set of Gaussian peaks capturing periodic activity; their sum is the full model fit (teal). The offset $b$ (orange) sets the broadband level at low frequency. (**B**) The aperiodic component alone (fixed mode, $k=0$): increasing the exponent $\chi$ steepens the slope, rotating the line about a pivot frequency, while decreasing it flattens the spectrum. (**C**) Varying the offset $b$ shifts the aperiodic line vertically in parallel, raising or lowering broadband power without changing the slope.](figures/chapter2/diagrams/specparam_parameterization.svg){#fig-specparam width="100%" column="page"}
 
 ![Geometry of the knee aperiodic model and the consequence of omitting it. All curves are real specparam fits to simulated spectra. (**A**) A spectrum generated with a genuine knee (true $f_k = 10$ Hz) fit in both modes. The knee model recovers the generating exponent ($\hat{\chi} = 2.0$), whereas the fixed model, lacking a plateau term, pivots a single line through plateau and slope and underestimates the exponent by ~39%, despite an apparently acceptable $R^2$. (**B**) Effect of the knee parameter $k$ at fixed exponent: larger $k$ lowers the plateau and shifts the corner frequency $f_k$ to higher values, while the high-frequency slope is unchanged. (**C**) Effect of the exponent $\chi$ at fixed knee: $\chi$ sets the high-frequency slope while the low-frequency plateau ($b - \log_{10} k$) is shared.](figures/chapter2/diagrams/knee_misfit_combined.svg){#fig-knee-misfit width="100%" column="page"}
 
 
 ### Choice of fitting mode using fitting mode
 
-Before f
+
 
 Rather than choosing the aperiodic mode by visual inspection of the spectra, we informed the choice per modality with the Bayesian Information Criterion (BIC), which weighs each mode's fit against its number of parameters; the final choice also considered the size of the fit improvement and its robustness, since BIC alone can favour the knee on a negligible gain. Both modes are fit to every channel spectrum with identical peak settings and frequency range, and the two fits are compared on each spectrum. Following @ameen2025TemporallyResolvedAnalyses, the BIC of a single spectrum  is
 
@@ -81,6 +83,51 @@ We report *fit quality*: the median $R^2$ and median MSE of each mode.
 
 Second, *penalised selection*: the median and mean per-channel $\Delta\mathrm{BIC}_c = \mathrm{BIC}^{\mathrm{knee}}_c - \mathrm{BIC}^{\mathrm{fixed}}_c$ (negative favouring knee), with each channel additionally graded on the linear  scale above and the fraction of channels in each signed evidence category (strong, positive, or weak in favour of knee or fixed) reported. Fit quality and $\Delta\mathrm{BIC}$ must be read together, because the $N\log(\mathrm{MSE})$ term scales $\Delta\mathrm{BIC}$ with the number of fitted bins $N$, so a negligible relative MSE gain can still produce much higher  $\Delta\mathrm{BIC}$  when models are fitted on long frequency interval. Channels are not independent observations as they are nested within patients (iEEG, 106 patients) or subjects (HD-EEG, 19 subjects), so treating each channel as independent understates uncertainty. Each channel-level effect measure above is therefore reported with two 95% percentile bootstrap confidence intervals (10{,}000 resamples): a interval resampling channels with replacement, and a subject-clustered interval resampling whole subjects (keeping all of a subject's channels). The clustered interval is used for inference; the gap between the two exposes the pseudoreplication, which is severe in the 19-subject HD-EEG modality.
 
+
+The following arameterisation settings were tested in frequency range 1-80 HZ,
+- Fitting frequency range: 1-80 Hz <!-- (primary); 1-45 Hz (range comparison -->
+  in Section )
+- Peak width limits: 1.0-8.0 Hz
+- Maximum number of peaks: 8
+- Minimum peak height: 0.1 (log power)
+- Peak threshold: 3.0 standard deviations of the residual
+
+Having established the uncorrected picture, we ask whether separating periodic from aperiodic activity changes which regional features are preserved.
+
+Both aperiodic modes were fit to every channel spectrum and compared before any band averaging, separating raw fit quality from penalised model selection (@tbl-model-selection). In the intracranial atlas the knee gave a large fit improvement — median $R^2$ rose from 0.93 (fixed) to 0.98 (knee) and per-channel MSE fell by 77% — so it is decisively preferred: <!-- REVIEW: "decisively preferred" — numbers carry it (96%, ΔBIC −225), but the adverb editorialises. Consider plain "preferred". -->
+median $\Delta\mathrm{BIC}$ (knee − fixed) = −225 (subject-clustered 95% CI [−242, −208]), with 96% of the 1,772 channels (106 patients) strongly favouring the knee. In source HD-EEG the knee improved fit only marginally: median $R^2$ rose from 0.942 to 0.948 ($\Delta R^2 = 0.005$) and MSE fell by ~7%. Its per-channel $\Delta\mathrm{BIC}$ was nonetheless formally 'strong' (median −7.7 — a Bayes factor of ≈50:1, or ~98% posterior probability for the knee per spectrum), but this is an artefact of the $N\log(\mathrm{MSE})$ term: with $N = 159$ fitted bins, even a 7% MSE reduction clears the Raftery 'strong' threshold once the single extra-parameter penalty is paid.
+
+```{=typst}
+#figure(
+  table(
+    columns: 3,
+    align: (left, center, center),
+    stroke: none,
+    inset: (x: 8pt, y: 4pt),
+    table.hline(stroke: 0.8pt),
+    table.header(
+      [], [*iEEG atlas* \ #text(0.8em)[(106 patients, 1772 ch.)]], [*source HD-EEG* \ #text(0.8em)[(19 subjects, 1444 ch.)]],
+    ),
+    table.hline(stroke: 0.5pt),
+    table.cell(colspan: 3)[*Fit quality*],
+    [median $R^2$, fixed], [0.928], [0.942],
+    [median $R^2$, knee], [0.985], [0.948],
+    [$Delta R^2$ (knee − fixed)], [0.053 \[0.047, 0.061\]], [0.005 \[0.003, 0.008\]],
+    [MSE reduction (%)], [77.3 \[74.3, 80.0\]], [7.4 \[4.6, 11.8\]],
+    table.hline(stroke: 0.3pt + luma(190)),
+    table.cell(colspan: 3)[*Model selection: $Delta$BIC (knee − fixed)*],
+    [median], [−225.1 \[−242.3, −207.8\]], [−7.7 \[−15.2, −2.9\]],
+    [mean], [−225.6 \[−243.1, −208.9\]], [−11.0 \[−23.6, −0.0\]],
+    table.hline(stroke: 0.3pt + luma(190)),
+    [*Selected mode*], [*knee*], [*fixed*],
+    table.hline(stroke: 0.8pt),
+  ),
+  caption: [Aperiodic model comparison per modality. $R^2$ and MSE are medians across channels; bracketed ranges are 95% subject-clustered bootstrap CIs (10,000 resamples). Negative $Delta$BIC favours knee.],
+  kind: table,
+) <tbl-model-selection>
+```
+
+The HD-EEG preference is also fragile. With only 19 subjects, resampling channels as if independent understates uncertainty: under subject clustering the median $\Delta\mathrm{BIC}$ interval widens from [−9.7, −5.9] (channel-level) to [−15.2, −2.9], and the mean from [−14.3, −7.6] to [−23.6, 0.0] — reaching essentially to zero. The per-channel split is correspondingly mixed: 52.5% [46.0, 59.4] strong-knee against 23.8% strong-fixed, with ~10% positive-fixed and ~8% weak. The median thus stays negative under clustering, but it rests on a negligible fit gain, so the knee's extra parameter is not warranted. We therefore retain the knee model for the iEEG atlas, where the advantage is large and robust on every measure, and the fixed model for HD-EEG, consistent with the convention for source-reconstructed scalp data [@donoghue2020ParameterizingNeuralPower].
 
 
 ###  Recovery of regional spectral organisation on uncorrected spectra
@@ -135,16 +182,7 @@ The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and 
 
 We asked whether separating periodic from aperiodic activity changes the above picture. We addressed it in two linked ways: by modelling oscillatory peaks directly with specparam, and by removing the aperiodic background and recomputing the cross-modal overlap.
 
-PSDs were parameterised using specparam (formerly FOOOF; @donoghue2020ParameterizingNeuralPower) with the following shared settings:
-
-- Fitting frequency range: 1-80 Hz <!-- (primary); 1-45 Hz (range comparison -->
-  in Section )
-- Peak width limits: 1.0-8.0 Hz
-- Maximum number of peaks: 8
-- Minimum peak height: 0.1 (log power)
-- Peak threshold: 3.0 standard deviations of the residual
-
-Model fits were evaluated using R² and mean absolute error; fits with R² below 0.90 were flagged for inspection and the sensitivity of regional results to their inclusion or exclusion was assessed.
+Model fits were evaluated using R² and mean absolute error; fits with R² below 0.90 were exluded 
 
 
 #### Per-band peak prevalence and modelled power
