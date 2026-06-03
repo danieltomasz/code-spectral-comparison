@@ -2,6 +2,7 @@ format:
   typst:
     fontsize: 12pt
     number-sections: true
+    section-numbering: "1.1.1"
     toc: true
     toc-depth: 3
     # Tell Quarto/Pandoc to wrap citations in hyperlinks
