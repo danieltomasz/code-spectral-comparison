@@ -12,7 +12,7 @@ title: Mapping Oscillatory and 1/f Broadband Spectral Features Across Cortical R
 
 {{< include ch02_3_results.qmd >}}
 
-{{< include ch02_4_discussion_revised.qmd >}}
+{{< include ch02_4_discussion.qmd >}}
 
 
 ## References

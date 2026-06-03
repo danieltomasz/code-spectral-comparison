@@ -1,7 +1,9 @@
 
-## Methods
+## Material and methods
 
-The analysis pipeline is summarised in @fig-pipeline.
+### Experimental design
+
+The analysis pipeline is summarised in @fig-pipeline. 
 
 ![Schematic analysis pipeline.](figures/chapter2/pipeline.png){#fig-pipeline height="60%" column="page"}
 
@@ -10,7 +12,8 @@ The analysis pipeline is summarised in @fig-pipeline.
 The intracranial EEG data come from the MNI Open iEEG Atlas [@frauscher2018AtlasNormalIntracranial], a normative resource compiled from 106 patients with refractory epilepsy recorded at three centres. Only channels implanted in brain regions that were determined to be non-epileptogenic throughout the monitoring period were retained, yielding 1772 channels (13 channels were removed from intitial release as were later judged erroneus on visual inspection) distributed across 38 cortical regions defined by the MICCAI atlas. @fig-frauscher-atlas shows the channel coverage, distinguishing depth/stereo-EEG contacts from cortical grid and strip contacts across both hemispheres.
 
 The 38 regions were built by consolidating 20 smaller MICCAI labels into 8 functional groups so that each region held at least 5 channels, while 16 labels were omitted due to lack of coverage. For each channel, 60 seconds of resting wakefulness data with eyes closed were available.
- The atlas authors resampled the signals to 200 Hz, applied an 80 Hz low-pass antialiasing filter, and reduced power-line interference with an adaptive filter.
+
+The atlas authors resampled the signals to 200 Hz, applied an 80 Hz low-pass antialiasing filter, and reduced power-line interference with an adaptive filter.
 
 
 ### Source-reconstructed HD-EEG
@@ -21,18 +24,64 @@ The full details of collecting and preprocessing this dataset dataset were descr
  The  following steps and timeseries extraction were chosen to  matche the iEEG atlas: source activity was extracted from reconstructed sources  using average coordinates from the  electrodes within 76 MICCAI-defined ROIs in MNI space,  resulting in 1444 virtual sensors, with the grouped regional reference coordinates illustrated in Figure @fig-frauscher-atlas, panel B.
 
 
+
 ![Spatial distribution of the MNI Open iEEG Atlas channels and regional reference centroids in MNI space. (**A**) Glass-brain visualization of the 1785 intracranial EEG channels, with depth and stereo-EEG contacts shown in blue and cortical grid/strip contacts shown in orange. For visualization, left-hemisphere channel coordinates were assigned negative x-values based on the hemisphere label. (**B**) Glass-brain visualization of the regional reference centroids used in the grouped regional analyses, shown as enlarged magenta markers.](figures/chapter2/frauscher_channels_and_centroids.png){#fig-frauscher-atlas fig-align="center" width="80%"}
 
-### Common spectral processing
+### PSD estimation
 
  
- In ieeg dataset power spectral density (PSD) was estimated using Welch's method with 2-second Hamming windows and 50% overlap, resulting in a frequency resolution of 0.5 Hz.  Full preprocessing details are given in @frauscher2018AtlasNormalIntracranial.
+In ieeg dataset power spectral density (PSD) was estimated using Welch's method with 2-second Hamming windows and 50% overlap, resulting in a frequency resolution of 0.5 Hz.  Full preprocessing details are given in @frauscher2018AtlasNormalIntracranial.
 
 In HD EEG reconstucted sesnors, 60s activity was extracted  from each time series according to the parameters defined in Frauscher's paper (sampling frequency 200Hz). Spectral densities were computed using identical Welch parameters (2s windows, 50% overlap, 0.5 Hz resolution). 
 
 All spectral data were normalized to unit total power to ensure that the comparison focused on the distribution of frequency peaks (e.g., the occipital alpha or hippocampal delta) rather than absolute amplitude differences between scalp and intracranial sensors.
 
-Where later analyses use canonical bands, we define them as delta 1-4 Hz, theta 4-8 Hz, alpha 8-13 Hz, beta 13-30 Hz,  gamma 30-80 Hz. We use 1 Hz as the lower bound throughout to aid the cross-modal comparison.
+Where later analyses use canonical bands, we define them as delta 1-4 Hz, theta 4-8 Hz, alpha 8-13 Hz, beta 13-30 Hz,  gamma 30-80 Hz. We use 1 Hz as the lower bound throughout to aid the cross-modal comparison and define power in a band as sum of values in specific band 
+
+
+###  Choice of models for spectral parametrisation 
+
+#### Knee and fixed mode of specpram fit 
+
+Introdudeced by @donoghue2020ParameterizingNeuralPower `specpaparam method` is based on decompsiditon of the signal into so called aperiodic part and a sum of peaks modelled as gussians, 
+
+$ P = $  
+
+We compare two aperiodic modes of fitting.  In **fixed** mode the aperiodic component
+is modelled in log-power space as
+
+$$L_{\mathrm{ap}}(f) = b - \chi \cdot \log_{10}(f)$$
+
+with offset $b$ and exponent $\chi$.. In **knee** mode,
+
+$$L_{\mathrm{ap}}(f) = b - \log_{10}(k + f^{\chi})$$
+
+with an additional knee parameter $k$. Here $k$ sets both the height of the low-frequency plateau and the corner frequency $f_k = k^{1/\chi}$ at which the spectrum bends from flat to $1/f^{\chi}$ behaviour (@fig-knee-misfit B, C). Fitting the fixed model to a spectrum that has a genuine knee forces a single line through both regimes and biases the exponent low, even when the fit's $R^2$ appears acceptable (@fig-knee-misfit A); this is what the per-modality model selection below is designed to avoid.
+
+![](figures/chapter2/diagrams/specparam_parameterization.svg)
+
+![Geometry of the knee aperiodic model and the consequence of omitting it. All curves are real specparam fits to simulated spectra. (**A**) A spectrum generated with a genuine knee (true $f_k = 10$ Hz) fit in both modes. The knee model recovers the generating exponent ($\hat{\chi} = 2.0$), whereas the fixed model, lacking a plateau term, pivots a single line through plateau and slope and underestimates the exponent by ~39%, despite an apparently acceptable $R^2$. (**B**) Effect of the knee parameter $k$ at fixed exponent: larger $k$ lowers the plateau and shifts the corner frequency $f_k$ to higher values, while the high-frequency slope is unchanged. (**C**) Effect of the exponent $\chi$ at fixed knee: $\chi$ sets the high-frequency slope while the low-frequency plateau ($b - \log_{10} k$) is shared.](figures/chapter2/diagrams/knee_misfit_combined.svg){#fig-knee-misfit width="100%" column="page"}
+
+
+### Choice of fitting mode using fitting mode
+
+Before f
+
+Rather than choosing the aperiodic mode by visual inspection of the spectra, we informed the choice per modality with the Bayesian Information Criterion (BIC), which weighs each mode's fit against its number of parameters; the final choice also considered the size of the fit improvement and its robustness, since BIC alone can favour the knee on a negligible gain. Both modes are fit to every channel spectrum with identical peak settings and frequency range, and the two fits are compared on each spectrum. Following @ameen2025TemporallyResolvedAnalyses, the BIC of a single spectrum  is
+
+$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
+
+where $N$ is the number of fitted frequency bins (sample size), MSE is the mean squared residual of the full model in log-power space (aperiodic plus all peaks; equivalently the square of specparam's RMSE error term), and $n_p$ is the number of free parameters. With up to eight peaks, $n_p = 3 n_{\mathrm{peaks}} + n_{\mathrm{ap}}$, where each peak contributes three parameters and $n_{\mathrm{ap}} = 2$ for the fixed model (offset, exponent) and $n_{\mathrm{ap}} = 3$ for the knee model (offset, knee, exponent). On the per-spectrum scale of @raftery1995BayesianModelSelectiona, as used by @ameen2025TemporallyResolvedAnalyses, an absolute BIC difference of 0-2 is weak evidence for the lower-BIC model, 2-6 is positive evidence, and  610 is strong evidence,and above 10 is very strong evidence.
+
+@ameen2025TemporallyResolvedAnalyses apply this criterion per averaged spectrum and do not prescribe how to choose a single mode for a set of spectra. We extend it as follows. The channel set is held fixed within each modality, so the fixed and knee mode of  fits are paired observations on the same spectra, and the comparison is summarised at the channel level by two complementary quantities. 
+
+We report *fit quality*: the median $R^2$ and median MSE of each mode.
+
+ <!-- together with the paired per-channel improvement of the knee ($\Delta R^2$ and the percentage reduction in MSE). Because the knee adds a parameter it  might lowers MSE, so the *magnitude* of this improvement, not its sign, is what matters.  -->
+
+Second, *penalised selection*: the median and mean per-channel $\Delta\mathrm{BIC}_c = \mathrm{BIC}^{\mathrm{knee}}_c - \mathrm{BIC}^{\mathrm{fixed}}_c$ (negative favouring knee), with each channel additionally graded on the linear  scale above and the fraction of channels in each signed evidence category (strong, positive, or weak in favour of knee or fixed) reported. Fit quality and $\Delta\mathrm{BIC}$ must be read together, because the $N\log(\mathrm{MSE})$ term scales $\Delta\mathrm{BIC}$ with the number of fitted bins $N$, so a negligible relative MSE gain can still produce much higher  $\Delta\mathrm{BIC}$  when models are fitted on long frequency interval. Channels are not independent observations as they are nested within patients (iEEG, 106 patients) or subjects (HD-EEG, 19 subjects), so treating each channel as independent understates uncertainty. Each channel-level effect measure above is therefore reported with two 95% percentile bootstrap confidence intervals (10{,}000 resamples): a interval resampling channels with replacement, and a subject-clustered interval resampling whole subjects (keeping all of a subject's channels). The clustered interval is used for inference; the gap between the two exposes the pseudoreplication, which is severe in the 19-subject HD-EEG modality.
+
+
 
 ###  Recovery of regional spectral organisation on uncorrected spectra
 
@@ -78,42 +127,13 @@ $$
 
 The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and falls linearly to 0 once the two medians differ by one HD-EEG standard deviation. We averaged the bin-wise overlap across the frequency bins of each canonical band, giving one value per region per band, and report both the bin-level and the band-averaged overlap. To complement the overlap, we also rank-correlated the regional band estimates between modalities across regions (Spearman).
 
-### Spectral parametrisation
+
+
+
+### Specparam-related measures of spectral power
+
 
 We asked whether separating periodic from aperiodic activity changes the above picture. We addressed it in two linked ways: by modelling oscillatory peaks directly with specparam, and by removing the aperiodic background and recomputing the cross-modal overlap.
-
-
-####  Aperiodic parametrisation and model selection
-
-We compare two aperiodic modes of fitting.  In **fixed** mode the aperiodic component
-is modelled in log-power space as
-
-$$L_{\mathrm{ap}}(f) = b - \chi \cdot \log_{10}(f)$$
-
-with offset $b$ and exponent $\chi$.. In **knee** mode,
-
-$$L_{\mathrm{ap}}(f) = b - \log_{10}(k + f^{\chi})$$
-
-with an additional knee parameter $k$. Here $k$ sets both the height of the low-frequency plateau and the corner frequency $f_k = k^{1/\chi}$ at which the spectrum bends from flat to $1/f^{\chi}$ behaviour (@fig-knee-misfit B, C). Fitting the fixed model to a spectrum that has a genuine knee forces a single line through both regimes and biases the exponent low, even when the fit's $R^2$ appears acceptable (@fig-knee-misfit A); this is what the per-modality model selection below is designed to avoid.
-
-![Geometry of the knee aperiodic model and the consequence of omitting it. All curves are real specparam fits to simulated spectra. (**A**) A spectrum generated with a genuine knee (true $f_k = 10$ Hz) fit in both modes. The knee model recovers the generating exponent ($\hat{\chi} = 2.0$), whereas the fixed model, lacking a plateau term, pivots a single line through plateau and slope and underestimates the exponent by ~39%, despite an apparently acceptable $R^2$. (**B**) Effect of the knee parameter $k$ at fixed exponent: larger $k$ lowers the plateau and shifts the corner frequency $f_k$ to higher values, while the high-frequency slope is unchanged. (**C**) Effect of the exponent $\chi$ at fixed knee: $\chi$ sets the high-frequency slope while the low-frequency plateau ($b - \log_{10} k$) is shared.](figures/chapter2/knee_misfit_combined.svg){#fig-knee-misfit width="100%" column="page"}
-
-
-Rather than choosing the aperiodic mode by visual inspection of the spectra, we informed the choice per modality with the Bayesian Information Criterion (BIC), which weighs each mode's fit against its number of parameters; the final choice also considered the size of the fit improvement and its robustness, since BIC alone can favour the knee on a negligible gain. Both modes are fit to every channel spectrum with identical peak settings and frequency range, and the two fits are compared on each spectrum. Following @ameen2025TemporallyResolvedAnalyses, the BIC of a single spectrum  is
-
-$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
-
-where $N$ is the number of fitted frequency bins (sample size), MSE is the mean squared residual of the full model in log-power space (aperiodic plus all peaks; equivalently the square of specparam's RMSE error term), and $n_p$ is the number of free parameters. With up to eight peaks, $n_p = 3 n_{\mathrm{peaks}} + n_{\mathrm{ap}}$, where each peak contributes three parameters and $n_{\mathrm{ap}} = 2$ for the fixed model (offset, exponent) and $n_{\mathrm{ap}} = 3$ for the knee model (offset, knee, exponent). On the per-spectrum scale of @raftery1995BayesianModelSelectiona, as used by @ameen2025TemporallyResolvedAnalyses, an absolute BIC difference of 0-2 is weak evidence for the lower-BIC model, 2-6 is positive evidence, and  610 is strong evidence,and above 10 is very strong evidence.
-
-@ameen2025TemporallyResolvedAnalyses apply this criterion per averaged spectrum and do not prescribe how to choose a single mode for a set of spectra. We extend it as follows. The channel set is held fixed within each modality, so the fixed and knee mode of  fits are paired observations on the same spectra, and the comparison is summarised at the channel level by two complementary quantities. 
-
-We report *fit quality*: the median $R^2$ and median MSE of each mode.
-
- <!-- together with the paired per-channel improvement of the knee ($\Delta R^2$ and the percentage reduction in MSE). Because the knee adds a parameter it  might lowers MSE, so the *magnitude* of this improvement, not its sign, is what matters.  -->
-
-Second, *penalised selection*: the median and mean per-channel $\Delta\mathrm{BIC}_c = \mathrm{BIC}^{\mathrm{knee}}_c - \mathrm{BIC}^{\mathrm{fixed}}_c$ (negative favouring knee), with each channel additionally graded on the linear  scale above and the fraction of channels in each signed evidence category (strong, positive, or weak in favour of knee or fixed) reported. Fit quality and $\Delta\mathrm{BIC}$ must be read together, because the $N\log(\mathrm{MSE})$ term scales $\Delta\mathrm{BIC}$ with the number of fitted bins $N$, so a negligible relative MSE gain can still produce much higher  $\Delta\mathrm{BIC}$  when models are fitted on long frequency interval. Channels are not independent observations as they are nested within patients (iEEG, 106 patients) or subjects (HD-EEG, 19 subjects), so treating each channel as independent understates uncertainty. Each channel-level effect measure above is therefore reported with two 95% percentile bootstrap confidence intervals (10{,}000 resamples): a interval resampling channels with replacement, and a subject-clustered interval resampling whole subjects (keeping all of a subject's channels). The clustered interval is used for inference; the gap between the two exposes the pseudoreplication, which is severe in the 19-subject HD-EEG modality.
-
-####  Main analysis specparam settings
 
 PSDs were parameterised using specparam (formerly FOOOF; @donoghue2020ParameterizingNeuralPower) with the following shared settings:
 
