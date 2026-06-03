@@ -1,0 +1,21 @@
+---
+filters:
+- offset-headings
+title: Mapping Oscillatory and 1/f Broadband Spectral Features Across Cortical Regions and Recording Modalities 
+---
+# Mapping Oscillatory and 1/f Broadband Spectral Features Across Cortical Regions and Recording Modalities {.unnumbered .unlisted  offset-headings-by="-1"}
+
+{{< include ch02_1_intro.qmd >}}
+
+
+{{< include ch02_2_methods.qmd >}}
+
+{{< include ch02_3_results.qmd >}}
+
+{{< include ch02_4_discussion.qmd >}}
+
+
+## References
+
+::: {#refs}
+:::

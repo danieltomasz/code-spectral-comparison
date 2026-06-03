@@ -21,3 +21,5 @@ bibliography:
 reference-section-title: References
 citeproc: true
 suppress-bibliography: false
+filters:
+  - offset-headings
