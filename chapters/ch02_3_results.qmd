@@ -34,18 +34,18 @@ Lobar differences presented as spectrum are presented below.
 
 The cluster solution and the no-peak set were themselves sensitive to preprocessing and to the chosen fitting range: small changes in the upper or lower bound altered both the number of clusters and the membership and shape of the no-peak reference set (especially in hd eeg reconstructed sources where some configuratrion werent able to find the so called no-peak set ).
 
-The 22 frequency intervals of @frauscher2018AtlasNormalIntracranial were defined so that each interval contained at least 4% of the total mean power in iEEG. When this data-driven rule was applied to the source-reconstructed HD-EEG spectra it failed to reproduce that structure: it yielded 21 intervals rather than 22 and, critically, placed five separate intervals above 31.75 Hz where the original atlas defines a single 31.75-80 Hz interval. This gamma over-segmentation is a consequence of the normalisation step. Because each channel spectrum is normalised to unit in-band integral, only spectral shape is retained and absolute power is discarded; channels then contribute to the mean in proportion to how their unit mass is distributed across frequency rather than to their signal strength. Source-reconstructed spectra have a shallower aperiodic slope and a relatively flat high-frequency noise floor, so a larger share of each channel's mass falls at high frequency, and low-SNR channels with weak alpha are the flattest and contribute the most relative gamma power. The averaged normalised spectrum is thus inflated above ~30 Hz and the cumulative-4% rule carves this noise-dominated tail into spurious narrow intervals. A robustness check confirmed the mechanism: replacing the mean with a median reference spectrum and restricting derivation to the physiological band (≤45 Hz) collapsed the spurious gamma intervals.
+The 22 frequency intervals of @frauscher2018AtlasNormalIntracranial were defined so that each interval contained at least 4% of the total mean power in iEEG. When this data-driven rule was applied to the source-reconstructed HD-EEG spectra it failed to reproduce that structure: it yielded 21 intervals rather than 22 and, critically, placed five separate intervals above 31.75 Hz where the original atlas defines a single 31.75-80 Hz interval. This gamma over-segmentation is a consequence of the normalisation step. Because each channel spectrum is normalised to unit in-band integral, only spectral shape is retained and absolute power is discarded; channels then contribute to the mean in proportion to how their unit mass is distributed across frequency rather than to their signal strength. Source-reconstructed spectra have a shallower aperiodic slope and a relatively flat high-frequency noise floor, so a larger share of each channel's mass falls at high frequency, and low-SNR channels with weak alpha are the flattest and contribute the most relative gamma power. The averaged normalised spectrum is thus inflated above ~30 Hz and the cumulative-4% rule carves this noise-dominated tail into spurious narrow intervals. 
+<!-- #A robustness check confirmed the mechanism: replacing the mean with a median reference spectrum and restricting derivation to the physiological band (≤45 Hz) collapsed the spurious gamma intervals. -->
 <!-- REVIEW: "confirmed the mechanism" overstates. A robustness check is consistent with the mechanism; it doesn't confirm it. Soften to "supports"/"is consistent with". -->
 
 
 For this reason the 4% condition does not transfer to source-reconstructed data, and data-driven HD-EEG intervals are not directly comparable with the iEEG atlas. To preserve cross-modal comparability, the fixed 22 intervals of @frauscher2018AtlasNormalIntracranial were retained for both modalities in all regional peak-detection tests (@fig-hdeeg-reg_dfiff).
 
-Because the clustering, the no-peak reference, and the interval definition were all unstable across reasonable preprocessing choices, this k-means peak-detection descriptor was not carried forward to the aperiodic-corrected (specparam) spectra. The downstream analyses instead characterise oscillatory content with the more stable per-band parametrised-peak descriptor, which requires neither a clustering step nor a no-peak reference and is therefore robust to these choices.
+Because the clustering, the no-peak reference, and the interval definition  based on  power were all unstable across reasonable preprocessing choices, this k-means peak-detection descriptor was not carried forward to the aperiodic-corrected (specparam) spectra. The downstream analyses instead characterise oscillatory content with the more stable per-band parametrised-peak descriptor, which requires neither a clustering step nor a no-peak reference and is therefore robust to these choices.
 
 #### Band-power map and cross-modal overlap
 
 We present regional relative band power, compared across modalities with the band-overlap metric.
-
 
 Regional relative-power maps agreed across modalities most strongly in the alpha band (r = 0.60) and, more weakly, in the delta band (r = 0.42). Theta showed essentially no cross-modal correspondence (r = 0.13), beta only weak agreement (r = 0.30), and gamma was anti-correlated (r = −0.29). The spatial organisation of relative power is therefore only partially preserved between the iEEG atlas and source-reconstructed HD-EEG, and the preservation is band-dependent: it is confined largely to the alpha and low-frequency ranges that carry the clearest oscillatory structure, and breaks down at high frequencies. The negative gamma correlation is consistent with the high-frequency HD-EEG signal being dominated by a shallow aperiodic tail and noise floor rather than by physiological gamma — the same mechanism that drove the spurious gamma over-segmentation in the interval analysis — so that regions ranked high in HD-EEG gamma relative power are not those ranked high in the atlas. Relative to the identity line
 
@@ -58,11 +58,9 @@ These per-band correlations should be read as descriptive rather than inferentia
 ![Group average relative PSD per ROI for the iEEG atlas (left) and HD-EEG source-reconstructed signals (right). One row per canonical band; within a row the two modalities share a color scale spanning that band's joint min-max Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/relative_power/fig2a_relative_psd.pdf)
 
 
-
 ### Periodic/aperiodic separation
 
 Having established the uncorrected picture, we ask whether separating periodic from aperiodic activity changes which regional features are preserved.
-
 
 #### Model-fit quality and low-quality sources
 
