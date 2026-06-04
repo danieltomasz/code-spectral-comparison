@@ -1,0 +1,306 @@
+---
+title: "Aperiodic model selection: knee vs fixed, and knee across peak-fit settings"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+We fit several specparam *models* — each a choice of aperiodic mode (fixed or
+knee) together with a peak-fit configuration — to every normalized channel PSD of
+the intracranial atlas and the source HD-EEG modality over the full $1$–$80$ Hz
+range, then compare chosen pairs of them. Two contrasts are reported: the
+**mode** contrast (knee vs fixed at the canonical settings) and a **peak-setting**
+contrast (the same knee under the canonical vs a looser/wider peak-fit), so we
+can see both which aperiodic mode each modality favours and whether the knee fit
+is sensitive to the peak-detection thresholds. iEEG and HD-EEG are summarised
+separately throughout.
+
+Each fit is scored with the Ameen-style BIC [@ameen2025TemporallyResolvedAnalyses],
+$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
+where $N$ is the number of fitted frequency bins, MSE the mean squared error of
+the full log-power model fit, and $n_p = 3n_\mathrm{peaks} + n_\mathrm{ap}$. For a
+contrast of models $a$ and $b$ the per-channel difference is
+$\Delta\mathrm{BIC}=\mathrm{BIC}_a-\mathrm{BIC}_b$; negative values favour $a$.
+
+**Fit quality** (R², MSE) measures how well each model fits; the knee adds a
+parameter so it almost always lowers MSE, hence the relevant quantity is the
+*size* of the improvement. **Model selection** (BIC) asks whether that
+improvement justifies the extra parameter. The $N\log(\mathrm{MSE})$ term scales
+$\Delta\mathrm{BIC}$ with the number of bins, so a small relative MSE gain can
+still give a large $\Delta\mathrm{BIC}$; read fit quality and BIC together.
+
+Channels are nested in subjects/patients (iEEG: 106 patients; HD-EEG: 19
+subjects), so a channel-level resample understates uncertainty. We report **two**
+percentile bootstrap intervals: a naive channel-level resample and a
+subject-clustered resample (whole subjects drawn with replacement). The clustered
+interval is the honest one; the gap between them shows the pseudoreplication.
+
+```{python}
+#| label: models
+#| echo: true
+from pesco import config
+
+OPTIMAL = config.SPECPARAM_SETTINGS
+LOOSER = dict(
+    peak_width_limits=[1, 10],
+    max_n_peaks=8,
+    min_peak_height=0.15,
+    peak_threshold=2.0,
+)
+
+# A model = (aperiodic_mode, peak-fit settings). Add or drop entries freely.
+MODELS = {
+    "fixed": ("fixed", OPTIMAL),
+    "knee": ("knee", OPTIMAL),
+    "knee (looser)": ("knee", LOOSER),
+}
+
+# Pairs to contrast: delta_bic = BIC[a] - BIC[b], negative favours a.
+COMPARISONS = [
+    ("knee", "fixed"),           # aperiodic mode selection
+    ("knee (looser)", "knee"),   # two knees, different peak settings
+]
+```
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import scipy.io as sio
+from IPython.display import Markdown
+
+from pesco.model_selection import (
+    bootstrap_category_fractions,
+    bootstrap_summary,
+    build_forest_plot,
+    fit_model,
+    fit_quality_table,
+    load_psd_csv,
+    paired_delta,
+)
+
+seed = 3
+B = 10_000
+CI = 95
+FREQ_RANGE = config.FREQ_RANGE  # (1.0, 80.0)
+DATASETS = list(config.DATASETS)
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DATA_PATH_IEEG = PROJECT_DIR / "data/Frauscher2018"
+specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
+out_dir = PROJECT_DIR / "data/interim/specparam_model_selection_combined"
+out_dir.mkdir(parents=True, exist_ok=True)
+fig_dir = Path("figures")
+fig_dir.mkdir(exist_ok=True)
+
+INPUT_CSV = {
+    "iEEG atlas": specparam_dir / "specparam_input_normalized_psd_ieeg.csv",
+    "source HD-EEG": specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv",
+}
+
+
+def add_subject(paired, ieeg_matfile=DATA_PATH_IEEG / "WakefulnessMatlabFile.mat"):
+    """Attach the subject/patient cluster id to each channel (dataset-specific).
+
+    HD-EEG channel names are ``dataset<NN>_<region><hemi>`` so the subject is the
+    prefix before the underscore. iEEG channels are mapped to the ``Patient``
+    field of the Frauscher atlas .mat file.
+    """
+    paired = paired.copy()
+    paired["subject"] = pd.NA
+
+    is_hd = paired["dataset"] == "source HD-EEG"
+    paired.loc[is_hd, "subject"] = (
+        paired.loc[is_hd, "channel"].astype(str).str.split("_").str[0]
+    )
+
+    mat = sio.loadmat(ieeg_matfile, variable_names=["ChannelName", "Patient"])
+    ch_names = [str(x[0][0]) for x in mat["ChannelName"]]
+    patient_of = {c: f"ieeg_p{p}" for c, p in zip(ch_names, mat["Patient"].ravel())}
+    is_ie = paired["dataset"] == "iEEG atlas"
+    paired.loc[is_ie, "subject"] = (
+        paired.loc[is_ie, "channel"].astype(str).map(patient_of)
+    )
+
+    assert paired["subject"].notna().all(), "unmapped channels"
+    return paired
+```
+
+```{python}
+#| label: fit-models
+# Fit each model once per modality; tag rows with the model label.
+mv_parts = []
+for name, (mode, settings) in MODELS.items():
+    df = pd.concat(
+        [
+            fit_model(*load_psd_csv(path), dataset, mode, settings, FREQ_RANGE)
+            for dataset, path in INPUT_CSV.items()
+        ],
+        ignore_index=True,
+    )
+    df.insert(0, "model", name)
+    mv_parts.append(df)
+model_values = pd.concat(mv_parts, ignore_index=True)
+model_values.to_csv(out_dir / "model_values_by_channel.csv", index=False)
+
+bic_fit_quality = fit_quality_table(model_values)
+bic_fit_quality.to_csv(out_dir / "fit_quality.csv", index=False)
+```
+
+```{python}
+#| label: compare
+# Difference each requested pair of models; bootstrap per modality.
+paired_parts, boot_parts, raft_parts = [], [], []
+for a, b in COMPARISONS:
+    label = f"{a} − {b}"
+    paired = add_subject(paired_delta(model_values, a, b))
+    boot = bootstrap_summary(paired, B=B, ci=CI, seed=seed)
+    raft = bootstrap_category_fractions(paired, B=B, ci=CI, seed=seed)
+    for df in (paired, boot, raft):
+        df.insert(0, "comparison", label)
+    paired_parts.append(paired)
+    boot_parts.append(boot)
+    raft_parts.append(raft)
+
+paired = pd.concat(paired_parts, ignore_index=True)
+bic_bootstrap = pd.concat(boot_parts, ignore_index=True)
+bic_raftery_categories = pd.concat(raft_parts, ignore_index=True)
+
+paired.to_csv(out_dir / "delta_metrics_by_channel.csv", index=False)
+bic_bootstrap.to_csv(out_dir / "bootstrap_ci.csv", index=False)
+bic_raftery_categories.to_csv(out_dir / "raftery_category_bootstrap_ci.csv", index=False)
+```
+
+## Fit quality per model
+
+```{python}
+#| label: fit-quality-table
+#| output: true
+bic_fit_quality.round(4)
+```
+
+## Comparisons: ΔBIC and effect sizes
+
+For each contrast, $\Delta\mathrm{BIC}=\mathrm{BIC}_a-\mathrm{BIC}_b$ (negative
+favours the first-named model). MSE reduction is the median per-channel MSE drop
+of $a$ relative to $b$.
+
+```{python}
+#| label: bootstrap-summary-table
+#| output: true
+bic_bootstrap.assign(
+    point=lambda d: d["point"].round(3),
+    channel_ci_lo=lambda d: d["channel_ci_lo"].round(3),
+    channel_ci_hi=lambda d: d["channel_ci_hi"].round(3),
+    subject_ci_lo=lambda d: d["subject_ci_lo"].round(3),
+    subject_ci_hi=lambda d: d["subject_ci_hi"].round(3),
+)[
+    [
+        "comparison",
+        "dataset",
+        "statistic",
+        "n_channels",
+        "n_subjects",
+        "point",
+        "channel_ci_lo",
+        "channel_ci_hi",
+        "subject_ci_lo",
+        "subject_ci_hi",
+    ]
+]
+```
+
+```{python}
+#| label: selected-mode-text
+#| output: true
+dbic = bic_bootstrap.set_index(["comparison", "dataset", "statistic"])
+lines = []
+for a, b in COMPARISONS:
+    label = f"{a} − {b}"
+    for dataset in DATASETS:
+        med = dbic.loc[(label, dataset, "median_delta_bic")]
+        winner = a if med["point"] < 0 else b
+        lines.append(
+            f"- **{label}** · {dataset}: median ΔBIC = {med['point']:.1f} "
+            f"(subject CI [{med['subject_ci_lo']:.1f}, {med['subject_ci_hi']:.1f}]) "
+            f"→ favours **{winner}**."
+        )
+Markdown(
+    "Winner = lower median BIC under the subject-clustered "
+    f"({CI}% percentile, B={B:,}) bootstrap.\n\n" + "\n".join(lines)
+)
+```
+
+```{python}
+#| label: forest-plot
+#| output: true
+forest = build_forest_plot(
+    bic_bootstrap,
+    row="comparison",
+    stats=("median_delta_bic",),
+    title=f"Median per-channel ΔBIC by comparison (B={B:,})",
+    x_label="ΔBIC (a − b),  negative favours the first-named model",
+)
+for ext in ("svg", "pdf", "png"):
+    forest.save(
+        fig_dir / f"bic_model_selection.{ext}",
+        width=7,
+        height=4,
+        dpi=150,
+        verbose=False,
+    )
+forest
+```
+
+## Channels per Raftery evidence category
+
+Each channel is graded on the per-spectrum Raftery scale by its own
+$\Delta\mathrm{BIC}$ (strong $|\Delta\mathrm{BIC}|>6$, positive
+$2<|\Delta\mathrm{BIC}|\le 6$, weak $|\Delta\mathrm{BIC}|\le 2$), signed toward
+the lower-BIC model. Fractions carry both a channel-level and a subject-clustered
+bootstrap CI.
+
+```{python}
+#| label: raftery-category-table
+#| output: true
+pct = bic_raftery_categories.copy()
+for c in ["fraction", "channel_ci_lo", "channel_ci_hi", "subject_ci_lo", "subject_ci_hi"]:
+    pct[c] = (pct[c] * 100).round(1)
+pct[
+    [
+        "comparison",
+        "dataset",
+        "evidence_category",
+        "n_channels",
+        "fraction",
+        "channel_ci_lo",
+        "channel_ci_hi",
+        "subject_ci_lo",
+        "subject_ci_hi",
+    ]
+]
+```
+
+Under the canonical settings the intracranial atlas shows a large, decisive knee
+improvement that is stable under subject clustering, so the knee model is
+retained for iEEG; in source HD-EEG the knee's BIC advantage shrinks toward zero
+under subject-clustered resampling and the fit gain is negligible, so the fixed
+model is retained. The knee-vs-knee contrast isolates the effect of the
+peak-fit settings on the knee fit alone: a ΔBIC near zero there means the looser
+peak detection does not materially change the aperiodic fit, confirming the mode
+choice is driven by aperiodic geometry rather than peak thresholds.

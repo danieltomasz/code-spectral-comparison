@@ -1,0 +1,133 @@
+---
+title: "H3.1 — Knee vs fixed aperiodic exponent"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+Per-channel agreement between the **knee-** and **fixed-mode** aperiodic
+exponents, per modality, from the cached `aperiodic` table (canonical 1–80 Hz
+run; no refit). Because the two exponents are not on the same scale (the fixed
+model lacks the low-frequency plateau term), agreement is summarised by Pearson
+and Spearman correlation across channels and shown as an agreement scatter,
+points coloured by the fitted knee frequency to test whether the fixed exponent
+tracks the knee [@ameen2025TemporallyResolvedAnalyses].
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+from plotnine import (
+    aes,
+    element_text,
+    facet_wrap,
+    geom_abline,
+    geom_point,
+    geom_text,
+    ggplot,
+    labs,
+    scale_color_cmap,
+    theme,
+    theme_bw,
+)
+
+from pesco import config, store
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DB_PATH = PROJECT_DIR / "data/interim/analysis.duckdb"
+fig_dir = Path("figures/chapter2")
+fig_dir.mkdir(parents=True, exist_ok=True)
+PARAMS_HASH = store.params_hash(
+    config.SPECPARAM_SETTINGS, config.FREQ_RANGE, config.SELECTED_MODE
+)
+```
+
+```{python}
+#| label: load
+con = store.open_db(DB_PATH)
+ap = store.load(con, "aperiodic", PARAMS_HASH)
+con.close()
+
+wide = ap.pivot_table(
+    index=["channel", "dataset"], columns="mode", values="exponent"
+).reset_index()
+wide.columns = ["channel", "dataset", "exp_fixed", "exp_knee"]
+knee_freq = ap.loc[ap["mode"] == "knee", ["channel", "dataset", "knee_freq"]]
+paired = wide.merge(knee_freq, on=["channel", "dataset"]).dropna(
+    subset=["exp_fixed", "exp_knee"]
+)
+paired["dataset"] = pd.Categorical(paired["dataset"], config.DATASETS, ordered=True)
+```
+
+```{python}
+#| label: correlations
+#| output: true
+def corr_table(paired, x, y):
+    rows = []
+    for ds, g in paired.groupby("dataset", observed=True):
+        r, _ = stats.pearsonr(g[x], g[y])
+        rho, _ = stats.spearmanr(g[x], g[y])
+        rows.append(
+            {
+                "dataset": ds,
+                "n_channels": len(g),
+                "median_fixed": round(g[x].median(), 3),
+                "median_knee": round(g[y].median(), 3),
+                "pearson_r": round(r, 3),
+                "spearman_rho": round(rho, 3),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+knee_fixed_corr = corr_table(paired, "exp_fixed", "exp_knee")
+knee_fixed_corr
+```
+
+```{python}
+#| label: fig-scatter
+#| output: true
+ann = knee_fixed_corr.assign(
+    label=lambda d: "r=" + d["pearson_r"].map("{:.2f}".format)
+    + "  ρ=" + d["spearman_rho"].map("{:.2f}".format),
+    x=paired.groupby("dataset", observed=True)["exp_fixed"].min().values,
+    y=paired.groupby("dataset", observed=True)["exp_knee"].max().values,
+)
+scatter = (
+    ggplot(paired, aes("exp_fixed", "exp_knee"))
+    + geom_abline(slope=1, intercept=0, linetype="dashed", color="#999999")
+    + geom_point(aes(color="knee_freq"), size=1.4, alpha=0.5, stroke=0)
+    + geom_text(ann, aes("x", "y", label="label"), ha="left", va="top", size=9)
+    + facet_wrap("dataset", scales="free")
+    + scale_color_cmap(cmap_name="viridis", name="knee freq (Hz)")
+    + labs(
+        x="fixed-model exponent χ",
+        y="knee-model exponent χ",
+        title="Knee vs fixed aperiodic exponent (per channel)",
+    )
+    + theme_bw()
+    + theme(figure_size=(9, 4.2), plot_title=element_text(size=11))
+)
+for ext in ("svg", "pdf", "png"):
+    scatter.save(
+        fig_dir / f"h3_knee_vs_fixed_exponent.{ext}",
+        width=9, height=4.2, dpi=150, verbose=False,
+    )
+scatter
+```

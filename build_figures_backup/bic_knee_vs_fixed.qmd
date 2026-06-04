@@ -1,0 +1,772 @@
+---
+title: "Aperiodic model selection: knee vs fixed BIC"
+format:
+  typst:
+    #fontsize: 12pt
+    number-sections: false
+    toc: false
+    #toc-depth: 2
+    # Tell Quarto/Pandoc to wrap citations in hyperlinks
+    link-citations: true
+    # Tell Typst to color all links blue
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+Compare specparam fixed and knee aperiodic models per channel with an
+Ameen-style BIC criterion.
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from IPython.display import Markdown
+from scipy import stats
+from scipy.special import betainc, gammaln, logsumexp, psi
+from specparam import SpectralGroupModel
+
+from pesco.bandpower import relative_psd_df
+from pesco.io import load_sources, prepare_psd
+from pesco.pipeline import DatasetCtx
+from pesco.preprocess import compute_psd
+
+seed = 3
+np.random.seed(seed)
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DATA_PATH_SOURCES = Path(f"{PROJECT_DIR}/data/Mantini2018")
+DATA_PATH_IEEG = Path(f"{PROJECT_DIR}/data/Frauscher2018")
+
+# specparam peak settings following Afnan et al. 2023, shared across every
+# fit. aperiodic_mode is passed per fit: both knee and fixed, so the two can
+# be compared.
+FREQ_RANGE = (1.0, 80.0)
+R2_THRESHOLD = 0.9
+SPECPARAM_SETTINGS = dict(
+    peak_width_limits=[1, 8],
+    max_n_peaks=8,
+    min_peak_height=0.1,
+    peak_threshold=3.0,
+)
+
+
+def add_roi_hemisphere_labels(metadata):
+    """Add hemisphere-specific ROI labels for left/right map comparison."""
+    metadata = metadata.copy()
+    if "hemisphere" not in metadata.columns:
+        if "mni_x" not in metadata.columns:
+            metadata["hemisphere"] = pd.NA
+        else:
+            metadata["hemisphere"] = np.select(
+                [metadata["mni_x"] < 0, metadata["mni_x"] > 0],
+                ["L", "R"],
+                default=pd.NA,
+            )
+    metadata["hemisphere"] = metadata["hemisphere"].astype("string")
+    metadata["roi_hemisphere"] = (
+        metadata["Region name"].astype(str) + " (" + metadata["hemisphere"] + ")"
+    )
+    metadata["roi_bilateral"] = metadata["Region name"].astype(str)
+    return metadata
+
+
+def reconstruct_specparam_log_model(fg, row_idx):
+    """Reconstruct full specparam fit in log10-power space for one spectrum."""
+    freqs = np.asarray(fg.data.freqs, dtype=float)
+    result = fg.results[row_idx]
+    ap_fit = fg.modes.aperiodic.func(freqs, *np.asarray(result.aperiodic_fit))
+    peak_params = np.asarray(result.peak_fit, dtype=float).ravel()
+    if peak_params.size:
+        peak_fit = fg.modes.periodic.func(freqs, *peak_params)
+    else:
+        peak_fit = np.zeros_like(freqs)
+    return ap_fit + peak_fit
+
+
+def specparam_model_values(fg, psd_df, dataset, aperiodic_model):
+    """Extract aperiodic parameters, fit metrics, and BIC per fitted channel."""
+    meta_cols = [
+        c for c in ["Region name", "Lobe", "hemisphere", "mni_x"] if c in psd_df
+    ]
+    metadata = add_roi_hemisphere_labels(psd_df[meta_cols]).reset_index(drop=True)
+    metadata.insert(0, "channel", psd_df.index.astype(str))
+
+    n_freqs = len(fg.data.freqs)
+    rows = []
+    for row_idx, (channel, result) in enumerate(zip(psd_df.index.astype(str), fg.results)):
+        params = np.asarray(result.aperiodic_fit, dtype=float)
+        model_fit = reconstruct_specparam_log_model(fg, row_idx)
+        residual = np.asarray(fg.data.power_spectra[row_idx], dtype=float) - model_fit
+        rss = float(np.sum(residual**2))
+        mse = rss / n_freqs
+        n_model_params = int(len(params) + np.asarray(result.peak_fit).size)
+        bic = n_freqs * np.log(max(mse, np.finfo(float).tiny))
+        bic += n_model_params * np.log(n_freqs)
+
+        row = {
+            "channel": channel,
+            "dataset": dataset,
+            "aperiodic_model": aperiodic_model,
+            "offset": params[0],
+            "knee": params[1] if aperiodic_model == "knee" else np.nan,
+            "exponent": params[-1],
+            "knee_frequency": (
+                params[1] ** (1.0 / params[-1])
+                if aperiodic_model == "knee" and params[1] > 0 and params[-1] > 0
+                else np.nan
+            ),
+            "n_peaks": int(len(result.peak_fit)),
+            "n_model_params": n_model_params,
+            "n_freqs": n_freqs,
+            "rss_log10": rss,
+            "mse_log10": mse,
+            "bic": bic,
+            "gof_rsquared": result.metrics.get("gof_rsquared", np.nan),
+            "error_mae": result.metrics.get("error_mae", np.nan),
+        }
+        rows.append(row)
+
+    values = pd.DataFrame(rows).merge(metadata, on="channel", how="left")
+    return values
+
+
+def fit_specparam_pair(psd_df, freqs, dataset):
+    """Fit fixed and knee specparam models to all spectra in one dataframe.
+
+    This function does not average channels or regions. It takes a PSD table
+    with one row per spectrum, fits both a fixed and a knee aperiodic model to
+    every row, and returns both fitted group models plus per-spectrum parameters
+    and BIC values.
+    """
+    freqs = np.asarray(freqs, dtype=float)
+    psd_mat = psd_df[list(freqs)].to_numpy(dtype=float)
+    models = {}
+    values = []
+    for aperiodic_model in ("fixed", "knee"):
+        fg = SpectralGroupModel(
+            **SPECPARAM_SETTINGS,
+            aperiodic_mode=aperiodic_model,
+            verbose=False,
+        )
+        fg.fit(freqs, psd_mat, freq_range=list(FREQ_RANGE), n_jobs=1)
+        models[aperiodic_model] = fg
+        values.append(specparam_model_values(fg, psd_df, dataset, aperiodic_model))
+    return models, pd.concat(values, ignore_index=True)
+
+
+def bic_evidence(delta_bic):
+    """Raftery-style evidence categories for absolute BIC differences."""
+    delta_bic = abs(float(delta_bic))
+    if delta_bic < 2:
+        return "weak"
+    if delta_bic < 6:
+        return "positive"
+    return "strong"
+
+
+def bic_model_summary(model_values):
+    """Ameen-style paired fixed-vs-knee BIC comparison.
+
+    Channels are fixed observation units. For each channel, compare the BIC of
+    the two fitted aperiodic modes and summarise the paired difference
+    ``knee - fixed`` by dataset.
+    """
+    paired = (
+        model_values.pivot_table(
+            index=["dataset", "channel"],
+            columns="aperiodic_model",
+            values=["bic", "gof_rsquared", "error_mae", "n_peaks"],
+            aggfunc="first",
+        )
+        .dropna(subset=[("bic", "fixed"), ("bic", "knee")])
+        .reset_index()
+    )
+    paired.columns = [
+        "_".join(col).strip("_") if isinstance(col, tuple) else col
+        for col in paired.columns
+    ]
+    paired["delta_bic_knee_minus_fixed"] = paired["bic_knee"] - paired["bic_fixed"]
+    paired["preferred_model"] = np.where(
+        paired["delta_bic_knee_minus_fixed"] <= 0, "knee", "fixed"
+    )
+    paired["abs_delta_bic"] = paired["delta_bic_knee_minus_fixed"].abs()
+    paired["channel_evidence"] = paired["abs_delta_bic"].map(bic_evidence)
+
+    summary = (
+        paired.groupby("dataset", observed=True)
+        .agg(
+            n_channels=("channel", "nunique"),
+            mean_fixed_bic=("bic_fixed", "mean"),
+            mean_knee_bic=("bic_knee", "mean"),
+            total_delta_bic_knee_minus_fixed=(
+                "delta_bic_knee_minus_fixed",
+                "sum",
+            ),
+            mean_delta_bic_knee_minus_fixed=(
+                "delta_bic_knee_minus_fixed",
+                "mean",
+            ),
+            median_delta_bic_knee_minus_fixed=(
+                "delta_bic_knee_minus_fixed",
+                "median",
+            ),
+            sd_delta_bic_knee_minus_fixed=(
+                "delta_bic_knee_minus_fixed",
+                "std",
+            ),
+            fixed_preferred_channels=(
+                "preferred_model",
+                lambda x: int((x == "fixed").sum()),
+            ),
+            knee_preferred_channels=(
+                "preferred_model",
+                lambda x: int((x == "knee").sum()),
+            ),
+            median_fixed_r2=("gof_rsquared_fixed", "median"),
+            median_knee_r2=("gof_rsquared_knee", "median"),
+            median_fixed_mae=("error_mae_fixed", "median"),
+            median_knee_mae=("error_mae_knee", "median"),
+            median_fixed_n_peaks=("n_peaks_fixed", "median"),
+            median_knee_n_peaks=("n_peaks_knee", "median"),
+        )
+        .reset_index()
+    )
+    summary["sem_delta_bic_knee_minus_fixed"] = (
+        summary["sd_delta_bic_knee_minus_fixed"] / np.sqrt(summary["n_channels"])
+    )
+    summary["ci95_delta_bic_knee_minus_fixed"] = (
+        1.96 * summary["sem_delta_bic_knee_minus_fixed"]
+    )
+    summary["aperiodic_model"] = np.where(
+        summary["total_delta_bic_knee_minus_fixed"] <= 0, "knee", "fixed"
+    )
+    summary["evidence"] = summary["total_delta_bic_knee_minus_fixed"].map(
+        bic_evidence
+    )
+    summary = summary.sort_values("dataset")
+    return summary, summary.copy()
+
+
+def bic_channel_preference(model_values):
+    """Per-channel fixed-vs-knee preference and dataset-level counts."""
+    pivot = (
+        model_values.pivot_table(
+            index=["dataset", "channel"],
+            columns="aperiodic_model",
+            values="bic",
+            aggfunc="first",
+        )
+        .reset_index()
+        .dropna(subset=["fixed", "knee"])
+    )
+    pivot["best_model"] = np.where(pivot["fixed"] <= pivot["knee"], "fixed", "knee")
+    pivot["delta_bic_fixed_minus_knee"] = pivot["fixed"] - pivot["knee"]
+    pivot["abs_delta_bic"] = pivot["delta_bic_fixed_minus_knee"].abs()
+    pivot["evidence"] = pivot["abs_delta_bic"].map(bic_evidence)
+
+    counts = (
+        pivot.groupby(["dataset", "best_model", "evidence"], observed=True)
+        .size()
+        .reset_index(name="n_channels")
+    )
+    counts["fraction"] = counts["n_channels"] / counts.groupby("dataset")[
+        "n_channels"
+    ].transform("sum")
+    return pivot, counts
+
+
+def bic_from_fit(fg, row_idx):
+    """Ameen-style BIC of a single fitted spectrum (log-power space)."""
+    n_freqs = len(fg.data.freqs)
+    result = fg.results[row_idx]
+    model_fit = reconstruct_specparam_log_model(fg, row_idx)
+    residual = np.asarray(fg.data.power_spectra[row_idx], dtype=float) - model_fit
+    mse = float(np.sum(residual**2)) / n_freqs
+    n_p = int(len(result.aperiodic_fit) + np.asarray(result.peak_fit).size)
+    bic = n_freqs * np.log(max(mse, np.finfo(float).tiny)) + n_p * np.log(n_freqs)
+    return {
+        "bic": bic,
+        "n_model_params": n_p,
+        "n_peaks": int(len(result.peak_fit)),
+        "mse_log10": mse,
+        "gof_rsquared": result.metrics.get("gof_rsquared", np.nan),
+    }
+
+
+def bic_channel_unit_summary(model_values):
+    """Method 1: per-channel BIC, channel as the unit of observation.
+
+    For each dataset, treat the paired ``knee - fixed`` BIC difference of every
+    channel as one observation. Decide the modality's mode by the *sign of the
+    median* difference, grade evidence from the median on the Raftery scale, and
+    test whether the per-channel difference is centred on zero with a Wilcoxon
+    signed-rank test. Effect size (median, fraction favouring) is invariant to
+    the number of channels, unlike a summed BIC.
+    """
+    paired = (
+        model_values.pivot_table(
+            index=["dataset", "channel"],
+            columns="aperiodic_model",
+            values="bic",
+            aggfunc="first",
+        )
+        .reset_index()
+        .dropna(subset=["fixed", "knee"])
+    )
+    paired["delta_bic_knee_minus_fixed"] = paired["knee"] - paired["fixed"]
+
+    rows = []
+    for dataset, group in paired.groupby("dataset", observed=True):
+        delta = group["delta_bic_knee_minus_fixed"].to_numpy(dtype=float)
+        median_delta = float(np.median(delta))
+        n_knee = int((delta <= 0).sum())
+        n_fixed = int((delta > 0).sum())
+        if np.any(delta != 0) and len(delta) > 0:
+            w_stat, p_value = stats.wilcoxon(delta)
+        else:
+            w_stat, p_value = np.nan, np.nan
+        rows.append(
+            {
+                "dataset": dataset,
+                "method": "channel_unit",
+                "n_channels": len(delta),
+                "median_delta_bic_knee_minus_fixed": median_delta,
+                "iqr_delta_bic": float(
+                    np.subtract(*np.percentile(delta, [75, 25]))
+                ),
+                "knee_preferred_channels": n_knee,
+                "fixed_preferred_channels": n_fixed,
+                "fraction_knee_preferred": n_knee / len(delta),
+                "wilcoxon_w": float(w_stat),
+                "wilcoxon_p": float(p_value),
+                "aperiodic_model": "knee" if median_delta <= 0 else "fixed",
+                "evidence": bic_evidence(median_delta),
+            }
+        )
+    return paired, pd.DataFrame(rows).sort_values("dataset")
+
+
+def bic_average_spectrum_summary(datasets):
+    """Method 2: BIC on the mean normalized spectrum per modality.
+
+    ``datasets`` is a list of ``(dataset, psd_df, freqs)``. For each modality the
+    normalized channel spectra are averaged across channels (arithmetic mean of
+    the unit-power-normalized PSD, so channel scale is already equalized), both
+    aperiodic modes are fit to that single mean spectrum, and the decision is the
+    sign of the single ``knee - fixed`` BIC difference. Averaging across
+    heterogeneous channels can fabricate or wash out a knee, so this is a
+    coarser, lower-power comparator for the channel-unit method.
+    """
+    rows = []
+    for dataset, psd_df, freqs in datasets:
+        freqs = np.asarray(freqs, dtype=float)
+        mean_power = psd_df[list(freqs)].mean(axis=0).to_numpy(dtype=float)
+        record = {"dataset": dataset, "method": "average_spectrum"}
+        bic_by_mode = {}
+        for aperiodic_model in ("fixed", "knee"):
+            fg = SpectralGroupModel(
+                **SPECPARAM_SETTINGS,
+                aperiodic_mode=aperiodic_model,
+                verbose=False,
+            )
+            fg.fit(freqs, mean_power[None, :], freq_range=list(FREQ_RANGE), n_jobs=1)
+            fit = bic_from_fit(fg, 0)
+            bic_by_mode[aperiodic_model] = fit["bic"]
+            record[f"bic_{aperiodic_model}"] = fit["bic"]
+            record[f"n_peaks_{aperiodic_model}"] = fit["n_peaks"]
+            record[f"gof_rsquared_{aperiodic_model}"] = fit["gof_rsquared"]
+        delta = bic_by_mode["knee"] - bic_by_mode["fixed"]
+        record["delta_bic_knee_minus_fixed"] = delta
+        record["aperiodic_model"] = "knee" if delta <= 0 else "fixed"
+        record["evidence"] = bic_evidence(delta)
+        rows.append(record)
+    return pd.DataFrame(rows).sort_values("dataset")
+
+
+def random_effects_bms(log_evidence, alpha0=None, tol=1e-6, max_iter=10000):
+    """Random-effects Bayesian model selection (Stephan et al. 2009).
+
+    ``log_evidence`` is an ``(n_units, n_models)`` array of per-unit log model
+    evidences; here units are channels and the log evidence of each model is
+    approximated by ``-0.5 * BIC``. A variational scheme infers a Dirichlet
+    posterior over model frequencies. Returns the Dirichlet ``alpha``, expected
+    model frequencies, exceedance probabilities, the Bayesian omnibus risk, and
+    the protected exceedance probabilities (Rigoux et al. 2014).
+    """
+    L = np.asarray(log_evidence, dtype=float)
+    _, K = L.shape
+    if alpha0 is None:
+        alpha0 = np.ones(K)
+
+    alpha = alpha0.copy()
+    for _ in range(max_iter):
+        elogr = psi(alpha) - psi(alpha.sum())
+        logg = L + elogr
+        logg -= logsumexp(logg, axis=1, keepdims=True)
+        beta = np.exp(logg).sum(axis=0)
+        alpha_new = alpha0 + beta
+        if np.max(np.abs(alpha_new - alpha)) < tol:
+            alpha = alpha_new
+            break
+        alpha = alpha_new
+
+    def log_dirichlet_const(a):
+        return np.sum(gammaln(a)) - gammaln(np.sum(a))
+
+    elogr = psi(alpha) - psi(alpha.sum())
+    g = np.exp((L + elogr) - logsumexp(L + elogr, axis=1, keepdims=True))
+    beta = g.sum(axis=0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        entropy = -np.sum(g * np.where(g > 0, np.log(g), 0.0))
+    free_energy = (
+        np.sum(g * L)
+        + entropy
+        - log_dirichlet_const(alpha0)
+        + log_dirichlet_const(alpha)
+        + np.sum((beta + alpha0 - alpha) * elogr)
+    )
+    # Null model: every model frequency fixed at 1/K.
+    free_energy_null = np.sum(logsumexp(L, axis=1) - np.log(K))
+    bor = 1.0 / (1.0 + np.exp(free_energy - free_energy_null))
+
+    expected_frequencies = alpha / alpha.sum()
+    if K == 2:
+        below = betainc(alpha[0], alpha[1], 0.5)
+        xp = np.array([1.0 - below, below])
+    else:
+        draws = np.random.default_rng(0).dirichlet(alpha, size=1_000_000)
+        xp = np.bincount(draws.argmax(axis=1), minlength=K) / draws.shape[0]
+    pxp = xp * (1.0 - bor) + bor / K
+    return {
+        "alpha": alpha,
+        "expected_frequencies": expected_frequencies,
+        "xp": xp,
+        "bor": float(bor),
+        "pxp": pxp,
+    }
+
+
+def bms_model_summary(model_values, models=("fixed", "knee")):
+    """Method 3: random-effects BMS over channels for each dataset.
+
+    Channels are the units and the two aperiodic modes are the candidate models.
+    Per-channel log evidence is taken as ``-0.5 * BIC``; the selected mode is the
+    one with the higher protected exceedance probability, which is robust to a
+    few outlier channels flipping the result.
+    """
+    pivot = (
+        model_values.pivot_table(
+            index=["dataset", "channel"],
+            columns="aperiodic_model",
+            values="bic",
+            aggfunc="first",
+        )
+        .reset_index()
+        .dropna(subset=list(models))
+    )
+    rows = []
+    for dataset, group in pivot.groupby("dataset", observed=True):
+        log_evidence = -0.5 * group[list(models)].to_numpy(dtype=float)
+        result = random_effects_bms(log_evidence)
+        ef, xp, pxp = (
+            result["expected_frequencies"],
+            result["xp"],
+            result["pxp"],
+        )
+        selected = int(np.argmax(pxp))
+        record = {
+            "dataset": dataset,
+            "method": "random_effects_bms",
+            "n_channels": len(group),
+            "bor": result["bor"],
+            "aperiodic_model": models[selected],
+            "pxp_selected": float(pxp[selected]),
+        }
+        for i, mode in enumerate(models):
+            record[f"ef_{mode}"] = ef[i]
+            record[f"xp_{mode}"] = xp[i]
+            record[f"pxp_{mode}"] = pxp[i]
+        rows.append(record)
+    return pivot, pd.DataFrame(rows).sort_values("dataset")
+
+
+ieeg_raw = DatasetCtx(name="intracranial data (raw)")
+ieeg_raw.f, ieeg_raw.psd = prepare_psd(
+    matfile =  DATA_PATH_IEEG / "WakefulnessMatlabFile.mat",
+    region_dict_file = DATA_PATH_IEEG / "RegionInformation.csv",
+    frauscher_bandpass = False,
+    normalize=False,
+)
+assert ieeg_raw.psd is not None
+```
+
+```{python}
+#| label: load-hd-raw
+sources_raw, sources_meta = load_sources(DATA_PATH_SOURCES)
+hd_data = sources_raw.get_data()
+hd_fs = sources_raw.info["sfreq"]
+hd_f, hd_psd = compute_psd(hd_data, hd_fs, fmin=FREQ_RANGE[0], fmax=FREQ_RANGE[1])
+
+hd_psd_df = pd.DataFrame(
+    hd_psd,
+    index=pd.Index(sources_raw.ch_names, name="ch_name"),
+    columns=hd_f,
+).join(sources_meta)
+hd_psd_df
+```
+
+## Specparam model selection
+
+Each dataset is fit twice, with specparam's fixed and knee aperiodic models,
+using the same peak settings and frequency range. Each channel PSD is
+normalized once to unit in-band power before specparam fitting. Model selection
+follows @ameen2025TemporallyResolvedAnalyses:
+
+$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
+
+For a single spectrum, $N$ is the number of fitted frequency bins, MSE is the
+mean squared error of the full log-power model fit, and
+$n_p = 3n_\mathrm{peaks} + n_\mathrm{ap}$. The fixed model has
+$n_\mathrm{ap}=2$ and the knee model has $n_\mathrm{ap}=3$. The per-spectrum
+difference is $\Delta\mathrm{BIC}=\mathrm{BIC}_\mathrm{knee}-
+\mathrm{BIC}_\mathrm{fixed}$; negative values favour the knee model, positive
+favour the fixed model. Ameen apply this per spectrum and do not prescribe how
+to pick a single mode for a whole dataset, so two aggregation strategies are
+implemented and compared here:
+
+- **Method 1 — channel as unit.** Each channel's paired $\Delta\mathrm{BIC}$ is
+  one observation. The modality's mode is chosen by the *sign of the median*
+  $\Delta\mathrm{BIC}$, evidence graded from the median on the Raftery scale, and
+  a Wilcoxon signed-rank test asks whether the differences are centred on zero.
+  Effect size (median, fraction favouring) is invariant to channel count.
+- **Method 2 — average spectrum.** Channel spectra are averaged per modality and
+  both modes are fit to that single mean spectrum, giving one $\Delta\mathrm{BIC}$.
+  Coarser and lower-power: averaging across heterogeneous channels can fabricate
+  or wash out a knee.
+- **Method 3 — random-effects BMS** (Stephan et al. 2009). Channels are units and
+  the two modes are candidate models; per-channel log evidence is taken as
+  $-\tfrac12\mathrm{BIC}_c$. A variational scheme infers a Dirichlet posterior
+  over model frequencies, giving expected frequencies and exceedance
+  probabilities, with the protected exceedance probability and Bayesian omnibus
+  risk of Rigoux et al. (2014). This is the formally correct group-level choice
+  and is robust to a few outlier channels flipping the result.
+
+The summed $\Delta\mathrm{BIC}$ across channels (a fixed-effects pooling of
+evidence) is reported alongside as a reference, but its magnitude grows with
+channel count, so it is not graded on the per-spectrum Raftery scale.
+
+```{python}
+#| label: specparam-fit-fixed-knee
+interim_dir = PROJECT_DIR / "data/interim"
+specparam_dir = interim_dir / "specparam_model_selection"
+specparam_dir.mkdir(parents=True, exist_ok=True)
+
+ieeg_specparam_psd = relative_psd_df(ieeg_raw.psd, ieeg_raw.f)
+hd_specparam_psd = relative_psd_df(hd_psd_df, hd_f)
+
+# These normalized PSD tables are the only inputs to specparam.
+ieeg_specparam_psd.to_csv(
+    specparam_dir / "specparam_input_normalized_psd_ieeg.csv"
+)
+hd_specparam_psd.to_csv(
+    specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv"
+)
+
+ieeg_specparam_models, ieeg_specparam_values = fit_specparam_pair(
+    ieeg_specparam_psd, ieeg_raw.f, dataset="iEEG atlas"
+)
+hd_specparam_models, hd_specparam_values = fit_specparam_pair(
+    hd_specparam_psd, hd_f, dataset="source HD-EEG"
+)
+
+specparam_model_values = pd.concat(
+    [ieeg_specparam_values, hd_specparam_values], ignore_index=True
+)
+# Existing summed (fixed-effects) decision, kept as a reference column.
+specparam_bic_summary, specparam_bic_best = bic_model_summary(
+    specparam_model_values
+)
+(
+    specparam_bic_channel_preferences,
+    specparam_bic_preference_counts,
+) = bic_channel_preference(specparam_model_values)
+
+# Method 1: channel as the unit of observation (median + Wilcoxon + fraction).
+bic_channel_unit_paired, bic_channel_unit = bic_channel_unit_summary(
+    specparam_model_values
+)
+
+# Method 2: BIC on the mean normalized spectrum per modality.
+bic_average = bic_average_spectrum_summary(
+    [
+        ("iEEG atlas", ieeg_specparam_psd, ieeg_raw.f),
+        ("source HD-EEG", hd_specparam_psd, hd_f),
+    ]
+)
+
+# Method 3: random-effects Bayesian model selection over channels.
+bic_bms_pivot, bic_bms = bms_model_summary(specparam_model_values)
+
+best_model_by_dataset = dict(
+    zip(specparam_bic_best["dataset"], specparam_bic_best["aperiodic_model"])
+)
+
+specparam_model_values.to_csv(
+    specparam_dir / "specparam_fixed_knee_model_values_by_channel.csv",
+    index=False,
+)
+specparam_bic_summary.to_csv(
+    specparam_dir / "specparam_fixed_knee_bic_summary.csv", index=False
+)
+specparam_bic_best.to_csv(
+    specparam_dir / "specparam_fixed_knee_bic_best_by_dataset.csv", index=False
+)
+specparam_bic_channel_preferences.to_csv(
+    specparam_dir / "specparam_fixed_knee_bic_channel_preferences.csv",
+    index=False,
+)
+specparam_bic_preference_counts.to_csv(
+    specparam_dir / "specparam_fixed_knee_bic_channel_preference_counts.csv",
+    index=False,
+)
+bic_channel_unit.to_csv(
+    specparam_dir / "specparam_fixed_knee_bic_channel_unit_summary.csv",
+    index=False,
+)
+bic_average.to_csv(
+    specparam_dir / "specparam_fixed_knee_bic_average_spectrum_summary.csv",
+    index=False,
+)
+bic_bms.to_csv(
+    specparam_dir / "specparam_fixed_knee_bic_random_effects_bms_summary.csv",
+    index=False,
+)
+```
+
+```{python}
+#| label: specparam-bic-summary-table
+#| output: true
+summary_lines = [
+    (
+        f"- {row['dataset']}: {int(row['n_channels'])} matched channel spectra; "
+        f"ΣΔBIC = {row['total_delta_bic_knee_minus_fixed']:.2f} "
+        f"(knee - fixed), {int(row['knee_preferred_channels'])} channels favour knee "
+        f"and {int(row['fixed_preferred_channels'])} favour fixed; selected "
+        f"**{row['aperiodic_model']}** ({row['evidence']} evidence)."
+    )
+    for _, row in specparam_bic_summary.iterrows()
+]
+Markdown(
+    "Fixed and knee models were compared on all channel-level spectra before "
+    "any band averaging or ROI aggregation. Negative ΔBIC favours knee.\n\n"
+    + "\n".join(summary_lines)
+)
+```
+
+```{python}
+#| label: specparam-bic-channel-preference-table
+#| output: true
+specparam_bic_preference_counts
+```
+
+### Method 1 — channel as unit
+
+```{python}
+#| label: specparam-bic-channel-unit-table
+#| output: true
+bic_channel_unit[
+    [
+        "dataset",
+        "n_channels",
+        "median_delta_bic_knee_minus_fixed",
+        "iqr_delta_bic",
+        "knee_preferred_channels",
+        "fixed_preferred_channels",
+        "fraction_knee_preferred",
+        "wilcoxon_w",
+        "wilcoxon_p",
+        "aperiodic_model",
+        "evidence",
+    ]
+]
+```
+
+### Method 2 — average spectrum
+
+```{python}
+#| label: specparam-bic-average-spectrum-table
+#| output: true
+bic_average
+```
+
+### Method 3 — random-effects BMS
+
+```{python}
+#| label: specparam-bic-random-effects-bms-table
+#| output: true
+bic_bms[
+    [
+        "dataset",
+        "n_channels",
+        "ef_fixed",
+        "ef_knee",
+        "xp_fixed",
+        "xp_knee",
+        "pxp_fixed",
+        "pxp_knee",
+        "bor",
+        "aperiodic_model",
+    ]
+]
+```
+
+### Decision comparison
+
+```{python}
+#| label: specparam-bic-decision-comparison
+#| output: true
+decision_comparison = pd.concat(
+    [
+        specparam_bic_summary.assign(method="summed_fixed_effects").rename(
+            columns={
+                "total_delta_bic_knee_minus_fixed": "statistic",
+            }
+        )[["dataset", "method", "aperiodic_model", "evidence", "statistic"]],
+        bic_channel_unit.assign(method="channel_unit_median").rename(
+            columns={"median_delta_bic_knee_minus_fixed": "statistic"}
+        )[["dataset", "method", "aperiodic_model", "evidence", "statistic"]],
+        bic_average.assign(method="average_spectrum").rename(
+            columns={"delta_bic_knee_minus_fixed": "statistic"}
+        )[["dataset", "method", "aperiodic_model", "evidence", "statistic"]],
+        bic_bms.assign(
+            method="random_effects_bms",
+            statistic=bic_bms["pxp_selected"],
+            evidence=bic_bms.apply(
+                lambda r: f"pxp={r['pxp_selected']:.2f}, bor={r['bor']:.2f}", axis=1
+            ),
+        )[["dataset", "method", "aperiodic_model", "evidence", "statistic"]],
+    ],
+    ignore_index=True,
+).sort_values(["dataset", "method"])
+decision_comparison
+```
+
+The `statistic` column is method-specific: summed $\Delta\mathrm{BIC}$ for the
+fixed-effects reference, the median per-channel $\Delta\mathrm{BIC}$ for
+Method 1, the single mean-spectrum $\Delta\mathrm{BIC}$ for Method 2, and the
+protected exceedance probability of the selected mode for Method 3. Where the
+methods disagree, channel-level heterogeneity is driving the difference: the
+summed total can be flipped by a few extreme channels, and the average-spectrum
+knee can be an averaging artifact. Method 3 (random-effects BMS) is the most
+defensible group-level choice; Method 1 is a robust nonparametric summary; the
+summed and average-spectrum results are diagnostics.
