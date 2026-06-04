@@ -114,3 +114,4 @@ __pycache__/
 .quarto/
 _freeze/
 **/.obsidian/
+experiments/

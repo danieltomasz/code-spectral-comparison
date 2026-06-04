@@ -27,7 +27,8 @@ dependencies = [
     "jupyter-cache",
     "ridgenine",
     "duckdb",
-    "plotnine-extra"
+    "plotnine-extra",
+    "lisc"
 ]
 
 [project.optional-dependencies]

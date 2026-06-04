@@ -19,7 +19,7 @@ The atlas authors resampled the signals to 200 Hz, applied an 80 Hz low-pass ant
 ### Source-reconstructed HD-EEG
 
 Five minutes of eyes-open resting state EEG data were collected in 19 healthy young adult volunteers (age $28\pm 6$ years, 14 females) with Ethics Committee of ETH Zurich approval. EEG signals were recorded at a 1000 Hz sampling rate using a 256-channel HydroCel Geodesic Sensor Net by Electrical Geodesics (Eugene, Oregon, USA). HD-EEG data were recorded with the eyes open condition.
-The full details of collecting and preprocessing this dataset were described in @samogin2019SharedConnectionspecificIntrinsic and @samogin2020FrequencydependentFunctionalConnectivity.  The poor channels were identified (0-13 pers subject) and interpolated; data was band-pass filtered within the 1-80 Hz range, and biological artifacts were removed using the fixed-point ICA (FastICA) algorithm. The realistic head model was provided as input to the exact low-resolution brain electromagnetic tomography (eLORETA) algorithm [@pascual-marqui2011AssessingInteractionsBrain], together with the  preprocessed EEG signals, to estimate brain activity in the source space at high-temporal resolution.
+The full details of collecting and preprocessing this dataset were described in @samogin2019SharedConnectionspecificIntrinsic and @samogin2020FrequencydependentFunctionalConnectivity.  The poor channels were identified (0-13 per subject) and interpolated; data was band-pass filtered within the 1-80 Hz range, and biological artefacts were removed using the fixed-point ICA (FastICA) algorithm. The realistic head model was provided as input to the exact low-resolution brain electromagnetic tomography (eLORETA) algorithm [@pascual-marqui2011AssessingInteractionsBrain], together with the preprocessed EEG signals, to estimate brain activity in the source space at high-temporal resolution.
 
  The following steps and timeseries extraction were chosen to match the iEEG atlas: source activity was extracted from reconstructed sources using average coordinates from the electrodes within 76 MICCAI-defined ROIs in MNI space, resulting in 1444 virtual sensors, with the grouped regional reference coordinates illustrated in Figure @fig-frauscher-atlas, panel B.
 
@@ -45,12 +45,11 @@ Where later analyses use canonical bands, we define them as delta 1-4 Hz, theta 
 
 Introduced by @donoghue2020ParameterizingNeuralPower, the *specparam* (formerly FOOOF) method  and toolbox decomposes the log power spectrum into an aperiodic component $L(f)$ and a sum of $N$ peaks, each modelled as a Gaussian (@fig-specparam A):
 
-$$\hat{P}(f) = L(f) + \sum_{n=1}^{N} a_n \exp\!\left(-\frac{(f-\mu_n)^2}{2\sigma_n^2}\right),$$
+$$\hat{P}(f) = L(f) + \sum_{n=1}^{N} a_n \exp\left(-\frac{(f-\mu_n)^2}{2\sigma_n^2}\right),$$
 
 where each peak $n$ contributes an amplitude $a_n$, centre frequency $\mu_n$, and width $\sigma_n$.
 
-We compare two aperiodic modes of fitting.  In **fixed** mode the aperiodic component
-is modelled in log-power space as
+We compare two aperiodic modes of fitting. In **fixed** mode the aperiodic component is modelled in log-power space as:
 
 $$L_{\mathrm{ap}}(f) = b - \chi \cdot \log_{10}(f)$$
 
