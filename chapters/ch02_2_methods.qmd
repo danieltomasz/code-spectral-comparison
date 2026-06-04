@@ -24,7 +24,6 @@ The full details of collecting and preprocessing this dataset were described in 
  The following steps and timeseries extraction were chosen to match the iEEG atlas: source activity was extracted from reconstructed sources using average coordinates from the electrodes within 76 MICCAI-defined ROIs in MNI space, resulting in 1444 virtual sensors, with the grouped regional reference coordinates illustrated in Figure @fig-frauscher-atlas, panel B.
 
 
-
 ![Spatial distribution of the MNI Open iEEG Atlas channels and regional reference centroids in MNI space. (**A**) Glass-brain visualization of the 1785 intracranial EEG channels, with depth and stereo-EEG contacts shown in blue and cortical grid/strip contacts shown in orange. For visualization, left-hemisphere channel coordinates were assigned negative x-values based on the hemisphere label. (**B**) Glass-brain visualization of the regional reference centroids used in the grouped regional analyses, shown as enlarged magenta markers.](figures/chapter2/frauscher_channels_and_centroids.png){#fig-frauscher-atlas fig-align="center" width="80%"}
 
 ### PSD estimation
@@ -49,7 +48,7 @@ $$\hat{P}(f) = L(f) + \sum_{n=1}^{N} a_n \exp\left(-\frac{(f-\mu_n)^2}{2\sigma_n
 
 where each peak $n$ contributes an amplitude $a_n$, centre frequency $\mu_n$, and width $\sigma_n$.
 
-We compare two aperiodic modes of fitting. In **fixed** mode the aperiodic component is modelled in log-power space as:
+We compare two aperiodic modes of fitting. In **fixed** mode, the aperiodic component is modelled in log-power space as:
 
 $$L_{\mathrm{ap}}(f) = b - \chi \cdot \log_{10}(f)$$
 
@@ -57,7 +56,7 @@ where the offset $b$ sets the overall broadband level (the vertical position of 
 
 $$L_{\mathrm{ap}}(f) = b - \log_{10}(k + f^{\chi})$$
 
-with an additional knee parameter $k$. Here $k$ sets both the height of the low-frequency plateau and the corner frequency $f_k = k^{1/\chi}$ at which the spectrum bends from flat to $1/f^{\chi}$ behaviour (@fig-knee-misfit B, C). Fitting the fixed model to a spectrum that has a genuine knee forces a single line through both regimes and biases the exponent low, even when the fit's $R^2$ appears acceptable (@fig-knee-misfit A); this is what the per-modality model selection below is designed to avoid.
+with an additional knee parameter, $k$. Here $k$ sets both the height of the low-frequency plateau and the corner frequency $f_k = k^{1/\chi}$ at which the spectrum bends from flat to $1/f^{\chi}$ behaviour (@fig-knee-misfit B, C). Fitting the fixed model to a spectrum that has a genuine knee forces a single line through both regimes and biases the exponent low, even when the fit's $R^2$ appears acceptable (@fig-knee-misfit A); this is what the per-modality model selection below is designed to avoid.
 
 ![Decomposition and aperiodic parameters of the specparam model. (**A**) A single power spectrum (grey) is decomposed into an aperiodic component $L(f)$ (blue dashed) and a set of Gaussian peaks capturing periodic activity; their sum is the full model fit (teal). The offset $b$ (orange) sets the broadband level at low frequency. (**B**) The aperiodic component alone (fixed mode, $k=0$): increasing the exponent $\chi$ steepens the slope, rotating the line about a pivot frequency, while decreasing it flattens the spectrum. (**C**) Varying the offset $b$ shifts the aperiodic line vertically in parallel, raising or lowering broadband power without changing the slope.](figures/chapter2/diagrams/specparam_parameterization.svg){#fig-specparam width="100%" column="page"}
 
