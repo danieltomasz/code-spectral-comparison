@@ -1,0 +1,25 @@
+# Profile: modern LaTeX / LuaTeX PDF output.
+# Activate:  quarto render <file> --profile latex --to pdf
+# Merges on top of _quarto.yml (adds a `pdf` format; typst/docx stay defined,
+# so pass --to pdf to render only this).
+format:
+  pdf:
+    pdf-engine: lualatex
+    documentclass: scrartcl        # KOMA-Script, modern article class
+    papersize: a4
+    fontsize: 12pt
+    mainfont: "STIX Two Text"      # installed; swap for any system font
+    number-sections: true
+    toc: true
+    toc-depth: 3
+    geometry:
+      - margin=2.5cm
+    # match the typst build: blue links/citations/refs
+    colorlinks: true
+    linkcolor: blue
+    citecolor: blue
+    urlcolor: blue
+    link-citations: true
+    include-in-header:
+      - text: |
+          \usepackage{microtype}
