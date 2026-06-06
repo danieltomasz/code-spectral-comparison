@@ -433,6 +433,23 @@ fig.savefig("figures/chapter2/combined_clusters_psd.pdf", bbox_inches="tight")
 ```
 
 ```{python}
+#| output: true
+
+# Same figure via the faceting mechanism (old plot_clusters_pair kept above).
+# Modality is a Bundles facet over the DatasetCtx objects.
+# Horizontal facet -> col=Bundles; vertical (stacked) -> row=Bundles instead.
+from pesco.experimental.facets import FacetGrid, Bundles, clusters_panel
+
+fig = (
+    FacetGrid(col=Bundles([ieeg, src], label="name"), sharey=True, panel_size=(9, 7))
+    .map(clusters_panel(summary=PLOT_SUMMARY, peak_freq_range=(1.0, 80.0), xlim=(1, 80)))
+    .label(x="Frequency", y="Log normalized spectral density")
+    .finish(suptitle="Cluster PSDs: iEEG vs reconstructed sources (faceted)")
+)
+fig.savefig("figures/chapter2/combined_clusters_psd_faceted.pdf", bbox_inches="tight")
+```
+
+```{python}
 import joblib
 from pathlib import Path
 
@@ -445,4 +462,7 @@ for ctx in (ieeg, src):
     joblib.dump(ctx, CACHE / fname, compress=3)
     print(f"saved {fname}  ({(CACHE / fname).stat().st_size / 1e6:.1f} MB)")
 ```
+
+
+## Side by side - faceted plot 
 
