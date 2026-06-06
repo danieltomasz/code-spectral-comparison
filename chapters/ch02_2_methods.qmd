@@ -86,19 +86,24 @@ convention for source-reconstructed scalp data [@donoghue2020ParameterizingNeura
 
 ###  Recovery of regional spectral organisation on uncorrected spectra
 
+We first tested whether the regional spectral organisation of the iEEG atlas was preserved in source-reconstructed HD-EEG, before any aperiodic correction.
+
+
 #### K-means clustering and no-peak reference 
 
-For direct comparison with the original atlas, we followed the peak-detection procedure of @frauscher2018AtlasNormalIntracranial.
-The normalised power spectra were classified into k groups using k-means with 160 features (0.5 Hz bins from 0.5 to 80 Hz), Euclidean distance, and 100 repetitions.  We increased $k$ until a group without peaks emerged, defined as the group whose mean normalised spectrum fell below the maximum among the other groups, and kept the 50% of channels closest to that group's mean as the no-peak set.
+To enable comparison with @frauscher2018AtlasNormalIntracranial, we followed their peak-detection procedure: an unsupervised k-means clustering of the channel power spectra, followed by a test for region-specific peaks against a data-derived no-peak reference. We applied it to the iEEG atlas and to the source-reconstructed HD-EEG data.
 
-To test for the presence of region-specific peaks against this no-peak reference set, the spectrum was divided into frequency intervals. The data driven condition defined initially in @frauscher2018AtlasNormalIntracranial that  each bin contains at least 4% of total mean power brought different numbers of bins between modalities so we used interval intitially defined in the orginal paper and  the 160 frequency bins were grouped into 22 frequency intervals bbased on the condition that, yielding
-boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25, 31.75, and 80 Hz. 
+We made one deliberate departure from @frauscher2018AtlasNormalIntracranial: we omitted the 0.5-80 Hz bandpass filter. A bandpass introduces amplitude transitions near its cutoffs that distort spectral shape at the edges of the analysis range, and because k-means operates directly on the normalised density across the full 0.5-80 Hz band, such filter-induced shape changes are liable to be read as cluster structure rather than excluded from it.
 
-We determined  the presence of a peak in a given frequency interval for a particular brain region by comparing the distribution of spectral densities of all channels in that region against the no-peak set, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% significance level with Bonferroni correction for multiple comparisons across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals (hemispheres grouped together).
+We clustered the normalised spectra (unit total power, as defined in PSD estimation) with k-means, using 160 features (0.5 Hz bins from 0.5 to 80 Hz), Euclidean distance, and 100 repetitions . We increased the number of clusters $k$ until a group without peaks emerged, defined as the group whose mean normalised spectrum fell below the maximum across the other groups, and kept the 50% of channels closest to that group's centroid as the no-peak reference set; the resulting $k$ per modality is reported in the Results.
 
-The Kolmogorov-Smirnov screen identifies where a region differs from the no-peak set but not how many of its channels drive that difference. To quantify how widespread the effect was within the region each channel's relative power in that interval was compared against the no-peak distribution with a one-sided Wilcoxon rank-sum (Mann-Whitney U) test at the 5% level, uncorrected. We report the proportion of the region's channels that exceeded the no-peak set. This second stage mirrors the two-step logic of @frauscher2018AtlasNormalIntracranial.
+To test for the presence of region-specific peaks against this no-peak reference set, the spectrum was divided into frequency intervals. @frauscher2018AtlasNormalIntracranial defined these intervals from the data, requiring each to hold at least 4% of the total mean power; applied across modalities this rule returned different numbers of intervals, so for comparability we instead adopted the fixed intervals of the original paper. The 160 bins were grouped into 22 intervals, with boundaries at 0.5, 0.75, 1.25, 1.75, 2.25, 3.25, 3.75, 4.25, 5.25, 6.25, 6.75, 7.75, 8.25, 9.25, 10.25, 11.75, 13.25, 15.25, 17.25, 20.25, 24.25, 31.75, and 80 Hz.
 
-For the HD-EEG data we applied the same procedure and kept the iEEG-derived intervals for comparability, even though the 4% power condition did not hold for the source-reconstructed spectra; the consequences of this are reported in the Results.
+For each region and interval, we tested for a peak by comparing the spectral-density distribution of all channels in that region against the no-peak set, using a one-sided two-sample Kolmogorov-Smirnov test at the 5% level with Bonferroni correction across 42 regions (38 cortical regions plus 4 lobes) and 22 frequency intervals (hemispheres pooled).
+
+The Kolmogorov-Smirnov screen identifies where a region differs from the no-peak set but not how many of its channels drive that difference. To quantify how widespread the effect was, we compared each channel's relative power in the interval against the no-peak distribution with a one-sided Wilcoxon rank-sum (Mann-Whitney U) test at the 5% level, uncorrected, and report the proportion of the region's channels that exceeded the no-peak set. This two-stage logic mirrors @frauscher2018AtlasNormalIntracranial.
+
+For HD-EEG we applied the same procedure and kept the iEEG-derived intervals for comparability, even though the 4% power condition did not hold for the source-reconstructed spectra; we report the consequences in the Results.
 
 
 #### Canonical-band relative-power map
