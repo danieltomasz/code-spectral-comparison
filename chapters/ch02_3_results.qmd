@@ -14,21 +14,21 @@ published result, the clustering was run in both configurations on the same data
 @frauscher2018AtlasNormalIntracranial: a no-peak group plus seven peak groups in the low delta, high delta, theta, alpha, low beta, high beta, and gamma bands. Without the bandpass, the procedure yielded seven groups: a no-peak group, two delta clusters, one theta cluster, two clusters with alpha-band peaks, and one beta cluster — with no gamma group and no separation of low from high beta. The unfiltered solution is taken forward as the more faithful description, since the clustering operates on undistorted spectra; the disappearance of the gamma cluster and of the low/high beta separation in the unfiltered run is consistent with these distinctions in the published atlas being driven, at least in part, by filter edge effects rather than by physiological structure. The 50% of channels closest to the mean of the no-peak group (unfiltered run) were retained as the no-peak reference set for all subsequent
 peak-detection tests.
 
-Applying the same procedure to the HD-EEG source-reconstructed data yielded 11 spectral groups, but their structure differed from iEEG. There were seven clusters with peak in alpha 8-12 Hz differentiated by the amplitude of the peak, indicating that the clustering over-segmented a single alpha-dominated continuum rather than resolving distinct bands, No distinct theta or beta clusters emerged (the band labels along the top axis are frequency guides, not cluster identities), and the sharp notch at 50 Hz reflects line-noise removal. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart. @fig-ieeg-clusters presents the two clustering solutions side by side.
+Applying the same procedure to the HD-EEG source-reconstructed data yielded 11 spectral groups, but their structure differed from iEEG. There were seven clusters with peak in alpha 8-12 Hz differentiated by the amplitude of the peak, indicating that the clustering over-segmented a single alpha-dominated continuum rather than resolving distinct bands, No distinct theta or beta clusters emerged (the band labels along the top axis are frequency guides, not cluster identities), and the sharp notch at 50 Hz reflects line-noise removal. The HD-EEG no-peak cluster had a flatter profile than its iEEG counterpart. @fig-ieeg-clusters B presents the two clustering solutions side by side.
 
 The cluster "band peak frequency" is the argmax of each cluster's spectrum relative to the no-peak baseline, which labels a cluster by its strongest oscillatory deviation and is only meaningful where a cluster carries a genuine peak. In the HD-EEG data, only the δ and α clusters showed a clear bump above the aperiodic background; the remaining high-frequency clusters were distinguished not by a gamma oscillation but by a shallower aperiodic slope, producing an elevated broadband tail. For these clusters, the elevated gamma shouldn't be read as genuine gamma oscillations. Whereas the iEEG atlas resolved a full bank of band-specific oscillatory clusters (δ→γ), the HD-EEG cluster structure was therefore dominated by alpha power and aperiodic slope. @fig-ieeg-clusters presents these clustering results side by side.
 <!-- REVIEW: duplicate figure callout — line 17 already says "@fig-ieeg-clusters presents the two clustering solutions side by side." Drop one. Classic LLM duplication. Also stray ".." double period. -->
 
 
-![Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the seven iEEG clusters and Panel B shows the 11 HD-EEG clusters. In both modalities, one no-peak cluster is visible. HD-EEG shows more clusters, most of them distinguished only by the average power of the alpha peak. In the iEEG clusters, the knee is visible; reconstructed sources have more straightforward 1/f-like characteristics.](figures/chapter2/combined_clusters_psd.svg){#fig-ieeg-clusters width="100%" column="page"}
+![Spectral clustering in iEEG and HD-EEG source-reconstructed data. Panel A shows the seven iEEG clusters and Panel B shows the 11 HD-EEG clusters. In both modalities, one no-peak cluster is visible. HD-EEG shows more clusters, most of them distinguished only by the average power of the alpha peak. In the iEEG clusters, the knee is visible; reconstructed sources have more straightforward 1/f-like characteristics.](figures/chapter2/clusters/rawpower_and_clusters.pdf){#fig-ieeg-clusters width="100%" column="page"}
 
-![](figures/chapter2/combined_regional_differences.svg)
+
+![Regional differences vs no-peak cluster: iEEG vs reconstructed sources](figures/chapter2/clusters/combined_regional_differences_faceted.pdf)
+
 
 Lobar differences presented as spectrum are presented below.
 
-![Differences per lobes in intracranial data](figures/chapter2/intracranial_data_lobar_differences.svg){#fig-ieeg-reg_dfiff width="100%" column="page"}
-
-![Differences per lobes in reconstruncted sources data](figures/chapter2/reconstructed_sources_lobar_differences.svg){#fig-hdeeg-reg_dfiff width="100%" column="page"}
+![Differences per lobes in intracranial and reconstructed sources  data](figures/chapter2/clusters/combined_lobar_differences_faceted.pdf){#fig-ieeg-reg_dfiff width="100%" column="page"}
 
 #### Clustering stability and data driven intervals 
 

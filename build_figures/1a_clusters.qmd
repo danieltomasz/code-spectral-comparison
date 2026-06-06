@@ -133,7 +133,7 @@ fig, _ = plot_clusters(
     feature_cols=ieeg.f,
     label_by_band=True,
 )
-fig.savefig("images/ieeg_clusters.png", dpi=600, bbox_inches="tight")
+#fig.savefig("images/ieeg_clusters.png", dpi=600, bbox_inches="tight")
 ```
 
 
@@ -175,22 +175,14 @@ ieeg.sig_regions = test_regions(ieeg.no_peak_df, ieeg.psd, ieeg.colbin)
 fig, ax = plot_region_difference_heatmap(
     ieeg.regional_diff,
     title=f"Significant differences between regions and no-peak cluster of {ieeg.name}",
-    output_path=f"images/{ieeg.name}_all_regional_differences.png",
     annot_fontsize=7,
 )
+fig.savefig(f"images/{ieeg.name}_all_regional_differences.png", bbox_inches="tight")
 
 ```
 
 
-```{python}
-#| output: true
 
-fig, axes = plot_lobes(
-    ieeg.psd_clust, ieeg.psd, ieeg.f, ieeg.smal, ieeg.name, ieeg.sig_lobes,
-    summary=PLOT_SUMMARY, tick_labelsize=12, subplot_height_ratio=0.6, font_size=14,
-)
-fig.savefig("figures/chapter2/intracranial_data_lobar_differences.pdf", bbox_inches="tight")
-```
 
 # HD EEG
 
@@ -274,7 +266,7 @@ fig, _ = plot_clusters(
     feature_cols=src.f,
     label_by_band=True,
 )
-fig.savefig("reconstructed_sources_clusters.png", dpi=600, bbox_inches="tight")
+#fig.savefig("reconstructed_sources_clusters.png", dpi=600, bbox_inches="tight")
 
 ```
 
@@ -310,27 +302,32 @@ fig, ax = plot_region_difference_heatmap(
     src.regional_diff,
     title=f"Significant differences between regions and no-peak cluster of {src.name}",
     reference_df= ieeg.regional_diff,
-    output_path=f"images/{src.name}_all_regional_differences.png",
     annot_fontsize=7,
 )
+#fig.savefig(f"images/{src.name}_all_regional_differences.png", bbox_inches="tight")
 ```
 
 
-```{python}
-#| output: true
 
-fig, axes = plot_lobes(
-    src.psd_clust, src.psd, src.f, src.smal, src.name, src.sig_lobes,
-    summary=PLOT_SUMMARY, tick_labelsize=12, subplot_height_ratio=0.6, font_size=14,
-)
-fig.savefig("images/chapter2/reconstructed_sources_lobar_differences.svg", bbox_inches="tight")
+
+```{python}
+import joblib
+from pathlib import Path
+
+CACHE = Path(PROJECT_DIR , "data/interim/clustering/cache")
+CACHE.mkdir(parents=True, exist_ok=True)
+
+
+for ctx in (ieeg, src):
+    fname = ctx.name.replace(" ", "_") + ".joblib"
+    joblib.dump(ctx, CACHE / fname, compress=3)
+    print(f"saved {fname}  ({(CACHE / fname).stat().st_size / 1e6:.1f} MB)")
 ```
 
 
 ## Side-by-side
 
 Both ctx objects coexist; iterate or compare freely.
-
 
 
 ```{python}
@@ -360,14 +357,35 @@ fig, axes = plot_region_difference_heatmap_pair(
         square=True,  # force identical cell size
 
 )
-fig.savefig("images/chapter2/combined_regional_differences.pdf", bbox_inches="tight")
+#fig.savefig("images/chapter2/combined_regional_differences.pdf", bbox_inches="tight")
 
 ```
 
 ```{python}
 #| output: true
 
-panel_kw = dict(
+# Same heatmap pair rewritten with compose_panels: a left | right | colorbar
+# mosaic, shared row order + one colorbar (plot_region_difference_heatmap_pair
+# kept above for reference).
+from pesco.experimental.facets import region_difference_heatmap_pair
+
+fig, axd = region_difference_heatmap_pair(
+    ieeg.regional_diff, src.regional_diff,
+    left_title="intracranial data",
+    right_title="reconstructed sources",
+    suptitle="Regional spectral differences from the no-peak cluster",
+    facecolor="#ececec",
+    annot_fontsize=9.5,
+    tick_fontsize=12,
+)
+fig.savefig("figures/chapter2/clusters/combined_regional_differences_faceted.pdf", bbox_inches="tight")
+fig
+```
+
+```{python}
+#| output: true
+
+""" panel_kw = dict(
     summary=PLOT_SUMMARY, tick_labelsize=12, subplot_height_ratio=0.6,
     font_size=14, xlim=(1, 80),ylim= (0, 0.45)
 )
@@ -385,52 +403,30 @@ fig, axes = plot_lobes_pair(
     wspace=0.0,
     show=False,
 )
-fig.savefig("figures/chapter2/combined_lobar_differences.pdf", bbox_inches="tight")
-```
+fig.savefig("figures/chapter2/combined_lobar_differences.pdf", bbox_inches="tight") """
+``` 
 
 ```{python}
 #| output: true
 
-fig, axes = plot_clusters_pair(
-    top=dict(
-        psd_clust=ieeg.psd_clust,
-        f=ieeg.f,
-        dataset=ieeg.name,
-        smal=ieeg.smal,
-        nopeak=ieeg.smal[0] if ieeg.smal else None,
-        summary=PLOT_SUMMARY,
-        log_y=True,
-        order_by_peak=True,
-        peak_baseline=ieeg.no_peak_center,
-        peak_freq_range=(0.5,  80.0),
-        feature_cols=ieeg.f,
-        label_by_band=True,
-        title=f"A) {ieeg.name}",
-        xlim=(1, 80),
-    ),
-    bottom=dict(
-        psd_clust=src.psd_clust,
-        f=src.f,
-        dataset=src.name,
-        smal=src.smal,
-        nopeak=src.smal[0] if src.smal else None,
-        summary=PLOT_SUMMARY,
-        log_y=True,
-        order_by_peak=True,
-        peak_baseline=src.no_peak_center,
-        peak_freq_range=(1.0, 80.0),
-        feature_cols=src.f,
-        label_by_band=True,
-        title=f"B) {src.name}",
-        xlim=(1, 80),
-    ),
-    suptitle="Cluster PSDs: iEEG vs reconstructed sources",
-    figsize=(12, 14),
-    dpi=600,
-    sharey=True
+# Lobar differences via the faceting mechanism (combined plot; plot_lobes_pair kept above).
+# Modality = Bundles facet (rows), lobes = GroupBy facet (cols); swap row<->col to transpose.
+from pesco.experimental.facets import FacetGrid, Bundles, GroupBy, psd_panel
+
+fig = (
+    FacetGrid(
+        row=Bundles([ieeg, src], label="name"),
+        col=GroupBy("Lobe"),
+        sharey=True, wspace=0.06, panel_size=(4, 3),
+    )
+    .map(psd_panel(summary=PLOT_SUMMARY, xlim=(1, 80), tick_labelsize=10))
+    .label(x="Frequency [Hz]", y="Normalized spectral density")
+    .finish(suptitle="Lobar differences vs no-peak cluster: iEEG vs reconstructed sources")
 )
-fig.savefig("figures/chapter2/combined_clusters_psd.pdf", bbox_inches="tight")
+fig.savefig("figures/chapter2/combined_lobar_differences_faceted.pdf", bbox_inches="tight")
 ```
+
+# LogLog scale clusters 
 
 ```{python}
 #| output: true
@@ -441,28 +437,163 @@ fig.savefig("figures/chapter2/combined_clusters_psd.pdf", bbox_inches="tight")
 from pesco.experimental.facets import FacetGrid, Bundles, clusters_panel
 
 fig = (
-    FacetGrid(col=Bundles([ieeg, src], label="name"), sharey=True, panel_size=(9, 7))
+    FacetGrid(col=Bundles([ieeg, src], label="name"), sharey=True, panel_size=(10, 5.5))
     .map(clusters_panel(summary=PLOT_SUMMARY, peak_freq_range=(1.0, 80.0), xlim=(1, 80)))
     .label(x="Frequency", y="Log normalized spectral density")
-    .finish(suptitle="Cluster PSDs: iEEG vs reconstructed sources (faceted)")
+    .finish(suptitle="Clustering normalized PSDs: iEEG vs reconstructed sources")
 )
 fig.savefig("figures/chapter2/combined_clusters_psd_faceted.pdf", bbox_inches="tight")
 ```
 
+# Linear log cluster
+
+
 ```{python}
-import joblib
-from pathlib import Path
+#| output: true
 
-CACHE = Path(PROJECT_DIR , "data/interim/clustering/cache")
-CACHE.mkdir(parents=True, exist_ok=True)
+# Average RAW (non-normalized) spectra per modality, on one log-log scale.
+# Makes visible the absolute-power scale gap that unit-integral normalisation removes.
+from plotnine import (
+    aes, element_blank, element_line, element_text, geom_line, geom_ribbon,
+    ggplot, labs, scale_alpha_manual, scale_linetype_manual, scale_x_log10,
+    scale_y_log10, theme, theme_bw,
+)
+
+# iEEG: raw V²/Hz (normalize=False)
+ieeg_raw_f, ieeg_raw_psd = prepare_psd(
+    matfile=DATA_PATH_IEEG / "WakefulnessMatlabFile.mat",
+    region_dict_file=DATA_PATH_IEEG / "RegionInformation.csv",
+    frauscher_bandpass=False, normalize=False, freq_range=(1, 80),
+)
+# HD-EEG: raw source PSD over the same 60 s segment (skip normalize_psd)
+hd_raw_f, hd_raw_psd = compute_psd(
+    raw_src.get_data(start=src_start, stop=src_stop),
+    raw_src.info["sfreq"], fmin=1.0, fmax=80.0,
+)
 
 
-for ctx in (ieeg, src):
-    fname = ctx.name.replace(" ", "_") + ".joblib"
-    joblib.dump(ctx, CACHE / fname, compress=3)
-    print(f"saved {fname}  ({(CACHE / fname).stat().st_size / 1e6:.1f} MB)")
+def _raw_long(f, arr, name):
+    df = pd.DataFrame(np.asarray(arr, dtype=float), columns=np.asarray(f, dtype=float))
+    long = df.melt(var_name="frequency", value_name="spectral_density")
+    long["frequency"] = pd.to_numeric(long["frequency"])
+    long["dataset"] = name
+    return long
+
+
+raw_long = pd.concat([
+    _raw_long(ieeg_raw_f, ieeg_raw_psd[list(ieeg_raw_f)].to_numpy(), ieeg.name),
+    _raw_long(hd_raw_f, hd_raw_psd, src.name),
+], ignore_index=True)
+
+raw_summary = (
+    raw_long.groupby(["dataset", "frequency"], as_index=False)
+    .agg(
+        median=("spectral_density", "median"),
+        q25=("spectral_density", lambda s: s.quantile(0.25)),
+        q75=("spectral_density", lambda s: s.quantile(0.75)),
+        minimum=("spectral_density", "min"),
+        maximum=("spectral_density", "max"),
+    )
+)
+raw_summary["band"] = "IQR (25-75%)"
+
+# long form for the line layers, so median vs min-max becomes a linetype legend
+raw_lines = raw_summary.melt(
+    id_vars=["dataset", "frequency"],
+    value_vars=["median", "minimum", "maximum"],
+    var_name="stat", value_name="value",
+)
+raw_lines["statistic"] = raw_lines["stat"].map(
+    {"median": "median", "minimum": "min-max", "maximum": "min-max"}
+)
+raw_lines["grp"] = raw_lines["dataset"] + "|" + raw_lines["stat"]
+
+g = (
+    ggplot()
+    + geom_ribbon(
+        raw_summary,
+        aes("frequency", ymin="q25", ymax="q75", fill="dataset", alpha="band"),
+        color=None,
+    )
+    + geom_line(
+        raw_lines,
+        aes("frequency", "value", color="dataset", linetype="statistic", group="grp"),
+        size=0.8,
+    )
+    + scale_x_log10(breaks=[1, 4, 8, 13, 30, 80])
+    + scale_y_log10()
+    + scale_linetype_manual(name="statistic", values={"median": "solid", "min-max": "dotted"})
+    + scale_alpha_manual(name="spread", values={"IQR (25-75%)": 0.25})
+    + labs(
+        x="Frequency (Hz)", y="Raw spectral density",
+        color="modality", fill="modality",
+        title="Average raw (non-normalized) PSD: iEEG vs HD-EEG",
+    )
+    + theme_bw()
+    + theme(  # match the matplotlib FacetGrid journal style for the composite
+        figure_size=(8, 6),
+        panel_border=element_blank(),
+        axis_line=element_line(color="black", size=0.6),
+        panel_grid_minor=element_blank(),
+        panel_grid_major=element_line(color="0.85", size=0.4),
+        strip_background=element_blank(),
+        legend_key=element_blank(),
+        text=element_text(size=11),
+        axis_title=element_text(size=12),
+        axis_text=element_text(size=9),
+    )
+)
+#g.save("figures/chapter2/raw_power_crossmodal.svg", verbose=False)
+g
+```
+
+```{python}
+#| output: true
+
+# Aligned composite via the generic panel composer: a subplot_mosaic grid
+# whose named cells are filled by renderer(ax) callables wrapping existing
+# plots. All panels are live axes in one figure, so their plot areas align
+# exactly (same top/bottom, same log-frequency x) and it stays vector.
+from pesco.experimental.facets import compose_panels, raw_spectra_panel
+
+
+def cluster_cell(ctx_, title):
+    return lambda ax: plot_clusters(
+        ctx_.psd_clust, ctx_.f, ctx_.name, ctx_.smal,
+        nopeak=ctx_.smal[0] if ctx_.smal else None, summary=PLOT_SUMMARY,
+        log_y=True, order_by_peak=True, peak_baseline=ctx_.no_peak_center,
+        peak_freq_range=(1.0, 80.0), feature_cols=ctx_.f, label_by_band=True,
+        ax=ax, show=False, save=False, title=title, legend_fontsize=8, xlim=(1, 80),
+    )
+
+
+fig, axd = compose_panels(
+    [["raw", ".", "ieeg", "src"]],  # "." = empty spacer so B's y-label clears A
+    {
+        "raw": lambda ax: raw_spectra_panel(ax, raw_summary),
+        "ieeg": cluster_cell(ieeg, "intracranial data"),
+        "src": cluster_cell(src, "reconstructed sources"),
+    },
+    figsize=(20, 6),
+    width_ratios=[1.25, 0.15, 1, 1],
+    gridspec_kw={"wspace": 0.08, "top": 0.82},
+    sharey_groups=[["ieeg", "src"]],
+    letters=[("A", "raw"), ("B", "ieeg"), ("C", "src")],
+    letter_format="{}",  # bold "A" (no bracket)
+    titles=[
+        ("Average raw (non-normalized) PSD", ["raw"]),
+        ("Normalized cluster PSDs: iEEG vs HD-EEG", ["ieeg", "src"]),
+    ],
+    title_pad=0.06,  # clear the cluster panels' column headers
+)
+axd["ieeg"].set_ylabel("Log normalized spectral density")
+axd["src"].set_ylabel("")
+
+fig.savefig("figures/chapter2/rawpower_and_clusters.pdf", bbox_inches="tight")
+fig
+
 ```
 
 
-## Side by side - faceted plot 
+
 

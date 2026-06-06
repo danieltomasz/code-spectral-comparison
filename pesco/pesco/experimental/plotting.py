@@ -54,6 +54,7 @@ def _plot_subplot(
     summary: Summary = "mean",
     tick_labelsize: float = 10.0,
     xlim: tuple[float, float] = (0.5, 80.0),
+    sig_linewidth: float = 2.0,
 ) -> Axes:
     """Plot one PSD subplot: summary + IQR + min/max + significance overlay.
 
@@ -78,7 +79,7 @@ def _plot_subplot(
     ax.grid()
 
     if sig_intervals:
-        lc = mc.LineCollection(sig_intervals, linewidths=2)
+        lc = mc.LineCollection(sig_intervals, linewidths=sig_linewidth)
         ax.add_collection(lc)
         ax.autoscale()
         ax.margins(0.1)
@@ -231,7 +232,9 @@ def plot_clusters(
         legend_kwargs["fontsize"] = legend_fontsize
     ax.legend(**legend_kwargs)
     xmin, xmax = xlim if xlim is not None else (float(np.min(f)), float(np.max(f)))
-    ax.set_xticks([e for e in band_edges() if xmin <= e <= xmax])
+    ax.set_xticks(
+        sorted({xmin} | {e for e in band_edges() if xmin < e <= xmax})
+    )
     ax.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     if log_y:
         ax.set_yscale("log")
