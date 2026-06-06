@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import collections as mc
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure
+from matplotlib.figure import Figure, SubFigure
 
 from pesco.experimental.clustering import (
     EEG_BANDS,
@@ -53,6 +53,7 @@ def _plot_subplot(
     ax: Axes | None = None,
     summary: Summary = "mean",
     tick_labelsize: float = 10.0,
+    xlim: tuple[float, float] = (0.5, 80.0),
 ) -> Axes:
     """Plot one PSD subplot: summary + IQR + min/max + significance overlay.
 
@@ -91,7 +92,9 @@ def _plot_subplot(
     ):
         ax.text(t, 0.97, text, fontsize=14,
                 transform=ax.get_xaxis_transform(), ha="center", va="top")
-    ax.set_xticks([0.5, 4, 8, 13, 30, 80])
+    ax.set_xticks(
+        [xlim[0]] + [t for t in (4, 8, 13, 30, 80) if xlim[0] < t <= xlim[1]]
+    )
     ax.tick_params(axis="both", labelsize=tick_labelsize)
 
     summary_curve = channel_data.agg(summary, axis=0).to_numpy(dtype=float)
@@ -104,7 +107,7 @@ def _plot_subplot(
         candidates.append(float(np.nanmax(no_peak_center)))
     ymax = max(candidates) * 1.15 if candidates else 0.10
     ax.set_ylim(0, ymax)
-    ax.set_xlim(0.5, 80)
+    ax.set_xlim(*xlim)
     return ax
 
 
@@ -389,8 +392,26 @@ def plot_lobes(
     subplot_height_ratio: float = 1.0,
     font_size: float = 22.0,
     ylim: tuple[float | None, float | None] | None = None,
+    fig: Figure | SubFigure | None = None,
+    n_cols: int = 2,
+    title: str | None = None,
+    xlabel: str | None = "Frequency [Hz]",
+    ylabel: str | None = "Normalized spectral density",
+    xlim: tuple[float, float] = (1.0, 80.0),
 ) -> tuple[Figure, list[Axes]]:
     """Per-lobe PSD subplots vs no-peak centre, with significance overlays.
+
+    ``title`` overrides the (sub)figure heading; ``None`` uses the default
+    ``"Lobar differences in EEG frequencies: {dataset}"``. ``xlabel`` /
+    ``ylabel`` set the single shared axis labels; passing ``ylabel=None``
+    drops the y label *and* hides the per-panel y tick labels (used for the
+    right column of :func:`plot_lobes_pair`, which shares the left y-axis).
+
+    Pass ``fig`` (a :class:`~matplotlib.figure.Figure` or
+    :class:`~matplotlib.figure.SubFigure`) to draw the lobe grid into an
+    existing figure instead of creating a new one; used by
+    :func:`plot_lobes_pair` to stack two datasets. When given, ``figsize``
+    is controlled by the parent figure.
 
     ``subplot_height_ratio`` scales the y-extent of each subplot relative to
     its x-extent. ``1.0`` keeps the original square panels; ``0.6`` makes
@@ -401,49 +422,133 @@ def plot_lobes(
     log-frequency axis, overlaid against the no-peak cluster centre derived
     from ``psd_clust``/``smal``. Frequency intervals flagged in
     ``sig_lobes`` are rendered as horizontal segments. Subplot grid sizes
-    automatically to the number of lobes (2 cols × ceil(n/2) rows).
+    automatically to the number of lobes (``n_cols`` columns ×
+    ceil(n/``n_cols``) rows); pass ``n_cols=1`` to stack lobes in a single
+    column (one row per lobe).
     """
     psd_cols = _resolve_feature_cols(psd, feature_cols)
     clust_cols = set(psd_clust.columns)
     cols = [c for c in psd_cols if c in clust_cols]
     f_axis = np.asarray(cols, dtype=float) if len(cols) != len(f) else f
     _, center = get_no_peak(psd_clust, smal, summary=summary, feature_cols=cols)
-    matplotlib.rcParams.update({"font.size": font_size})
-
     canonical = ["Occipital", "Parietal", "Frontal", "Temporal"]
     present = list(psd["Lobe"].dropna().unique())
     lobes = [lb for lb in canonical if lb in present] + [
         lb for lb in present if lb not in canonical
     ]
-    n_cols = 2
     n_rows = _ceildiv(len(lobes), n_cols)
-    fig, axes = plt.subplots(
-        n_rows, n_cols,
-        figsize=(8 * n_cols, 8 * n_rows * subplot_height_ratio),
-        squeeze=False,
-    )
-    fig.suptitle(f"Lobar differences in EEG frequencies: {dataset}", y=0.98)
-    fig.subplots_adjust(top=0.94, hspace=0.25, wspace=0.25)
-
-    flat_axes: list[Axes] = list(axes.flatten())
-    for ax, lobe in zip(flat_axes, lobes):
-        lobe_psd = psd.loc[psd["Lobe"] == lobe, cols]
-        intervals = sig_lobes.get(lobe) if sig_lobes else None
-        title = f"{lobe} lobe - {len(lobe_psd)} channels"
-        _plot_subplot(
-            lobe_psd, center, f_axis, intervals, title,
-            ax=ax, summary=summary, tick_labelsize=tick_labelsize,
+    with plt.rc_context({"font.size": font_size}):
+        if fig is None:
+            fig, axes = plt.subplots(
+                n_rows, n_cols,
+                figsize=(8 * n_cols, 8 * n_rows * subplot_height_ratio),
+                squeeze=False,
+            )
+        else:
+            axes = fig.subplots(n_rows, n_cols, squeeze=False)
+        title_text = (
+            f"Lobar differences in EEG frequencies: {dataset}"
+            if title is None else title
         )
-        if ylim is not None:
-            ax.set_ylim(*ylim)
-    for ax in flat_axes[len(lobes):]:
-        ax.set_visible(False)
+        fig.suptitle(title_text, y=0.95)
+        fig.subplots_adjust(top=0.90, bottom=0.06, hspace=0.25, wspace=0.25)
+
+        flat_axes: list[Axes] = list(axes.flatten())
+        for ax, lobe in zip(flat_axes, lobes):
+            lobe_psd = psd.loc[psd["Lobe"] == lobe, cols]
+            intervals = sig_lobes.get(lobe) if sig_lobes else None
+            title = f"{lobe} lobe - {len(lobe_psd)} channels"
+            _plot_subplot(
+                lobe_psd, center, f_axis, intervals, title,
+                ax=ax, summary=summary, tick_labelsize=tick_labelsize,
+                xlim=xlim,
+            )
+            if ylim is not None:
+                ax.set_ylim(*ylim)
+        for ax in flat_axes[len(lobes):]:
+            ax.set_visible(False)
+
+        # one shared axis label per (sub)figure, not repeated on every panel
+        for ax in flat_axes[:len(lobes)]:
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            if ylabel is None:
+                ax.tick_params(labelleft=False)
+        if xlabel is not None:
+            fig.supxlabel(xlabel, y=0.025)
+        if ylabel is not None:
+            fig.supylabel(ylabel)
 
     if output_path is not None:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_path, bbox_inches="tight")
     return fig, flat_axes
+
+
+def plot_lobes_pair(
+    left: dict,
+    right: dict,
+    *,
+    suptitle: str | None = None,
+    figsize: tuple[float, float] = (16, 22),
+    show: bool = True,
+    suptitle_fontsize: float = 20,
+    suptitle_fontweight: str = "bold",
+    sharey: bool = True,
+    wspace: float = 0.0,
+) -> tuple[Figure, list[list[Axes]]]:
+    """Place two ``plot_lobes`` grids side by side (one modality per column).
+
+    Each of ``left`` and ``right`` is a kwargs dict forwarded to
+    :func:`plot_lobes`. Required: ``psd_clust``, ``psd``, ``f``, ``smal``,
+    ``dataset``. Each modality is drawn as a single column (``n_cols=1``,
+    one row per lobe) so the result reads as rows = lobes, columns =
+    modality. Per-panel ``output_path`` keys are ignored. This function does
+    not save; the caller saves the returned figure.
+
+    ``sharey`` (default True) gives every panel a common y-range so the two
+    modalities are visually comparable; the subplots live in separate
+    subfigures, so the limits are harmonised after drawing (matplotlib's
+    ``sharey`` cannot span subfigures). It overrides any per-panel ``ylim``.
+    Set False to keep each panel's own autoscaled range. ``wspace`` is the
+    gap between the two columns (subfigure spacing); lower it to bring the
+    modalities closer.
+    """
+    fig = plt.figure(figsize=figsize)
+    subfigs = fig.subfigures(1, 2, wspace=wspace)
+    axes_pair: list[list[Axes]] = []
+    for panel_kwargs, subfig, is_left in zip((left, right), subfigs, (True, False)):
+        kw = dict(panel_kwargs)
+        kw.pop("output_path", None)
+        kw.setdefault("n_cols", 1)
+        # short per-column header (dataset name) instead of the long default
+        kw.setdefault("title", kw.get("dataset"))
+        if not is_left:
+            # right column shares the left y-axis: drop its label + tick labels
+            kw.setdefault("ylabel", None)
+        _, axes = plot_lobes(fig=subfig, **kw)
+        axes_pair.append(axes)
+
+    # tighten the facing inner margins so the columns sit closer together
+    subfigs[0].subplots_adjust(right=0.99)
+    subfigs[1].subplots_adjust(left=0.04)
+
+    if sharey:
+        flat = [ax for axes in axes_pair for ax in axes if ax.get_visible()]
+        if flat:
+            ymax = max(ax.get_ylim()[1] for ax in flat)
+            for ax in flat:
+                ax.set_ylim(0, ymax)
+
+    if suptitle is not None:
+        fig.suptitle(
+            suptitle, y=0.99, fontsize=suptitle_fontsize,
+            fontweight=suptitle_fontweight,
+        )
+    if show:
+        plt.show()
+    return fig, axes_pair
 
 
 def plot_regions(

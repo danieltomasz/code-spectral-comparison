@@ -18,35 +18,16 @@ execute:
   freeze: auto
 ---
 
-We fit several specparam *models* — each a choice of aperiodic mode (fixed or
-knee) together with a peak-fit configuration — to every normalized channel PSD of
-the intracranial atlas and the source HD-EEG modality over the full $1$–$80$ Hz
-range, then compare chosen pairs of them. Two contrasts are reported: the
-**mode** contrast (knee vs fixed at the canonical settings) and a **peak-setting**
-contrast (the same knee under the canonical vs a looser/wider peak-fit), so we
-can see both which aperiodic mode each modality favours and whether the knee fit
-is sensitive to the peak-detection thresholds. iEEG and HD-EEG are summarised
-separately throughout.
+We fit several specparam *models* — each a choice of aperiodic mode (fixed or knee) together with a peak-fit configuration — to every normalized channel PSD of the intracranial atlas and the source HD-EEG modality over the full $1$-$80$ Hz range, then compare chosen pairs of them. Two contrasts are reported: the **mode** contrast (knee vs fixed at the canonical settings) and a **peak-setting** contrast (the same knee under the canonical vs a looser/wider peak-fit), so we can see both which aperiodic mode each modality favours and whether the knee fit is sensitive to the peak-detection thresholds. iEEG and HD-EEG are summarised separately throughout.
 
 Each fit is scored with the Ameen-style BIC [@ameen2025TemporallyResolvedAnalyses],
-$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
-where $N$ is the number of fitted frequency bins, MSE the mean squared error of
-the full log-power model fit, and $n_p = 3n_\mathrm{peaks} + n_\mathrm{ap}$. For a
-contrast of models $a$ and $b$ the per-channel difference is
-$\Delta\mathrm{BIC}=\mathrm{BIC}_a-\mathrm{BIC}_b$; negative values favour $a$.
+$$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$ 
 
-**Fit quality** (R², MSE) measures how well each model fits; the knee adds a
-parameter so it almost always lowers MSE, hence the relevant quantity is the
-*size* of the improvement. **Model selection** (BIC) asks whether that
-improvement justifies the extra parameter. The $N\log(\mathrm{MSE})$ term scales
-$\Delta\mathrm{BIC}$ with the number of bins, so a small relative MSE gain can
-still give a large $\Delta\mathrm{BIC}$; read fit quality and BIC together.
+where $N$ is the number of fitted frequency bins, MSE the mean squared error of the full log-power model fit, and $n_p = 3n_\mathrm{peaks} + n_\mathrm{ap}$. For a contrast of models $a$ and $b$ the per-channel difference is $\Delta\mathrm{BIC}=\mathrm{BIC}_a-\mathrm{BIC}_b$; negative values favour $a$.
 
-Channels are nested in subjects/patients (iEEG: 106 patients; HD-EEG: 19
-subjects), so a channel-level resample understates uncertainty. We report **two**
-percentile bootstrap intervals: a naive channel-level resample and a
-subject-clustered resample (whole subjects drawn with replacement). The clustered
-interval is the honest one; the gap between them shows the pseudoreplication.
+**Fit quality** (R², MSE) measures how well each model fits; the knee adds a parameter so it almost always lowers MSE, hence the relevant quantity is the *size* of the improvement. **Model selection** (BIC) asks whether that improvement justifies the extra parameter. The $N\log(\mathrm{MSE})$ term scales $\Delta\mathrm{BIC}$ with the number of bins, so a small relative MSE gain can still give a large $\Delta\mathrm{BIC}$; read fit quality and BIC together.
+
+Channels are nested in subjects/patients (iEEG: 106 patients; HD-EEG: 19subjects), so a channel-level resample understates uncertainty. We report **two** percentile bootstrap intervals: a naive channel-level resample and a subject-clustered resample (whole subjects drawn with replacement). The clustered interval is the honest one; the gap between them shows the pseudoreplication.
 
 ```{python}
 #| label: models
@@ -269,11 +250,8 @@ forest
 
 ## Channels per Raftery evidence category
 
-Each channel is graded on the per-spectrum Raftery scale by its own
-$\Delta\mathrm{BIC}$ (strong $|\Delta\mathrm{BIC}|>6$, positive
-$2<|\Delta\mathrm{BIC}|\le 6$, weak $|\Delta\mathrm{BIC}|\le 2$), signed toward
-the lower-BIC model. Fractions carry both a channel-level and a subject-clustered
-bootstrap CI.
+Each channel is graded on the per-spectrum Raftery scale by its own $\Delta\mathrm{BIC}$ (strong $|\Delta\mathrm{BIC}|>6$, positive
+$2<|\Delta\mathrm{BIC}|\le 6$, weak $|\Delta\mathrm{BIC}|\le 2$), signed toward the lower-BIC model. Fractions carry both a channel-level and a subject-clustered bootstrap CI.
 
 ```{python}
 #| label: raftery-category-table
@@ -296,11 +274,5 @@ pct[
 ]
 ```
 
-Under the canonical settings the intracranial atlas shows a large, decisive knee
-improvement that is stable under subject clustering, so the knee model is
-retained for iEEG; in source HD-EEG the knee's BIC advantage shrinks toward zero
-under subject-clustered resampling and the fit gain is negligible, so the fixed
-model is retained. The knee-vs-knee contrast isolates the effect of the
-peak-fit settings on the knee fit alone: a ΔBIC near zero there means the looser
-peak detection does not materially change the aperiodic fit, confirming the mode
+Under the canonical settings the intracranial atlas shows a large, decisive knee improvement that is stable under subject clustering, so the knee model is retained for iEEG; in source HD-EEG the knee's BIC advantage shrinks toward zero under subject-clustered resampling and the fit gain is negligible, so the fixed model is retained. The knee-vs-knee contrast isolates the effect of the peak-fit settings on the knee fit alone: a ΔBIC near zero there means the looser peak detection does not materially change the aperiodic fit, confirming the mode
 choice is driven by aperiodic geometry rather than peak thresholds.

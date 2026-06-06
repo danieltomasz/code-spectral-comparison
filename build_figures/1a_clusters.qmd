@@ -48,6 +48,7 @@ from pesco.experimental.plotting import (
     plot_region_difference_heatmap,
     plot_region_difference_heatmap_pair,
     plot_regions,
+    plot_lobes_pair,
 )
 from pesco.io import load_sources, prepare_psd
 from pesco.pipeline import DatasetCtx
@@ -180,6 +181,17 @@ fig, ax = plot_region_difference_heatmap(
 
 ```
 
+
+```{python}
+#| output: true
+
+fig, axes = plot_lobes(
+    ieeg.psd_clust, ieeg.psd, ieeg.f, ieeg.smal, ieeg.name, ieeg.sig_lobes,
+    summary=PLOT_SUMMARY, tick_labelsize=12, subplot_height_ratio=0.6, font_size=14,
+)
+fig.savefig("figures/chapter2/intracranial_data_lobar_differences.pdf", bbox_inches="tight")
+```
+
 # HD EEG
 
 
@@ -304,6 +316,17 @@ fig, ax = plot_region_difference_heatmap(
 ```
 
 
+```{python}
+#| output: true
+
+fig, axes = plot_lobes(
+    src.psd_clust, src.psd, src.f, src.smal, src.name, src.sig_lobes,
+    summary=PLOT_SUMMARY, tick_labelsize=12, subplot_height_ratio=0.6, font_size=14,
+)
+fig.savefig("images/chapter2/reconstructed_sources_lobar_differences.svg", bbox_inches="tight")
+```
+
+
 ## Side-by-side
 
 Both ctx objects coexist; iterate or compare freely.
@@ -337,8 +360,32 @@ fig, axes = plot_region_difference_heatmap_pair(
         square=True,  # force identical cell size
 
 )
-fig.savefig("figures/chapter2/combined_regional_differences.svg", bbox_inches="tight")
+fig.savefig("images/chapter2/combined_regional_differences.pdf", bbox_inches="tight")
 
+```
+
+```{python}
+#| output: true
+
+panel_kw = dict(
+    summary=PLOT_SUMMARY, tick_labelsize=12, subplot_height_ratio=0.6,
+    font_size=14, xlim=(1, 80),ylim= (0, 0.45)
+)
+fig, axes = plot_lobes_pair(
+    left=dict(
+        psd_clust=ieeg.psd_clust, psd=ieeg.psd, f=ieeg.f, smal=ieeg.smal,
+        dataset=ieeg.name, sig_lobes=ieeg.sig_lobes, **panel_kw,
+    ),
+    right=dict(
+        psd_clust=src.psd_clust, psd=src.psd, f=src.f, smal=src.smal,
+        dataset=src.name, sig_lobes=src.sig_lobes, **panel_kw,
+    ),
+    suptitle="Lobar differences vs no-peak cluster: iEEG vs reconstructed sources",
+    sharey=True,
+    wspace=0.0,
+    show=False,
+)
+fig.savefig("figures/chapter2/combined_lobar_differences.pdf", bbox_inches="tight")
 ```
 
 ```{python}
@@ -355,7 +402,7 @@ fig, axes = plot_clusters_pair(
         log_y=True,
         order_by_peak=True,
         peak_baseline=ieeg.no_peak_center,
-        peak_freq_range=(0.5, 80.0),
+        peak_freq_range=(0.5,  80.0),
         feature_cols=ieeg.f,
         label_by_band=True,
         title=f"A) {ieeg.name}",
@@ -382,7 +429,7 @@ fig, axes = plot_clusters_pair(
     dpi=600,
     sharey=True
 )
-fig.savefig("figures/chapter2/combined_clusters_psd.svg", bbox_inches="tight")
+fig.savefig("figures/chapter2/combined_clusters_psd.pdf", bbox_inches="tight")
 ```
 
 ```{python}
