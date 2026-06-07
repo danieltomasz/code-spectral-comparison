@@ -676,6 +676,10 @@ def plot_overlap_frauscher_heatmap(
     lobe_colors: Mapping[str, str] = _LOBE_COLORS,
     xlabel: str = "Frauscher interval (Hz)",
     cbar_label: str = "Overlap",
+    cbar: bool = True,
+    cbar_ax: "Axes | None" = None,
+    show_yticks: bool = True,
+    show_ylabel: bool = True,
     dot_size: float = 12.0,
     ax: "Axes | None" = None,
 ) -> "tuple[Figure, Axes]":
@@ -750,19 +754,26 @@ def plot_overlap_frauscher_heatmap(
         vmax=1.0,
         linewidths=0.5,
         linecolor="white",
-        cbar_kws={"label": cbar_label, "shrink": 0.55, "aspect": 30, "pad": 0.02},
+        cbar=cbar,
+        cbar_ax=cbar_ax,
+        cbar_kws=(
+            {"label": cbar_label, "shrink": 0.55, "aspect": 30, "pad": 0.02}
+            if cbar and cbar_ax is None
+            else None
+        ),
         xticklabels=band_order,
-        yticklabels=labels,
+        yticklabels=labels if show_yticks else False,
         ax=ax,
     )
     ax.set_xlabel(xlabel)
-    ax.set_ylabel("Region")
+    ax.set_ylabel("Region" if (show_yticks and show_ylabel) else "")
     if title is not None:
         ax.set_title(title)
     plt.setp(ax.get_xticklabels(), rotation=90)
     ax.tick_params(axis="both", length=0)
-    for tick, region in zip(ax.get_yticklabels(), regions):
-        tick.set_color(lobe_colors.get(region_lobe.get(region), "black"))
+    if show_yticks:
+        for tick, region in zip(ax.get_yticklabels(), regions):
+            tick.set_color(lobe_colors.get(region_lobe.get(region), "black"))
     row_lobes = [region_lobe.get(r) for r in regions]
     for i, (prev, cur) in enumerate(zip(row_lobes, row_lobes[1:]), start=1):
         if prev != cur:

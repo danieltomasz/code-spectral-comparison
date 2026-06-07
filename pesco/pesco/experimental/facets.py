@@ -42,6 +42,7 @@ from pesco.experimental.plotting import (
     _plot_subplot,
     _prepare_region_df,
     plot_clusters,
+    plot_overlap_frauscher_heatmap,
     plot_region_difference_heatmap,
 )
 
@@ -616,5 +617,89 @@ def region_difference_heatmap_pair(
     )
     # one shared colorbar from the right heatmap's mesh, into the spare cell
     mesh = next(c for c in axd["right"].collections if isinstance(c, QuadMesh))
+    fig.colorbar(mesh, cax=axd["cbar"], label=cbar_label)
+    return fig, axd
+
+
+def overlap_heatmap_pair(
+    left_df: pd.DataFrame,
+    right_df: pd.DataFrame,
+    region_lobe: dict,
+    *,
+    left_grey: pd.DataFrame | None = None,
+    left_dot: pd.DataFrame | None = None,
+    right_grey: pd.DataFrame | None = None,
+    right_dot: pd.DataFrame | None = None,
+    left_title: str | None = None,
+    right_title: str | None = None,
+    suptitle: str | None = None,
+    left_xlabel: str = "Frequency band",
+    right_xlabel: str = "Frauscher interval (Hz)",
+    cbar_label: str = "Overlap",
+    cbar_width: float = 0.4,
+    wspace: float = 0.06,
+    figsize: tuple[float, float] | None = None,
+    panel_letters: tuple[str, str] | None = ("A", "B"),
+    style: dict | None = None,
+    **heatmap_kwargs,
+):
+    """Two overlap heatmaps side by side (e.g. 5 canonical bands | 22 Frauscher bins).
+
+    A ``left | right | cbar`` mosaic built with :func:`compose_panels`, each
+    panel wrapping :func:`~pesco.experimental.plotting.plot_overlap_frauscher_heatmap`.
+    The two panels share the region rows (same lobe order, so the y-axes align);
+    the right panel hides its y-ticks and a single fixed 0-1 colorbar is drawn
+    into the spare cell. ``width_ratios`` follow the band counts, so an
+    asymmetric split (e.g. 5 vs 22 columns) is laid out to scale. ``left_*`` /
+    ``right_*`` give each panel its own grey/dot masks and title; extra
+    ``**heatmap_kwargs`` pass through to both renderers. Returns ``(fig, axd)``;
+    the caller saves.
+    """
+    n_left = left_df.shape[1]
+    n_right = right_df.shape[1]
+    n_rows = max(left_df.shape[0], right_df.shape[0])
+    if figsize is None:
+        figsize = (0.42 * (n_left + n_right) + 6.0, max(8.0, 0.32 * n_rows + 2.0))
+
+    def _panel(df, grey, dot, title, xlabel, show_yticks):
+        def draw(ax):
+            plot_overlap_frauscher_heatmap(
+                df,
+                region_lobe,
+                ax=ax,
+                grey=grey,
+                dot=dot,
+                cbar=False,
+                show_yticks=show_yticks,
+                show_ylabel=show_yticks,
+                title=title,
+                xlabel=xlabel,
+                **heatmap_kwargs,
+            )
+
+        return draw
+
+    fig, axd = compose_panels(
+        [["left", "right", "cbar"]],
+        {
+            "left": _panel(left_df, left_grey, left_dot, left_title, left_xlabel, True),
+            "right": _panel(right_df, right_grey, right_dot, right_title, right_xlabel, False),
+        },
+        figsize=figsize,
+        width_ratios=[n_left, n_right, cbar_width],
+        gridspec_kw={"wspace": wspace},
+        sharey_groups=[["left", "right"]],
+        titles=[(suptitle, ["left", "right"])] if suptitle else None,
+        letters=(
+            [(panel_letters[0], "left"), (panel_letters[1], "right")]
+            if panel_letters
+            else None
+        ),
+        letter_format="{}",
+        letter_offset=(2, 8),
+        letter_offset_shared=(2, 8),
+        style=style,
+    )
+    mesh = next(c for c in axd["left"].collections if isinstance(c, QuadMesh))
     fig.colorbar(mesh, cax=axd["cbar"], label=cbar_label)
     return fig, axd

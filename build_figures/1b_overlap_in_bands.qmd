@@ -229,18 +229,18 @@ corr1  = plot_band_power_correlation_grid(
     title="Uncorrected PSD: bilateral regional relative band-power correspondence",
 )
 corr1 .save(
-    fig_dir / "uncorrected_relative_band_power_correlations_bilateral.pdf",
+    fig_dir / "relpower_scatter_uncorrected.pdf",
     verbose=False,
 )
 corr1 
 ```
 
-![Cross-modal correspondence of uncorrected relative band power. Each panel is one canonical band; each point is one bilateral MICCAI region, with source HD-EEG relative power on the x-axis and the iEEG atlas on the y-axis. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). Strip labels give the per-band Pearson](figures/chapter2/uncorrected/uncorrected_relative_band_power_correlations_bilateral.pdf)
+![Cross-modal correspondence of uncorrected relative band power. Each panel is one canonical band; each point is one bilateral MICCAI region, with source HD-EEG relative power on the x-axis and the iEEG atlas on the y-axis. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). Strip labels give the per-band Pearson](figures/chapter2/uncorrected/relpower_scatter_uncorrected.pdf){#fig-relpower-scatter-uncorrected}
 
 These per-band correlations should be read as descriptive rather than inferential. Relative band powers are *compositional*: within each channel they are normalised to a fixed total, so the five bands are not independent and an increase in one band necessarily depresses the others. This closure constraint induces negative coupling between bands by construction — part of the negative gamma correlation is therefore arithmetic rather than physiological — and it violates the independence assumptions of ordinary correlation and t-tests applied to the raw proportions[@filzmoser2012CorrelationAnalysisCompositional]. Valid inference would require analysing the maps in a log-ratio space (e.g. centred or isometric log-ratio transforms), which also removes any dependence on the per-channel normalisation choice. We retain the untransformed maps here as a descriptive summary and defer formal cross-modal inference to the aperiodic-separated peak descriptors below, which are not subject to the same closure.
 
 
-In @figure-values-on-scalp we present results on scalp.
+In @fig-relpower-maps-uncorrected we present results on scalp.
 
 
 
@@ -284,11 +284,11 @@ maps_fig = plot_psd_brain_maps(
     legend_title="within-band\nrel. PSD",
     cmap_name="magma",
 )
-maps_fig.save(fig_dir / "fig2a_relative_psd.pdf", width=15, height=3.4, verbose=False)
+maps_fig.save(fig_dir / "relpower_maps_uncorrected.pdf", width=15, height=3.4, verbose=False)
 maps_fig 
 ```
 
-![Group average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's relative power min-max normalised across both modalities (the per-band shared scale of @afnan2023ValidatingMEGSource, shown as one 0-1 bar), so the within-band spatial pattern is comparable across modalities; absolute magnitude differs across bands and is not encoded. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/fig2a_relative_psd.pdf){#figure-values-on-scalp}
+![Group average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's relative power min-max normalised across both modalities (the per-band shared scale of @afnan2023ValidatingMEGSource, shown as one 0-1 bar), so the within-band spatial pattern is comparable across modalities; absolute magnitude differs across bands and is not encoded. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/relpower_maps_uncorrected.pdf){#fig-relpower-maps-uncorrected}
 
 
 
@@ -303,7 +303,7 @@ overlap_raw = afnan_band_overlap(
     est_freqs=hd_f,
 )
 # Render the per-band overlap as cortical maps — one panel per canonical band,
-# laid out horizontally like @figure-values-on-scalp — instead of a heatmap.
+# laid out horizontally like @fig-relpower-maps-uncorrected — instead of a heatmap.
 # Each region's bilateral overlap is mapped onto the Frauscher atlas by its
 # frauscher_id and shown on a FIXED 0-1 colour scale: the metric is already in
 # [0, 1], so (unlike the relative-power maps) it is not per-band renormalised.
@@ -374,7 +374,7 @@ overlap_brain = (
     )
 )
 overlap_brain.save(
-    fig_dir / "afnan_overlap_raw_brainmaps.pdf",
+    fig_dir / "overlap_maps_uncorrected.pdf",
     width=15,
     height=2.4,
     dpi=300,
@@ -383,7 +383,7 @@ overlap_brain.save(
 overlap_brain
 ```
 
-![Cross-modal spectral overlap between the iEEG atlas and source-reconstructed HD-EEG mapped onto the cortex, one panel per canonical band (left hemisphere, lateral and medial views), computed on uncorrected relative-power PSDs. Each bilateral MICCAI region is coloured by its band-averaged Afnan overlap on a fixed 0-1 scale — the metric is already bounded, so colour is comparable across bands and across regions; the strip reports the per-band mean overlap across regions. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/afnan_overlap_raw_brainmaps.pdf){#fig-afnan-overlap-raw}
+![Cross-modal spectral overlap between the iEEG atlas and source-reconstructed HD-EEG mapped onto the cortex, one panel per canonical band (left hemisphere, lateral and medial views), computed on uncorrected relative-power PSDs. Each bilateral MICCAI region is coloured by its band-averaged Afnan overlap on a fixed 0-1 scale — the metric is already bounded, so colour is comparable across bands and across regions; the strip reports the per-band mean overlap across regions. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/overlap_maps_uncorrected.pdf){#fig-overlap-maps-uncorrected}
 
 We recreated simlat plot as in the clustering part to be able to compare. (we retrive a strong delta and  alpha with some regions with string beta ). We also tested again presence of no-peaks (which is imprtant later) but we also butstraped aggainst 0 difference 
 
@@ -497,20 +497,19 @@ fig, _ = plot_overlap_frauscher_heatmap(
     title="iEEG vs HD-EEG overlap (uncorrected PSD, Frauscher bins)\n"
     "grey = 95% CI includes 0 (not reliably > 0) · dot = reliable overlap but flat",
 )
-fig.savefig(
-    fig_dir / "afnan_overlap_raw_frauscherbins_bootci_heatmap.pdf",
-    bbox_inches="tight",
-    dpi=300,
-)
+#fig.savefig(
+#    fig_dir / "overlap_frauscher_uncorrected.pdf",
+#    bbox_inches="tight",
+#    dpi=300,
+#)
 fig
 ```
 
-![Bootstrap version 2 of @fig-afnan-overlap-raw-frauscher: a confidence interval on the overlap metric. Whole subjects are resampled with replacement in **both** modalities (iEEG patients, HD datasets — the iEEG atlas is the reference but is still a finite patient sample, so it is resampled too) and the Afnan overlap recomputed each draw (B = 2000). Cells are coloured by the point overlap; cells whose 95% percentile CI includes 0 are greyed out (overlap not reliably above zero), as the clustering heatmap blanks non-significant cells. A contrast dot (white on dark, black on light) marks "similar but flat" cells — a reliable overlap sitting on a flat spectrum with no bootstrap-significant rhythm in either modality (hollow agreement). For uncorrected relative power this set is empty; it becomes informative for the aperiodic-removed residual. The metric has no chance baseline, so the CI is a stability test, not a test against a no-correspondence null.](figures/chapter2/uncorrected/afnan_overlap_raw_frauscherbins_bootci_heatmap.pdf){#fig-afnan-overlap-raw-frauscher-bootci}
 
 ```{python}
 #| label: fig-overlap-raw-canonical-bootci
-# Canonical-band (5 EEG bands) version of @fig-afnan-overlap-raw-frauscher-bootci
-# and the uncorrected counterpart of the aperiodic-removed @fig-overlap-gated:
+# Canonical-band (5 EEG bands) version of @fig-overlap-frauscher-uncorrected
+# and the uncorrected counterpart of the aperiodic-removed @fig-overlap-canonical-corrected:
 # the same grey + dot scheme (bootstrap CI on the overlap; grey = 95% CI includes
 # 0; dot = reliable overlap but flat) on the uncorrected relative PSD, only
 # bands=EEG_BANDS. NB averaging the overlap over a wide canonical band makes its
@@ -538,20 +537,43 @@ fig, _ = plot_overlap_frauscher_heatmap(
     title="iEEG vs HD-EEG overlap (uncorrected PSD, canonical bands)\n"
     "grey = 95% CI includes 0 · dot = reliable overlap but flat",
 )
-fig.savefig(
-    fig_dir / "afnan_overlap_raw_canonical_bootci_heatmap.pdf",
-    bbox_inches="tight",
-    dpi=300,
-)
-fig.savefig(
-    fig_dir / "afnan_overlap_raw_canonical_bootci_heatmap.svg",
-    bbox_inches="tight",
-    dpi=300,
-)
+#fig.savefig(
+#    fig_dir / "overlap_canonical_uncorrected.pdf",
+#    bbox_inches="tight",
+#    dpi=300,
+#)
+
 fig
 ```
 
-![Canonical-band (5 EEG bands) counterpart of @fig-afnan-overlap-raw-frauscher-bootci and the uncorrected twin of @fig-overlap-gated: cross-modal overlap of the uncorrected relative PSD per region × canonical band, with a subject-clustered bootstrap CI on the overlap (whole subjects resampled in both modalities, B = 2000). Cells whose 95% CI includes 0 are greyed; a contrast dot would mark "similar but flat" cells but none arise (raw relative power is always present). Because the overlap is averaged over a wide band its CI is reliably above 0 almost everywhere, so — unlike the 22 narrow Frauscher bins — very few cells grey out.](figures/chapter2/uncorrected/afnan_overlap_raw_canonical_bootci_heatmap.pdf){#fig-afnan-overlap-raw-canonical-bootci}
+
+
+```{python}
+#| label: fig-overlap-raw-pair
+# Composite of the two uncorrected overlap views via compose_panels: the 5
+# canonical bands (left, with region labels) and the 22 Frauscher bins (right,
+# shared rows). width_ratios follow the band counts, so the split is asymmetric
+# (5 vs 22); same grey + dot scheme and one shared 0-1 colorbar.
+from pesco.experimental.facets import overlap_heatmap_pair
+
+fig, _ = overlap_heatmap_pair(
+    overlap_raw_canon,
+    overlap_raw_fb,
+    REGION_LOBE,
+    left_grey=grey_raw_canon,
+    left_dot=dot_raw_canon,
+    right_grey=grey_raw,
+    right_dot=dot_raw,
+    left_title="Canonical bands",
+    right_title="Frauscher intervals",
+    suptitle="iEEG vs HD-EEG overlap (uncorrected PSD)\n"
+    "grey = 95% CI includes 0 · dot = reliable overlap but flat",
+)
+fig.savefig(fig_dir / "overlap_pair_uncorrected.pdf", bbox_inches="tight", dpi=300)
+fig
+```
+
+![Uncorrected cross-modal overlap. A) five canonical EEG bands B)the 22 intervals defined in @frauscher2018AtlasNormalIntracranial.  Both panels are greyed where the bootstrap 95% CI of the overlap includes 0 and carry a contrast dot where a reliable overlap sits on a flat residual (no significant rhythm in either modality — hollow agreement).](figures/chapter2/uncorrected/overlap_pair_uncorrected.pdf){#fig-overlap-pair-uncorrected}
 
 
 #### Aperiodic-removed band power
@@ -711,13 +733,13 @@ plot_band_grid = plot_band_power_correlation_grid(
     title="Aperiodic-removed: bilateral regional oscillatory-residual correspondence",
 )
 plot_band_grid.save(
-    fig_dir_corr / "corrected_relative_band_power_correlations_bilateral.pdf",
+    fig_dir_corr / "relpower_scatter_corrected.pdf",
     verbose=False,
 )
 plot_band_grid 
 ```
 
-![Cross-modal correspondence of the aperiodic-removed (oscillatory residual) band power. Each panel is one canonical band; each point is one bilateral MICCAI region, source HD-EEG oscillatory residual on x and the iEEG atlas on y. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). The residual is the specparam linear oscillatory power (band fraction of total) with the BIC-selected aperiodic component removed.](figures/chapter2/corrected/corrected_relative_band_power_correlations_bilateral.pdf)
+![Cross-modal correspondence of the aperiodic-removed (oscillatory residual) band power. Each panel is one canonical band; each point is one bilateral MICCAI region, source HD-EEG oscillatory residual on x and the iEEG atlas on y. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). The residual is the specparam linear oscillatory power (band fraction of total) with the BIC-selected aperiodic component removed.](figures/chapter2/corrected/relpower_scatter_corrected.pdf){#fig-relpower-scatter-corrected}
 
 
 
@@ -752,17 +774,17 @@ plot_last = plot_psd_brain_maps(
     legend_title="within-band\nosc. residual",
     cmap_name="magma",
 )
-plot_last.save(fig_dir_corr / "fig2b_residual_psd.pdf", width=15, height=3.4, verbose=False)
+plot_last.save(fig_dir_corr / "relpower_maps_corrected.pdf", width=15, height=3.4, verbose=False)
 plot_last
 ```
 
-![Group-average oscillatory residual per ROI (aperiodic component removed), faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's residual min-max normalised across both modalities (per-band shared scale), so the within-band spatial pattern is comparable across modalities. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/corrected/fig2b_residual_psd.pdf)
+![Group-average oscillatory residual per ROI (aperiodic component removed), faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's residual min-max normalised across both modalities (per-band shared scale), so the within-band spatial pattern is comparable across modalities. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/corrected/relpower_maps_corrected.pdf){#fig-relpower-maps-corrected}
 
 
 
 ```{python}
 #| label: fig-overlap-corr-frauscher-dots
-# Aperiodic-removed twin of @fig-afnan-overlap-raw-frauscher-bootci: the same
+# Aperiodic-removed twin of @fig-overlap-frauscher-uncorrected: the same
 # grey + dot scheme on the oscillatory residual, reusing the shared helpers
 # (FRAUSCHER_BANDS / REGION_LOBE / band_presence / overlap_ci_cached /
 # plot_overlap_frauscher_heatmap) from the uncorrected cell. Grey = 95% bootstrap
@@ -792,24 +814,19 @@ fig, _ = plot_overlap_frauscher_heatmap(
     title="iEEG vs HD-EEG overlap (aperiodic-removed, Frauscher bins)\n"
     "grey = 95% CI includes 0 · dot = reliable overlap but flat (hollow agreement)",
 )
-fig.savefig(
-    fig_dir_corr / "afnan_overlap_corrected_frauscherbins_dots_heatmap.pdf",
-    bbox_inches="tight",
-    dpi=300,
-)
-fig.savefig(
-    fig_dir_corr / "afnan_overlap_corrected_frauscherbins_dots_heatmap.svg",
-    bbox_inches="tight",
-    dpi=300,
-)
+#fig.savefig(
+#    fig_dir_corr / "overlap_frauscher_corrected.pdf",
+#    bbox_inches="tight",
+#    dpi=300,
+#)
+
 fig
 ```
 
-![Aperiodic-removed twin of @fig-afnan-overlap-raw-frauscher-bootci: cross-modal overlap of the oscillatory residual, per region × Frauscher bin, with a subject-clustered bootstrap CI on the overlap (whole subjects resampled in both modalities, B = 2000). Cells whose 95% CI includes 0 are greyed (overlap not reliably above zero), as the clustering heatmap blanks non-significant cells. A contrast dot (white on dark, black on light) marks "similar but flat" cells — a reliable overlap with no bootstrap-significant residual rhythm in either modality, i.e. hollow agreement between two flat residuals. Unlike the uncorrected relative power, this set is non-empty here. The sub-1 Hz interval is blank (residual defined on the 1-80 Hz fit grid).](figures/chapter2/corrected/afnan_overlap_corrected_frauscherbins_dots_heatmap.pdf){#fig-afnan-overlap-corrected-frauscher-dots}
 
 ```{python}
 #| label: fig-overlap-corr-presence-gated
-# Canonical-band (5 EEG bands) twin of @fig-afnan-overlap-corrected-frauscher-dots:
+# Canonical-band (5 EEG bands) twin of @fig-overlap-frauscher-corrected:
 # the same grey + dot scheme on the aperiodic-removed residual, but over the
 # five canonical bands instead of the 22 Frauscher intervals. Reuses the shared
 # helpers / pesco functions; only `bands=EEG_BANDS` changes. Grey = 95% bootstrap
@@ -838,14 +855,43 @@ fig, _ = plot_overlap_frauscher_heatmap(
     title="iEEG vs HD-EEG overlap (aperiodic-removed, canonical bands)\n"
     "grey = 95% CI includes 0 · dot = reliable overlap but flat (hollow agreement)",
 )
-fig.savefig(
-    fig_dir_corr / "afnan_overlap_corrected_canonical_bootci_heatmap.pdf",
-    bbox_inches="tight",
-    dpi=300,
-)
+#fig.savefig(
+#   fig_dir_corr / "overlap_canonical_corrected.pdf",
+#    bbox_inches="tight",
+#    dpi=300,
+#)
 
 fig
 ```
 
-![Canonical-band twin of @fig-afnan-overlap-corrected-frauscher-dots: cross-modal overlap of the aperiodic-removed residual over the five canonical EEG bands, with a subject-clustered bootstrap CI on the overlap (whole subjects resampled in both modalities, B = 2000). Cells whose 95% CI includes 0 are greyed (overlap not reliably above zero); a contrast dot marks "similar but flat" cells — a reliable overlap with no bootstrap-significant residual rhythm in either modality (hollow agreement). Same scheme and code path as the 22-bin figure, only the band definition differs.](figures/chapter2/corrected/afnan_overlap_corrected_canonical_bootci_heatmap.pdf){#fig-overlap-gated}
+```{python}
+#| label: fig-overlap-corr-pair
+# Composite of the two aperiodic-removed overlap views via compose_panels:
+# 5 canonical bands (left) | 22 Frauscher bins (right), asymmetric width_ratios,
+# one shared 0-1 colorbar. Same grey + dot scheme as the single panels.
+from pesco.experimental.facets import overlap_heatmap_pair
+
+fig, _ = overlap_heatmap_pair(
+    overlap_corr,
+    overlap_corr_fb,
+    REGION_LOBE,
+    left_grey=grey_canon,
+    left_dot=dot_canon,
+    right_grey=grey_corr,
+    right_dot=dot_corr,
+    left_title="Canonical bands",
+    right_title="Frauscher intervals",
+    suptitle="iEEG vs HD-EEG overlap (aperiodic-removed)\n"
+    "grey = 95% CI includes 0 · dot = reliable overlap but flat (hollow agreement)",
+)
+fig.savefig(
+    fig_dir_corr / "overlap_pair_corrected.pdf", bbox_inches="tight", dpi=300
+)
+fig.savefig(
+    fig_dir_corr / "overlap_pair_corrected.svg", bbox_inches="tight", dpi=300
+)
+fig
+```
+
+![Aperiodic-removed cross-modal overlap. A) five canonical EEG bands B)the 22 intervals defined in @frauscher2018AtlasNormalIntracranial.  Both panels are greyed where the bootstrap 95% CI of the overlap includes 0 and carry a contrast dot where a reliable overlap sits on a flat residual (no significant rhythm in either modality — hollow agreement).](figures/chapter2/corrected/overlap_pair_corrected.pdf){#fig-overlap-pair-corrected}
 
