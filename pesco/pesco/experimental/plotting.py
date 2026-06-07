@@ -662,6 +662,135 @@ def _prepare_region_df(
     return df
 
 
+def plot_overlap_frauscher_heatmap(
+    overlap_df: pd.DataFrame,
+    region_lobe: Mapping[Hashable, str],
+    *,
+    grey: pd.DataFrame | None = None,
+    dot: pd.DataFrame | None = None,
+    mark: pd.DataFrame | None = None,
+    title: str | None = None,
+    cmap: str = "YlGnBu",
+    band_order: Sequence[str] | None = None,
+    lobe_order: Sequence[str] = _LOBE_ORDER,
+    lobe_colors: Mapping[str, str] = _LOBE_COLORS,
+    xlabel: str = "Frauscher interval (Hz)",
+    cbar_label: str = "Overlap",
+    dot_size: float = 12.0,
+    ax: "Axes | None" = None,
+) -> "tuple[Figure, Axes]":
+    """Region x band overlap heatmap, lobe-grouped like the clustering heatmap.
+
+    Rows are the regions of ``overlap_df`` grouped by lobe (``lobe_order``,
+    unknown lobes last) with lobe-coloured tick labels and white separators
+    between lobe blocks, on a fixed 0-1 ``cmap`` scale -- matching
+    :func:`plot_region_difference_heatmap`. Region labels are matched to lobes
+    through ``region_lobe`` and any surrounding quotes are stripped for display.
+
+    All three overlays take a boolean region x band frame (any index/column
+    subset; it is reindexed onto ``overlap_df``):
+
+    - ``grey``: cells masked to neutral grey, as the clustering heatmap blanks
+      cells that fail its screen (e.g. a bootstrap CI that includes 0).
+    - ``dot``: cells flagged with a contrast dot -- white on a dark fill, black
+      on a light fill -- never drawn on greyed cells. Intended for "similar but
+      flat" cells (a reliable overlap with no underlying rhythm).
+    - ``mark``: cells with a plain grey ``x``.
+
+    Parameters
+    ----------
+    overlap_df : DataFrame
+        Region (index) x band (columns) overlap in [0, 1], e.g. the output of
+        :func:`pesco.spectral.afnan_band_overlap`.
+    region_lobe : mapping
+        Region label -> lobe name, used for row order and label colour.
+    band_order : sequence of str, optional
+        Column order; defaults to ``overlap_df.columns``.
+    ax : matplotlib Axes, optional
+        Draw into an existing axes; a new figure is created when omitted.
+
+    Returns
+    -------
+    (fig, ax)
+        The caller is responsible for saving.
+    """
+    import seaborn as sns
+
+    band_order = list(overlap_df.columns) if band_order is None else list(band_order)
+    rank = {lobe: i for i, lobe in enumerate(lobe_order)}
+    regions = sorted(
+        overlap_df.index,
+        key=lambda r: (rank.get(region_lobe.get(r), len(lobe_order)), r),
+    )
+    labels = [_strip_quotes(r) for r in regions]
+    vals = overlap_df.reindex(index=regions, columns=band_order)
+
+    def _bool_mask(frame):
+        if frame is None:
+            return None
+        return frame.reindex(index=regions, columns=band_order).to_numpy(bool)
+
+    grey_m, dot_m, mark_m = _bool_mask(grey), _bool_mask(dot), _bool_mask(mark)
+
+    owns_fig = ax is None
+    if owns_fig:
+        fig, ax = plt.subplots(
+            figsize=(0.5 * len(band_order) + 5, 0.32 * len(regions) + 2)
+        )
+    else:
+        fig = ax.figure
+    if grey_m is not None:
+        ax.set_facecolor("#d9d9d9")  # masked cells show through
+
+    sns.heatmap(
+        vals,
+        mask=grey_m,
+        cmap=cmap,
+        vmin=0.0,
+        vmax=1.0,
+        linewidths=0.5,
+        linecolor="white",
+        cbar_kws={"label": cbar_label, "shrink": 0.55, "aspect": 30, "pad": 0.02},
+        xticklabels=band_order,
+        yticklabels=labels,
+        ax=ax,
+    )
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Region")
+    if title is not None:
+        ax.set_title(title)
+    plt.setp(ax.get_xticklabels(), rotation=90)
+    ax.tick_params(axis="both", length=0)
+    for tick, region in zip(ax.get_yticklabels(), regions):
+        tick.set_color(lobe_colors.get(region_lobe.get(region), "black"))
+    row_lobes = [region_lobe.get(r) for r in regions]
+    for i, (prev, cur) in enumerate(zip(row_lobes, row_lobes[1:]), start=1):
+        if prev != cur:
+            ax.axhline(i, color="white", linewidth=2.0)
+
+    if mark_m is not None:
+        ys, xs = np.where(mark_m)
+        ax.scatter(xs + 0.5, ys + 0.5, marker="x", s=14, c="0.35", linewidths=0.7)
+    if dot_m is not None:
+        if grey_m is not None:
+            dot_m = dot_m & ~grey_m
+        cmap_obj = plt.get_cmap(cmap)
+        vmat = vals.to_numpy()
+        ys, xs = np.where(dot_m & ~np.isnan(vmat))
+        colors = [
+            "white"
+            if sum(c * w for c, w in zip(cmap_obj(vmat[y, x])[:3], (0.299, 0.587, 0.114)))
+            < 0.5
+            else "black"
+            for y, x in zip(ys, xs)
+        ]
+        ax.scatter(xs + 0.5, ys + 0.5, c=colors, marker="o", s=dot_size, linewidths=0)
+
+    if owns_fig:
+        fig.tight_layout()
+    return fig, ax
+
+
 def plot_region_difference_heatmap(
     regional_diff: pd.DataFrame,
     *,
@@ -1403,4 +1532,125 @@ def plot_overlap_heatmap(
         + scale_fill_gradient(low="white", high="#1f6feb", limits=[0, 1])
         + labs(x="Frequency band", y="Region", fill="Overlap", title=title)
         + theme(figure_size=(6, 10), axis_text_y=element_text(size=7))
+    )
+
+
+def plot_psd_brain_maps(
+    long_df: pd.DataFrame,
+    atlas,
+    bands: Sequence[tuple[str, float, float]],
+    *,
+    modality_order: Sequence[str] = ("iEEG", "HD-EEG source"),
+    modality_labels: Mapping[str, str] | None = None,
+    legend_title: str = "within-band\nrel. PSD",
+    cmap_name: str = "viridis",
+):
+    """Faceted cortical maps: bands as columns, modalities as rows.
+
+    Within each band the values are min-max normalised across both modalities
+    to a shared 0-1 colour scale (the per-band shared scale of Afnan et al.,
+    2023), so each band's within-band spatial pattern stays legible while
+    absolute magnitude -- which differs several-fold across bands -- is not
+    encoded. ``brain_join`` replicates the atlas in every facet.
+
+    Parameters
+    ----------
+    long_df : DataFrame
+        Long table with columns ``label``, ``band``, ``value``, ``modality``
+        (e.g. the output of :func:`pesco.atlases.roi_to_atlas_long`).
+    atlas : CorticalAtlas
+        Atlas passed to ``geom_brain``.
+    bands : sequence of (name, lo, hi)
+        Band columns in display order; the interval labels the facet strip.
+    modality_order : sequence of str
+        Modality values in row order (top to bottom).
+    modality_labels : mapping, optional
+        Display label per modality; defaults to the modality value itself.
+    legend_title : str
+        Title of the shared 0-1 colourbar.
+    cmap_name : str
+        Matplotlib colourmap name.
+
+    Returns
+    -------
+    plotnine.ggplot
+        The caller is responsible for ``save``.
+    """
+    from plotnine import (
+        aes,
+        element_blank,
+        element_text,
+        facet_grid,
+        ggplot,
+        scale_fill_cmap,
+        theme,
+        theme_gray,
+    )
+    from plotnine.facets.labelling import labeller
+    from ggsegpy.geom_brain import geom_brain
+
+    band_order = [name for name, _, _ in bands]
+    modality_labels = modality_labels or {m: m for m in modality_order}
+
+    # Order-keyed strip labels: brain_join drops the ordered Categorical, so
+    # prefix a sort key ("0 · ", "A · ") and strip it back off in the labeller.
+    band_facet = {
+        n: f"{i} · {n} ({lo:g}-{hi:g} Hz)" for i, (n, lo, hi) in enumerate(bands)
+    }
+    modality_facet = {
+        m: f"{chr(65 + i)} · {modality_labels[m]}"
+        for i, m in enumerate(modality_order)
+    }
+
+    df = long_df.copy()
+    df["band"] = pd.Categorical(df["band"], categories=band_order, ordered=True)
+    # Per-band min-max across both modalities -> one shared 0-1 colour scale
+    # that preserves each band's within-band spatial contrast.
+    grp = df.groupby("band", observed=True)["value"]
+    vmin, vmax = grp.transform("min"), grp.transform("max")
+    df["value_scaled"] = np.where(vmax > vmin, (df["value"] - vmin) / (vmax - vmin), 0.5)
+    df["band_facet"] = df["band"].astype(str).map(band_facet)
+    df["modality_facet"] = df["modality"].map(modality_facet)
+    # Keep only the atlas key + fill + facet vars so geom_brain joins on `label`
+    # alone and treats band/modality purely as facet-replication variables.
+    df = df[["label", "value_scaled", "band_facet", "modality_facet"]]
+
+    def _strip(s: str) -> str:
+        return s.split(" · ", 1)[1]
+
+    return (
+        ggplot(df, aes(fill="value_scaled"))
+        + geom_brain(
+            atlas=atlas, mapping=aes(fill="value_scaled"), hemi="left", show_legend=True
+        )
+        + facet_grid(
+            "modality_facet ~ band_facet",
+            labeller=labeller(band_facet=_strip, modality_facet=_strip),
+        )
+        + scale_fill_cmap(
+            cmap_name=cmap_name,
+            limits=(0, 1),
+            breaks=[0.0, 0.5, 1.0],
+            labels=["0\nlow", "0.5", "1\nhigh"],
+            name=legend_title,
+        )
+        + theme_gray()
+        + theme(
+            strip_text=element_text(size=9, weight="bold", family="sans-serif"),
+            axis_text_x=element_blank(),
+            axis_text_y=element_blank(),
+            axis_ticks=element_blank(),
+            axis_title_x=element_blank(),
+            axis_title_y=element_blank(),
+            panel_grid_major=element_blank(),
+            panel_grid_minor=element_blank(),
+            legend_position="right",
+            legend_title=element_text(size=8, family="sans-serif"),
+            legend_text=element_text(size=7, family="sans-serif"),
+            legend_key_height=46,
+            legend_key_width=14,
+            panel_spacing_x=0.02,
+            panel_spacing_y=0.04,
+            plot_margin=0.01,
+        )
     )

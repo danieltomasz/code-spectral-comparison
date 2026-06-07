@@ -61,9 +61,48 @@ def load_frauscher():
     return _build_atlas("frauscher38", *frauscher_paths())
 
 
+def roi_to_atlas_long(roi_df, atlas, modality, bands):
+    """Melt per-ROI band values onto atlas labels, long for ``geom_brain``.
+
+    One row per (atlas label, band): the atlas core table is left-joined to
+    ``roi_df`` on ``frauscher_id``, then melted over the band columns. The
+    ``modality`` label is attached so several modalities can be concatenated
+    and faceted together.
+
+    Parameters
+    ----------
+    roi_df : DataFrame
+        One row per ROI, with an integer ``frauscher_id`` column plus one
+        column per band (named by the band ``name``).
+    atlas : CorticalAtlas
+        Atlas whose ``core`` table supplies ``label``/``region``/``hemi``.
+    modality : str
+        Value written to the ``modality`` column.
+    bands : sequence of (name, lo, hi)
+        Band columns to melt, in display order.
+
+    Returns
+    -------
+    DataFrame
+        Columns ``label``, ``frauscher_id``, ``region``, ``hemi``, ``band``,
+        ``value``, ``modality``.
+    """
+    band_order = [name for name, _, _ in bands]
+    core = atlas.core[["label", "frauscher_id", "region", "hemi"]]
+    long = core.merge(roi_df, on="frauscher_id", how="left").melt(
+        id_vars=["label", "frauscher_id", "region", "hemi"],
+        value_vars=band_order,
+        var_name="band",
+        value_name="value",
+    )
+    long["modality"] = modality
+    return long
+
+
 __all__ = [
     "load_miccai",
     "load_frauscher",
     "miccai_paths",
     "frauscher_paths",
+    "roi_to_atlas_long",
 ]

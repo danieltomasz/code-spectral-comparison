@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any, Literal, Sequence, TypeAlias
 
 import pandas as pd
@@ -227,6 +228,85 @@ def afnan_band_overlap(
         rows[region] = band_overlap
 
     return pd.DataFrame.from_dict(rows, orient="index")
+
+
+def bootstrap_overlap_ci(
+    ref_df: pd.DataFrame,
+    est_df: pd.DataFrame,
+    ref_freqs: Sequence[float],
+    est_freqs: Sequence[float],
+    ref_subjects: Sequence,
+    est_subjects: Sequence,
+    region_col: str = "Region name",
+    bands: Sequence[Band] = EEG_BANDS,
+    B: int = 2000,
+    ci: float = 95.0,
+    seed: int = 0,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Subject-clustered bootstrap CI for :func:`afnan_band_overlap`.
+
+    Whole subjects are resampled with replacement *independently* in each
+    modality and the band overlap is recomputed per draw. The reference
+    modality is resampled too: although it is the reference in the overlap
+    metric, its per-region medians are estimated from a finite subject sample,
+    so its sampling variability belongs in the interval. Resampling only the
+    estimated modality would treat the reference as fixed and understate the CI.
+
+    Parameters
+    ----------
+    ref_df, est_df, ref_freqs, est_freqs, region_col, bands
+        As in :func:`afnan_band_overlap`.
+    ref_subjects, est_subjects : array-like
+        Subject (cluster) id per row of ``ref_df`` / ``est_df``; rows sharing an
+        id are resampled together (e.g. iEEG ``patient``, HD ``dataset``).
+    B, ci, seed : bootstrap controls.
+
+    Returns
+    -------
+    point, lo, hi : DataFrame
+        Region x band point overlap (the unresampled estimate) and its ``ci``
+        percentile interval over the ``B`` subject-resampled draws, reindexed
+        onto the point-estimate grid. Cells absent from a draw contribute NaN
+        and are ignored (:func:`numpy.nanpercentile`).
+    """
+    point = afnan_band_overlap(
+        ref_df, est_df, ref_freqs, est_freqs, region_col=region_col, bands=bands
+    )
+    regions, cols = list(point.index), list(point.columns)
+
+    ref_subjects = np.asarray(ref_subjects)
+    est_subjects = np.asarray(est_subjects)
+    ref_groups = {s: np.where(ref_subjects == s)[0] for s in np.unique(ref_subjects)}
+    est_groups = {s: np.where(est_subjects == s)[0] for s in np.unique(est_subjects)}
+    ref_u = np.array(list(ref_groups))
+    est_u = np.array(list(est_groups))
+
+    rng = np.random.default_rng(seed)
+    boots = np.full((B, len(regions), len(cols)), np.nan)
+    for b in range(B):
+        ri = np.concatenate([ref_groups[s] for s in rng.choice(ref_u, ref_u.size, True)])
+        ei = np.concatenate([est_groups[s] for s in rng.choice(est_u, est_u.size, True)])
+        boots[b] = (
+            afnan_band_overlap(
+                ref_df.iloc[ri],
+                est_df.iloc[ei],
+                ref_freqs,
+                est_freqs,
+                region_col=region_col,
+                bands=bands,
+            )
+            .reindex(index=regions, columns=cols)
+            .to_numpy()
+        )
+
+    half = (100.0 - ci) / 2.0
+    with warnings.catch_warnings():  # cells empty in every draw -> all-NaN slice
+        warnings.simplefilter("ignore", RuntimeWarning)
+        lo_arr = np.nanpercentile(boots, half, axis=0)
+        hi_arr = np.nanpercentile(boots, 100.0 - half, axis=0)
+    lo = pd.DataFrame(lo_arr, index=regions, columns=cols)
+    hi = pd.DataFrame(hi_arr, index=regions, columns=cols)
+    return point, lo, hi
 
 
 def _extract_fit_metric(

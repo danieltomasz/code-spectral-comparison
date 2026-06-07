@@ -41,7 +41,7 @@ and per-band colors live in :data:`BAND_DISPLAY`.
 
 from __future__ import annotations
 
-from typing import Iterable, Literal
+from typing import Iterable, Literal, Sequence
 
 import numpy as np
 import pandas as pd
@@ -216,6 +216,82 @@ def relative_band_power_by_channel(
         )
         out.append(df)
     return pd.concat(out, ignore_index=True)
+
+
+def integrate_bands(
+    values: np.ndarray,
+    freqs: np.ndarray,
+    bands: Sequence[tuple[str, float, float]],
+) -> pd.DataFrame:
+    """Sum a per-channel spectral array within each canonical band.
+
+    Each band is half-open ``[lo, hi)`` except the final band, which is closed
+    ``[lo, hi]`` so the top edge is included. NaNs are ignored
+    (:func:`numpy.nansum`), so this works on both raw relative PSD and the
+    aperiodic-removed oscillatory residual (which is NaN outside the fit range).
+
+    Parameters
+    ----------
+    values : array, shape (C, F)
+        Per-channel spectral values (rows are channels, columns are ``freqs``).
+    freqs : array, shape (F,)
+        Frequency vector identifying the columns of ``values``.
+    bands : sequence of (name, lo, hi)
+        Band label and its ``[lo, hi)`` edges.
+
+    Returns
+    -------
+    DataFrame, shape (C, n_bands)
+        One column per band (named by ``name``), the within-band sum.
+    """
+    values = np.asarray(values, dtype=float)
+    freqs = np.asarray(freqs, dtype=float)
+    last = len(bands) - 1
+    cols = {}
+    for i, (name, lo, hi) in enumerate(bands):
+        within_hi = freqs <= hi if i == last else freqs < hi
+        mask = (freqs >= lo) & within_hi
+        cols[name] = np.nansum(values[:, mask], axis=1)
+    return pd.DataFrame(cols)
+
+
+def band_fraction_by_channel(
+    psd_df: pd.DataFrame,
+    freqs: np.ndarray,
+    region_col: str,
+    bands: Sequence[tuple[str, float, float]],
+) -> pd.DataFrame:
+    """Per-channel fraction of total power in each canonical band.
+
+    Each channel's PSD is normalised to sum to 1 across ``freqs`` (Afnan et
+    al., 2023, sec. 2.9), then summed within each band, so the per-band value
+    is the fraction of total power in that band, in ``[0, 1]``. The integer
+    region id in ``region_col`` is carried through for per-ROI averaging.
+
+    Parameters
+    ----------
+    psd_df : DataFrame
+        Rows are channels; float-named columns are frequencies. ``region_col``
+        holds the integer atlas region id.
+    freqs : array, shape (F,)
+        Frequency vector identifying the PSD columns.
+    region_col : str
+        Name of the integer region-id column to carry through.
+    bands : sequence of (name, lo, hi)
+        Band label and its ``[lo, hi)`` edges.
+
+    Returns
+    -------
+    DataFrame
+        Channels x (band columns + ``region_col``).
+    """
+    freqs = np.asarray(freqs, dtype=float)
+    psd = psd_df[list(freqs)].to_numpy(dtype=float)
+    rel = psd / psd.sum(axis=-1, keepdims=True)
+    band_df = integrate_bands(rel, freqs, bands)
+    band_df.index = psd_df.index
+    band_df[region_col] = psd_df[region_col].to_numpy()
+    return band_df
 
 
 def region_band_power(

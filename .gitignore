@@ -113,5 +113,6 @@ __pycache__/
 # Quarto build caches (not needed for deployment)
 .quarto/
 _freeze/
+build_figures/_cache/
 **/.obsidian/
 experiments/

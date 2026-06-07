@@ -103,6 +103,14 @@ We therefore read the modelled-peak comparison as the substantive cross-modal re
 
 ![Cross-modal difference (iEEG − HD-EEG) per extractor: Welch $t$ over lobe × 2 Hz bin; black dots mark frequency clusters significant under subject-level permutation ($p<0.05$, family-wise controlled). The high-frequency HD-higher cluster appears only in the residual, not the modelled, rows.](figures/chapter2/lobe_oscillatory_diff_bootstrap.svg){#fig-residual-diff width="80%" column="page"}
 
+#### Presence-gated overlap {#sec-presence-gated}
+
+The band-overlap metric scores cross-modal *agreement* alone, and presupposes that a rhythm is present: two flat residuals agree trivially, so a high overlap can mean the two modalities share an oscillation or that neither carries one. We separated these by gating the aperiodic-removed overlap on an explicit presence test. For each region and band we bootstrapped the mean oscillatory-residual power, resampling whole subjects (iEEG patients, HD-EEG datasets; 2000 resamples), and called a cell *present* when its 95% CI excluded zero. We gated on the iEEG atlas as the reference: where iEEG carries no detectable rhythm the overlap is uninterpretable, and where it does we ask whether HD-EEG recovers it (@fig-overlap-gated).
+
+The gate removes much of the map from interpretation. Of the 190 region × band cells, 57 (30%) carry no bootstrap-significant iEEG rhythm — most of theta (26 of 38 regions) and over half of alpha's (20) — and their overlap is vacuous whatever its value. Of the 133 cells where iEEG does carry a rhythm, HD-EEG recovers it in only 79 (59%); the remaining 54 are iEEG-present but HD-absent. The failures are band-structured: HD recovers every region's alpha (18 of 18, none missed) but misses most of the high-frequency rhythms iEEG carries — 20 of 31 gamma and 18 of 37 delta cells are HD-absent — and where both modalities are present the agreement is highest in beta (median overlap 0.68) and lowest in gamma (0.39). The high-frequency cross-modal "agreement" of the ungated metric is therefore largely an *absence* of recoverable HD-EEG rhythm rather than a shared one, consistent with the noise-floor account of the HD gamma tail.
+
+![Presence-gated cross-modal overlap on the aperiodic-removed residual. A region × band cell is grey where the iEEG atlas has no bootstrap-significant oscillatory power (overlap uninterpretable), marked × where iEEG carries a rhythm that HD-EEG does not recover (its residual-power 95% CI includes zero), and coloured by the Afnan overlap only where both modalities are present. Presence is a subject-clustered bootstrap (whole subjects resampled — iEEG patients, HD datasets; 2000 resamples).](figures/chapter2/corrected/afnan_overlap_corrected_presence_gated_heatmap.svg){#fig-overlap-gated width="60%"}
+
 
 ### Stability of aperiodic estimates
 
