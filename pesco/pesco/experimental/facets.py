@@ -628,8 +628,10 @@ def overlap_heatmap_pair(
     *,
     left_grey: pd.DataFrame | None = None,
     left_dot: pd.DataFrame | None = None,
+    left_mark: pd.DataFrame | None = None,
     right_grey: pd.DataFrame | None = None,
     right_dot: pd.DataFrame | None = None,
+    right_mark: pd.DataFrame | None = None,
     left_title: str | None = None,
     right_title: str | None = None,
     suptitle: str | None = None,
@@ -661,7 +663,7 @@ def overlap_heatmap_pair(
     if figsize is None:
         figsize = (0.42 * (n_left + n_right) + 6.0, max(8.0, 0.32 * n_rows + 2.0))
 
-    def _panel(df, grey, dot, title, xlabel, show_yticks):
+    def _panel(df, grey, dot, mark, title, xlabel, show_yticks):
         def draw(ax):
             plot_overlap_frauscher_heatmap(
                 df,
@@ -669,6 +671,7 @@ def overlap_heatmap_pair(
                 ax=ax,
                 grey=grey,
                 dot=dot,
+                mark=mark,
                 cbar=False,
                 show_yticks=show_yticks,
                 show_ylabel=show_yticks,
@@ -682,8 +685,8 @@ def overlap_heatmap_pair(
     fig, axd = compose_panels(
         [["left", "right", "cbar"]],
         {
-            "left": _panel(left_df, left_grey, left_dot, left_title, left_xlabel, True),
-            "right": _panel(right_df, right_grey, right_dot, right_title, right_xlabel, False),
+            "left": _panel(left_df, left_grey, left_dot, left_mark, left_title, left_xlabel, True),
+            "right": _panel(right_df, right_grey, right_dot, right_mark, right_title, right_xlabel, False),
         },
         figsize=figsize,
         width_ratios=[n_left, n_right, cbar_width],
@@ -702,4 +705,112 @@ def overlap_heatmap_pair(
     )
     mesh = next(c for c in axd["left"].collections if isinstance(c, QuadMesh))
     fig.colorbar(mesh, cax=axd["cbar"], label=cbar_label)
+    return fig, axd
+
+
+def overlap_heatmap_grid(
+    panels: list[dict],
+    region_lobe: dict,
+    *,
+    vmin: float = 0.0,
+    vmax: float | None = 1.0,
+    cmap: str = "YlGnBu",
+    cbar_label: str = "Overlap",
+    shared_cbar: bool = True,
+    cbar_width: float = 0.4,
+    wspace: float = 0.06,
+    figsize: tuple[float, float] | None = None,
+    panel_letters: bool = True,
+    style: dict | None = None,
+    **heatmap_kwargs,
+):
+    """N region x band heatmaps in a row (compose_panels), one or per-panel cbars.
+
+    Generalises :func:`overlap_heatmap_pair` to any number of panels and any
+    colour scale, so it also serves value heatmaps such as median relative band
+    power, not only the 0-1 overlap. Each entry of ``panels`` is a dict with a
+    region x band ``df`` (required) and optional ``band_order``, ``title``,
+    ``xlabel``, ``cbar_label``, ``vmin`` / ``vmax`` overrides, and
+    ``grey`` / ``dot`` / ``mark`` masks. All panels must share the same region
+    index (reindex beforehand) so their rows align; the leftmost keeps the
+    region labels, the rest hide them.
+
+    With ``shared_cbar=True`` a single colorbar spans all panels (they must share
+    a scale). With ``shared_cbar=False`` each panel gets its own colorbar and,
+    when its ``vmax`` resolves to ``None``, auto-scales to its own data maximum —
+    use this when panels live on different ranges (e.g. wide canonical bands vs
+    narrow Frauscher bins). Returns ``(fig, axd)``.
+    """
+    n = len(panels)
+    band_counts = [len(p.get("band_order") or list(p["df"].columns)) for p in panels]
+    n_rows = max(p["df"].shape[0] for p in panels)
+    if figsize is None:
+        figsize = (0.42 * sum(band_counts) + 5.0 + 1.2 * n, max(8.0, 0.32 * n_rows + 2.0))
+    names = [f"p{i}" for i in range(n)]
+
+    def _resolve_vmax(p):
+        v = p.get("vmax", vmax)
+        return float(np.nanmax(p["df"].to_numpy())) if v is None else v
+
+    def _draw(p, show_yticks, own_cbar):
+        def draw(ax):
+            plot_overlap_frauscher_heatmap(
+                p["df"],
+                region_lobe,
+                ax=ax,
+                band_order=p.get("band_order"),
+                grey=p.get("grey"),
+                dot=p.get("dot"),
+                mark=p.get("mark"),
+                title=p.get("title"),
+                xlabel=p.get("xlabel", "Frequency band"),
+                vmin=p.get("vmin", vmin),
+                vmax=_resolve_vmax(p),
+                cmap=cmap,
+                cbar=own_cbar,
+                cbar_label=p.get("cbar_label", cbar_label),
+                show_yticks=show_yticks,
+                show_ylabel=show_yticks,
+                **heatmap_kwargs,
+            )
+
+        return draw
+
+    letters = [(chr(65 + i), names[i]) for i in range(n)] if panel_letters else None
+    common = dict(
+        figsize=figsize,
+        gridspec_kw={"wspace": wspace},
+        sharey_groups=[names],
+        letters=letters,
+        letter_format="{}",
+        letter_offset=(2, 8),
+        letter_offset_shared=(2, 8),
+        style=style,
+    )
+
+    if shared_cbar:
+        fig, axd = compose_panels(
+            [names + ["cbar"]],
+            {names[i]: _draw(panels[i], i == 0, False) for i in range(n)},
+            width_ratios=band_counts + [cbar_width],
+            **common,
+        )
+        mesh = next(c for c in axd[names[0]].collections if isinstance(c, QuadMesh))
+        fig.colorbar(mesh, cax=axd["cbar"], label=cbar_label)
+        return fig, axd
+
+    # one colorbar per panel, drawn into a dedicated cell after each heatmap
+    cells, widths = [], []
+    for i in range(n):
+        cells += [names[i], f"c{i}"]
+        widths += [band_counts[i], cbar_width]
+    fig, axd = compose_panels(
+        [cells],
+        {names[i]: _draw(panels[i], i == 0, False) for i in range(n)},
+        width_ratios=widths,
+        **common,
+    )
+    for i in range(n):
+        mesh = next(c for c in axd[names[i]].collections if isinstance(c, QuadMesh))
+        fig.colorbar(mesh, cax=axd[f"c{i}"], label=panels[i].get("cbar_label", cbar_label))
     return fig, axd

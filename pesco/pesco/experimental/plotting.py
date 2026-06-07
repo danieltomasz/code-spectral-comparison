@@ -676,6 +676,8 @@ def plot_overlap_frauscher_heatmap(
     lobe_colors: Mapping[str, str] = _LOBE_COLORS,
     xlabel: str = "Frauscher interval (Hz)",
     cbar_label: str = "Overlap",
+    vmin: float = 0.0,
+    vmax: float = 1.0,
     cbar: bool = True,
     cbar_ax: "Axes | None" = None,
     show_yticks: bool = True,
@@ -750,8 +752,8 @@ def plot_overlap_frauscher_heatmap(
         vals,
         mask=grey_m,
         cmap=cmap,
-        vmin=0.0,
-        vmax=1.0,
+        vmin=vmin,
+        vmax=vmax,
         linewidths=0.5,
         linecolor="white",
         cbar=cbar,
@@ -786,7 +788,8 @@ def plot_overlap_frauscher_heatmap(
         if grey_m is not None:
             dot_m = dot_m & ~grey_m
         cmap_obj = plt.get_cmap(cmap)
-        vmat = vals.to_numpy()
+        span = (vmax - vmin) or 1.0
+        vmat = ((vals.to_numpy() - vmin) / span)  # normalise to the colour scale
         ys, xs = np.where(dot_m & ~np.isnan(vmat))
         colors = [
             "white"
