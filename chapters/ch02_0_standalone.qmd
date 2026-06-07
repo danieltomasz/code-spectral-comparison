@@ -1,7 +1,9 @@
 ---
 filters:
 - offset-headings
-title: Mapping Oscillatory and 1/f Broadband Spectral Features Across Cortical Regions and Recording Modalities 
+title: Mapping Oscillatory and 1/f Broadband Spectral Features Across Cortical Regions and Recording Modalities
+author: Daniel Borek
+date: today
 ---
 # Mapping Oscillatory and 1/f Broadband Spectral Features Across Cortical Regions and Recording Modalities {.unnumbered .unlisted  offset-headings-by="-1"}
 

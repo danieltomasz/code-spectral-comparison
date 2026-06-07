@@ -63,6 +63,7 @@ DATA_PATH_IEEG = Path(f"{PROJECT_DIR}/data/Frauscher2018")
 
 NO_PEAK_SUMMARY = "mean"
 PLOT_SUMMARY = "median"
+fig_folders = "figures/chapter2/clusters"
 ```
 
 # compute clasterisation iEEG
@@ -177,7 +178,7 @@ fig, ax = plot_region_difference_heatmap(
     title=f"Significant differences between regions and no-peak cluster of {ieeg.name}",
     annot_fontsize=7,
 )
-fig.savefig(f"images/{ieeg.name}_all_regional_differences.png", bbox_inches="tight")
+#fig.savefig(f"images/{ieeg.name}_all_regional_differences.png", bbox_inches="tight")
 
 ```
 
@@ -378,7 +379,7 @@ fig, axd = region_difference_heatmap_pair(
     annot_fontsize=9.5,
     tick_fontsize=12,
 )
-fig.savefig("figures/chapter2/clusters/combined_regional_differences_faceted.pdf", bbox_inches="tight")
+fig.savefig(f"{fig_folders}/combined_regional_differences_faceted.pdf", bbox_inches="tight")
 fig
 ```
 
@@ -403,7 +404,7 @@ fig, axes = plot_lobes_pair(
     wspace=0.0,
     show=False,
 )
-fig.savefig("figures/chapter2/combined_lobar_differences.pdf", bbox_inches="tight") """
+fig.savefig(f"{fig_folders}/combined_lobar_differences.pdf", bbox_inches="tight") """
 ``` 
 
 ```{python}
@@ -423,7 +424,7 @@ fig = (
     .label(x="Frequency [Hz]", y="Normalized spectral density")
     .finish(suptitle="Lobar differences vs no-peak cluster: iEEG vs reconstructed sources")
 )
-fig.savefig("figures/chapter2/combined_lobar_differences_faceted.pdf", bbox_inches="tight")
+fig.savefig(f"{fig_folders}/combined_lobar_differences_faceted.pdf", bbox_inches="tight")
 ```
 
 # LogLog scale clusters 
@@ -442,7 +443,7 @@ fig = (
     .label(x="Frequency", y="Log normalized spectral density")
     .finish(suptitle="Clustering normalized PSDs: iEEG vs reconstructed sources")
 )
-fig.savefig("figures/chapter2/combined_clusters_psd_faceted.pdf", bbox_inches="tight")
+fig.savefig(f"{fig_folders}/combined_clusters_psd_faceted.pdf", bbox_inches="tight")
 ```
 
 # Linear log cluster
@@ -589,7 +590,7 @@ fig, axd = compose_panels(
 axd["ieeg"].set_ylabel("Log normalized spectral density")
 axd["src"].set_ylabel("")
 
-fig.savefig("figures/chapter2/rawpower_and_clusters.pdf", bbox_inches="tight")
+fig.savefig(f"{fig_folders}/rawpower_and_clusters.pdf", bbox_inches="tight")
 fig
 
 ```

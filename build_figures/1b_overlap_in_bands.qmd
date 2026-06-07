@@ -1,0 +1,60 @@
+---
+title: Overlap in Bands
+author: Daniel Borek
+format: typst
+pdf-engine: typst
+jupyter: spectral-comparison-3.14
+
+execute:
+  echo: false
+  cache: true
+  freeze: auto
+  output: false
+---
+
+## Methods
+
+#### Canonical-band relative-power map
+
+As a second, complementary  approach, we mapped each region's normalised PSD onto the canonical bands defined above and took relative band power per region.
+
+Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2025QuantifyingRhythmicArrhythmic].
+Relative band powers are also compositional — within each region the five bands are normalised to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We therefore report the cross-modal correlations of these maps as descriptive measures of spatial agreement rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure.
+
+#### Cross-modal correspondence on relative PSD spectra
+
+This is the first of three cross-modal correspondence computations; the subtraction-based and modelled-peak versions are defined below and compared in @sec-concordance
+
+We quantified cross-modal agreement on the unit-power PSDs using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, we treated the iEEG atlas as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding HD-EEG standard deviation. The bin-wise overlap is
+
+$$
+\text{overlap}_r(f) =
+\begin{cases}
+    1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert}
+              {\text{SD}^{\,\text{HD}}_r(f)},
+        & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert
+          \le \text{SD}^{\,\text{HD}}_r(f) \\[2mm]
+    0,  & \text{otherwise.}
+\end{cases}
+$$
+
+
+The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and falls linearly to 0 once the two medians differ by one HD-EEG standard deviation. We averaged the bin-wise overlap across the frequency bins of each canonical band, giving one value per region per band, and report both the bin-level and the band-averaged overlap. To complement the overlap, we also rank-correlated the regional band estimates between modalities across regions (Spearman).
+
+## Results
+
+
+
+#### Band-power map and cross-modal overlap
+
+We present regional relative band power, compared across modalities with the band-overlap metric.
+
+Regional relative-power maps agreed across modalities most strongly in the alpha band (r = 0.60) and, more weakly, in the delta band (r = 0.42). Theta showed essentially no cross-modal correspondence (r = 0.13), beta only weak agreement (r = 0.30), and gamma was anti-correlated (r = −0.29). The spatial organisation of relative power is therefore only partially preserved between the iEEG atlas and source-reconstructed HD-EEG, and the preservation is band-dependent: it is confined largely to the alpha and low-frequency ranges that carry the clearest oscillatory structure, and breaks down at high frequencies. The negative gamma correlation is consistent with the high-frequency HD-EEG signal being dominated by a shallow aperiodic tail and noise floor rather than by physiological gamma — the same mechanism that drove the spurious gamma over-segmentation in the interval analysis — so that regions ranked high in HD-EEG gamma relative power are not those ranked high in the atlas. Relative to the identity line
+
+These per-band correlations should be read as descriptive rather than inferential. Relative band powers are *compositional*: within each channel they are normalised to a fixed total, so the five bands are not independent and an increase in one band necessarily depresses the others. This closure constraint induces negative coupling between bands by construction — part of the negative gamma correlation is therefore arithmetic rather than physiological — and it violates the independence assumptions of ordinary correlation and t-tests applied to the raw proportions[@filzmoser2012CorrelationAnalysisCompositional]. Valid inference would require analysing the maps in a log-ratio space (e.g. centred or isometric log-ratio transforms), which also removes any dependence on the per-channel normalisation choice. We retain the untransformed maps here as a descriptive summary and defer formal cross-modal inference to the aperiodic-separated peak descriptors below, which are not subject to the same closure.
+
+![Cross-modal correspondence of uncorrected relative band power. Each panel is one canonical band; each point is one bilateral MICCAI region, with source HD-EEG relative power on the x-axis and the iEEG atlas on the y-axis. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). Strip labels give the per-band Pearson](figures/chapter2/uncorrected/uncorrected_relative_band_power_correlations_bilateral.svg)
+
+![Average spectral overlap between the iEEG atlas and source-reconstructed HD-EEG, per MICCAI region and frequency band, computed on uncorrected relative-power PSDs.](figures/chapter2/uncorrected/afnan_overlap_raw_heatmap.svg){#fig-afnan-overlap-raw}
+
+![Group average relative PSD per ROI for the iEEG atlas (left) and HD-EEG source-reconstructed signals (right). One row per canonical band; within a row the two modalities share a color scale spanning that band's joint min-max Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/fig2a_relative_psd.pdf)
