@@ -1,0 +1,528 @@
+```{python}
+#| label: fig-overlap-frauscher
+# Alternative band scheme: the same uncorrected overlap, binned into the
+# data-driven Frauscher 2018 intervals (the 22 cluster bins used in
+# 1a_clusters via `cutintervals`) instead of the 5 canonical EEG bands.
+from pesco.experimental.clustering import Band
+from pesco.experimental.peak_testing import cutintervals
+
+_, fb_edges = cutintervals(ieeg_f)  # default = Frauscher's 22 paper intervals (0.5-80 Hz)
+FRAUSCHER_BANDS = [
+    Band(float(lo), float(hi), f"{lo:g}-{hi:g}", "", float((lo + hi) / 2))
+    for lo, hi in zip(fb_edges[:-1], fb_edges[1:])
+]
+overlap_raw_fb = afnan_band_overlap(
+    ref_df=relative_psd_df(ieeg_psd, ieeg_f),
+    est_df=relative_psd_df(hd_psd, hd_f),
+    ref_freqs=ieeg_f,
+    est_freqs=hd_f,
+    bands=FRAUSCHER_BANDS,
+)
+# Render in matplotlib to match the clustering region-difference heatmap:
+# rows grouped by lobe (same lobe order, lobe-coloured region labels, white
+# separators between lobe blocks), YlGnBu on the 0-1 overlap scale.
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from pesco.experimental.plotting import _LOBE_COLORS, _LOBE_ORDER
+
+region_lobe = (
+    ieeg_psd[["Region name", "Lobe"]]
+    .drop_duplicates()
+    .set_index("Region name")["Lobe"]
+    .to_dict()
+)
+lobe_rank = {lobe: i for i, lobe in enumerate(_LOBE_ORDER)}
+fb_regions = sorted(
+    overlap_raw_fb.index,
+    key=lambda r: (lobe_rank.get(region_lobe.get(r), len(_LOBE_ORDER)), r),
+)
+fb_vals = overlap_raw_fb.reindex(fb_regions)
+fb_labels = [str(r).strip().strip("'").strip('"').strip() for r in fb_regions]
+
+fig, ax = plt.subplots(
+    figsize=(0.5 * len(FRAUSCHER_BANDS) + 5, 0.32 * len(fb_regions) + 2)
+)
+sns.heatmap(
+    fb_vals,
+    cmap="YlGnBu",
+    vmin=0.0,
+    vmax=1.0,
+    linewidths=0.5,
+    linecolor="white",
+    cbar_kws={"label": "Overlap", "shrink": 0.55, "aspect": 30, "pad": 0.02},
+    xticklabels=[b.name for b in FRAUSCHER_BANDS],
+    yticklabels=fb_labels,
+    ax=ax,
+)
+ax.set_xlabel("Frauscher interval (Hz)")
+ax.set_ylabel("Region")
+ax.set_title("iEEG vs HD-EEG overlap (uncorrected PSD, Frauscher bins)")
+plt.setp(ax.get_xticklabels(), rotation=90)
+ax.tick_params(axis="both", length=0)
+
+# Colour each region label by its lobe; rule a white line between lobe blocks.
+for tick, region in zip(ax.get_yticklabels(), fb_regions):
+    tick.set_color(_LOBE_COLORS.get(region_lobe.get(region), "black"))
+row_lobes = [region_lobe.get(r) for r in fb_regions]
+for i, (prev, cur) in enumerate(zip(row_lobes, row_lobes[1:]), start=1):
+    if prev != cur:
+        ax.axhline(i, color="white", linewidth=2.0)
+
+fig.tight_layout()
+fig.savefig(
+    fig_dir / "afnan_overlap_raw_frauscherbins_heatmap.pdf",
+    bbox_inches="tight",
+    dpi=300,
+)
+fig
+```
+
+![Uncorrected relative-power overlap between the iEEG atlas and source-reconstructed HD-EEG, but binned into the 22 data-driven Frauscher 2018 frequency intervals (the cluster bins used in the clustering analysis) rather than the five canonical EEG bands.](figures/chapter2/uncorrected/afnan_overlap_raw_frauscherbins_heatmap.pdf){#fig-afnan-overlap-raw-frauscher}
+
+
+
+```{python}
+#| label: fig-overlap-frauscher-presence
+# Bootstrap version 1 — presence gating (the same subject-clustered CI>0 test as
+# the aperiodic-removed twin @fig-afnan-overlap-corrected-frauscher, here on the
+# *uncorrected* relative band power). A region x Frauscher-bin cell is marked `x`
+# when the bin lacks bootstrap-significant power in BOTH modalities. NB raw
+# relative power is strictly positive, so every cell tests "present" and nothing
+# is marked: presence gating only bites on the residual. Kept for parity; the
+# substantive bootstrap is the overlap-CI version below.
+import warnings
+
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from pesco.bandpower import integrate_bands
+from pesco.crossmodal import cluster_bootstrap_cell_means
+from pesco.experimental.plotting import _LOBE_COLORS
+
+rel_ie = relative_psd_df(ieeg_psd, ieeg_f)
+rel_hd = relative_psd_df(hd_psd, hd_f)
+fb_names = [b.name for b in FRAUSCHER_BANDS]
+fb_tuples = [(b.name, b.lo, b.hi) for b in FRAUSCHER_BANDS]
+ie_subj = rel_ie["patient"].to_numpy()
+# HD subject lives in the channel name (datasetNN_...); the `dataset` column is
+# a constant. iEEG uses the `patient` column.
+hd_subj = pd.Index(rel_hd.index).str.extract(r"(dataset\d+)", expand=False).to_numpy()
+
+
+def _fb_overlap_heatmap(vals, title, out, *, mark=None, grey=None, dot=None):
+    """Overlap heatmap matching @fig-afnan-overlap-raw-frauscher (matplotlib).
+
+    Lobe-grouped rows, lobe-coloured labels, white lobe separators, YlGnBu on
+    the 0-1 overlap scale. All overlays take a boolean region x band frame:
+
+    - ``grey``: cells masked to neutral grey (non-significant, as the clustering
+      region-difference heatmap blanks cells that fail its screen).
+    - ``dot``: cells flagged with a contrast dot — white on a dark fill, black on
+      a light fill — for "similar but flat" cells (high overlap, no rhythm). Dots
+      are never drawn on greyed cells.
+    - ``mark``: cells with a plain `x` overlay (legacy presence panel).
+
+    Reuses the row order / labels from the cell above.
+    """
+    v = vals.reindex(fb_regions)[fb_names]
+    grey_mask = (
+        grey.reindex(fb_regions)[fb_names].to_numpy(bool) if grey is not None else None
+    )
+    fig, ax = plt.subplots(
+        figsize=(0.5 * len(fb_names) + 5, 0.32 * len(fb_regions) + 2)
+    )
+    if grey_mask is not None:
+        ax.set_facecolor("#d9d9d9")  # masked (non-significant) cells show through
+    sns.heatmap(
+        v,
+        mask=grey_mask,
+        cmap="YlGnBu",
+        vmin=0.0,
+        vmax=1.0,
+        linewidths=0.5,
+        linecolor="white",
+        cbar_kws={"label": "Overlap", "shrink": 0.55, "aspect": 30, "pad": 0.02},
+        xticklabels=fb_names,
+        yticklabels=fb_labels,
+        ax=ax,
+    )
+    ax.set_xlabel("Frauscher interval (Hz)")
+    ax.set_ylabel("Region")
+    ax.set_title(title)
+    plt.setp(ax.get_xticklabels(), rotation=90)
+    ax.tick_params(axis="both", length=0)
+    for tick, region in zip(ax.get_yticklabels(), fb_regions):
+        tick.set_color(_LOBE_COLORS.get(region_lobe.get(region), "black"))
+    row_lobes = [region_lobe.get(r) for r in fb_regions]
+    for i, (prev, cur) in enumerate(zip(row_lobes, row_lobes[1:]), start=1):
+        if prev != cur:
+            ax.axhline(i, color="white", linewidth=2.0)
+    if mark is not None:
+        mm = mark.reindex(fb_regions)[fb_names].to_numpy(bool)
+        ys, xs = np.where(mm)
+        ax.scatter(xs + 0.5, ys + 0.5, marker="x", s=14, c="0.35", linewidths=0.7)
+    if dot is not None:
+        dm = dot.reindex(fb_regions)[fb_names].to_numpy(bool)
+        if grey_mask is not None:
+            dm = dm & ~grey_mask
+        cmap = plt.get_cmap("YlGnBu")
+        vmat = v.to_numpy()
+        ys, xs = np.where(dm & ~np.isnan(vmat))
+        colors = [
+            "white" if sum(c * w for c, w in zip(cmap(vmat[y, x])[:3], (0.299, 0.587, 0.114))) < 0.5 else "black"
+            for y, x in zip(ys, xs)
+        ]
+        ax.scatter(xs + 0.5, ys + 0.5, c=colors, marker="o", s=12, linewidths=0)
+    fig.tight_layout()
+    fig.savefig(out, bbox_inches="tight", dpi=300)
+    return fig
+
+
+def _fb_presence(rel, ff, subjects):
+    """Bootstrap-significant (CI>0) relative band power per region x Frauscher bin."""
+    bp = integrate_bands(rel[list(ff)].to_numpy(dtype=float), ff, fb_tuples)
+    rcol = rel["Region name"].to_numpy()
+    subjects = np.asarray(subjects)
+    out = pd.DataFrame(index=fb_regions, columns=fb_names, dtype=bool)
+    for name in fb_names:
+        vals = bp[name].to_numpy(dtype=float)
+        mat = np.full((len(vals), len(fb_regions)), np.nan)
+        for j, r in enumerate(fb_regions):
+            m = rcol == r
+            mat[m, j] = vals[m]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            _, lo, _ = cluster_bootstrap_cell_means(mat, subjects, B=2000, seed=3)
+        out[name] = lo > 0.0
+    return out
+
+
+pres_ie = _fb_presence(rel_ie, ieeg_f, ie_subj)
+pres_hd = _fb_presence(rel_hd, hd_f, hd_subj)
+absent_either = ~(pres_ie & pres_hd)
+_fb_overlap_heatmap(
+    overlap_raw_fb,
+    "iEEG vs HD-EEG overlap (uncorrected PSD, Frauscher bins)\n"
+    "presence-gated · x = no significant power in both modalities",
+    fig_dir / "afnan_overlap_raw_frauscherbins_presence_heatmap.pdf",
+    mark=absent_either,
+)
+```
+
+![Bootstrap version 1 of @fig-afnan-overlap-raw-frauscher: presence-gated. A region × Frauscher-bin cell is marked × when a subject-clustered bootstrap (whole subjects resampled — iEEG patients, HD datasets) finds no significant relative power (95% CI excludes 0) in **both** modalities. Because uncorrected relative power is strictly positive, every cell tests present and none is marked — presence gating is only informative on the aperiodic-removed residual (@fig-afnan-overlap-corrected-frauscher); this panel is included for parity.](figures/chapter2/uncorrected/afnan_overlap_raw_frauscherbins_presence_heatmap.pdf){#fig-afnan-overlap-raw-frauscher-presence}
+
+# Aperiodic
+
+
+```{python}
+#| label: fig-overlap-corr
+# Afnan band-overlap on the aperiodic-removed residual L_osc.
+overlap_corr = afnan_band_overlap(
+    ref_df=ieeg_osc, est_df=hd_osc, ref_freqs=ieeg_ff, est_freqs=hd_ff
+)
+brain_extracted_plot = plot_overlap_heatmap(
+    overlap_corr, title="iEEG vs HD-EEG overlap (aperiodic-removed)"
+)
+brain_extracted_plot.save(fig_dir_corr / "afnan_overlap_corrected_heatmap.pdf", width=6, height=10, dpi=300)
+brain_extracted_plot
+```
+
+![Average spectral overlap between the iEEG atlas and source-reconstructed HD-EEG, per MICCAI region and frequency band, computed on the aperiodic-removed oscillatory residual.](figures/chapter2/corrected/afnan_overlap_corrected_heatmap.pdf){#fig-afnan-overlap-corrected}
+
+
+
+
+```{python}
+#| label: fig-overlap-corr-frauscher
+# Presence-gated, pastel version. The Afnan overlap (viridis) is shown wherever
+# it is defined, at FULL opacity where BOTH modalities carry a bootstrap-
+# significant rhythm in the bin and FADED (pastel) where peak evidence is absent
+# — so the trivial "agreement" of two flat residuals stays visible but demoted.
+# Presence is the same subject-clustered bootstrap (CI>0) as the canonical map,
+# here on the 22 Frauscher bins. The sub-1 Hz bin is empty (residual on 1-80 Hz).
+import warnings
+
+from plotnine import (
+    aes,
+    element_rect,
+    element_text,
+    geom_tile,
+    ggplot,
+    labs,
+    scale_fill_cmap,
+    theme,
+)
+
+from pesco.crossmodal import cluster_bootstrap_cell_means
+
+overlap_corr_fb = afnan_band_overlap(
+    ref_df=ieeg_osc, est_df=hd_osc, ref_freqs=ieeg_ff, est_freqs=hd_ff,
+    bands=FRAUSCHER_BANDS,
+)
+fb_regions = list(overlap_corr_fb.index)
+fb_tuples = [(b.name, b.lo, b.hi) for b in FRAUSCHER_BANDS]  # (name, lo, hi) for integrate_bands
+fb_names = [b.name for b in FRAUSCHER_BANDS]
+fb_ie_subj = ieeg_osc["patient"].to_numpy()
+fb_hd_subj = pd.Index(hd_osc.index).str.extract(r"(dataset\d+)", expand=False).to_numpy()
+
+
+def _fb_presence(osc_df, ff, subjects):
+    """Bootstrap-significant (CI>0) residual power per region x Frauscher bin."""
+    bp = integrate_bands(osc_df[list(ff)].to_numpy(dtype=float), ff, fb_tuples)
+    rcol = osc_df["Region name"].to_numpy()
+    subjects = np.asarray(subjects)
+    out = pd.DataFrame(index=fb_regions, columns=fb_names, dtype=bool)
+    for name in fb_names:
+        vals = bp[name].to_numpy(dtype=float)
+        mat = np.full((len(vals), len(fb_regions)), np.nan)
+        for j, r in enumerate(fb_regions):
+            m = rcol == r
+            mat[m, j] = vals[m]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            _, lo, _ = cluster_bootstrap_cell_means(mat, subjects, B=2000, seed=3)
+        out[name] = lo > 0.0
+    return out
+
+
+fb_pres_ie = _fb_presence(ieeg_osc, ieeg_ff, fb_ie_subj)
+fb_pres_hd = _fb_presence(hd_osc, hd_ff, fb_hd_subj)
+
+fb_long = overlap_corr_fb.reset_index(names="region").melt(
+    id_vars="region", var_name="band", value_name="overlap"
+)
+fb_long["band"] = pd.Categorical(fb_long["band"], categories=fb_names, ordered=True)
+fb_long["both"] = [
+    bool(fb_pres_ie.loc[r, b]) and bool(fb_pres_hd.loc[r, b])
+    for r, b in zip(fb_long["region"], fb_long["band"])
+]
+
+p_fb = (
+    ggplot(fb_long, aes("band", "region", fill="overlap"))
+    # Fade toward the grey panel (not white): no-peak cells recede to neutral, so
+    # high overlap on a flat residual no longer reads as a bright/high cell.
+    + geom_tile(data=fb_long[~fb_long["both"]], alpha=0.30)  # muted: no peak evidence
+    + geom_tile(data=fb_long[fb_long["both"]], alpha=1.0)    # full: rhythm in both
+    + scale_fill_cmap("inferno", limits=[0, 1], na_value="#bdbdbd")
+    + labs(
+        x="Frauscher interval (Hz)", y="Region", fill="Overlap",
+        title="iEEG vs HD-EEG overlap (aperiodic-removed, Frauscher bins)\nfull = rhythm in both · muted-grey = no peak evidence",
+    )
+    + theme(
+        figure_size=(11, 10),
+        panel_background=element_rect(fill="#9e9e9e"),
+        axis_text_y=element_text(size=7),
+        axis_text_x=element_text(size=6, rotation=90),
+    )
+)
+p_fb.save(fig_dir_corr / "afnan_overlap_corrected_frauscherbins_heatmap.pdf", width=11, height=10, dpi=300)
+p_fb.save(fig_dir_corr / "afnan_overlap_corrected_frauscherbins_heatmap.svg", width=11, height=10, dpi=300)
+p_fb
+```
+
+
+![Alternative to @fig-afnan-overlap-corrected: the same aperiodic-removed (oscillatory residual) overlap between the iEEG atlas and source-reconstructed HD-EEG, binned into the 22 data-driven Frauscher 2018 frequency intervals rather than the five canonical EEG bands, and presence-gated. Colour (inferno) is the Afnan overlap; cells are at full opacity where both modalities carry a bootstrap-significant rhythm in the bin and muted toward grey where there is no peak evidence — so the agreement of two flat residuals stays faintly visible but recedes, and a high overlap on a flat residual no longer reads as a bright/high cell. The sub-1 Hz interval is blank (residual defined on the 1-80 Hz fit grid).](figures/chapter2/corrected/afnan_overlap_corrected_frauscherbins_heatmap.pdf){#fig-afnan-overlap-corrected-frauscher}
+
+
+
+```{python}
+#| label: tbl-presence-agreement
+#| output: true
+# Presence concordance: do iEEG and HD agree on WHERE a rhythm exists? The 2x2 is
+# (iEEG present? x HD present?) over the region x band cells, with presence the
+# CI>0 bootstrap test from the map above. Summarised with Cohen's kappa and the
+# Matthews correlation coefficient -- both use all four confusion cells, incl. the
+# both-absent (true-negative) cells the overlap ignores. CI is a region-clustered
+# bootstrap (resample regions; labels fixed at the point test). kappa/MCC are
+# undefined when a label has no variance (e.g. HD alpha present everywhere) -> "—";
+# read the pooled row (the imbalance-robust summary).
+band_order = [b[0] for b in EEG_BAND_TUPLES]
+REF = pres_ieeg.loc[regions, band_order].to_numpy(bool)   # regions x bands
+EST = pres_hd.loc[regions, band_order].to_numpy(bool)
+OV = overlap_corr.loc[regions, band_order].to_numpy(float)
+
+
+def _confusion(ref, est):  # -> tp, fn, fp, tn
+    ref, est = np.asarray(ref, bool), np.asarray(est, bool)
+    return (int((ref & est).sum()), int((ref & ~est).sum()),
+            int((~ref & est).sum()), int((~ref & ~est).sum()))
+
+
+def _kappa(c):
+    tp, fn, fp, tn = c
+    n = tp + fn + fp + tn
+    if n == 0:
+        return np.nan
+    po = (tp + tn) / n
+    pe = ((tp + fp) * (tp + fn) + (fn + tn) * (fp + tn)) / n**2
+    return np.nan if pe >= 1 else (po - pe) / (1 - pe)
+
+
+def _mcc(c):
+    tp, fn, fp, tn = c
+    den = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    return np.nan if den == 0 else (tp * tn - fp * fn) / den
+
+
+def _boot_ci(ref, est, stat, B=2000, seed=3):
+    rng = np.random.default_rng(seed)
+    R = ref.shape[0]
+    v = np.array([stat(_confusion(ref[idx].ravel(), est[idx].ravel()))
+                  for idx in (rng.integers(0, R, R) for _ in range(B))])
+    v = v[~np.isnan(v)]
+    return (np.nan, np.nan) if v.size == 0 else tuple(np.percentile(v, [2.5, 97.5]))
+
+
+def _fmt(x):
+    return "—" if np.isnan(x) else f"{x:.2f}"
+
+
+def _cell(ref, est, stat):
+    pt = stat(_confusion(ref.ravel(), est.ravel()))
+    if np.isnan(pt):
+        return "—"
+    lo, hi = _boot_ci(ref, est, stat)
+    return f"{_fmt(pt)} [{_fmt(lo)}, {_fmt(hi)}]"
+
+
+rows = []
+for label, ref, est in [("all bands", REF, EST)] + [
+    (n, REF[:, [j]], EST[:, [j]]) for j, n in enumerate(band_order)
+]:
+    tp, fn, fp, tn = _confusion(ref.ravel(), est.ravel())
+    rows.append({
+        "subset": label,
+        "n": tp + fn + fp + tn,
+        "agree %": f"{100 * (tp + tn) / (tp + fn + fp + tn):.0f}",
+        "κ [95% CI]": _cell(ref, est, _kappa),
+        "MCC [95% CI]": _cell(ref, est, _mcc),
+    })
+
+tp, fn, fp, tn = _confusion(REF.ravel(), EST.ravel())
+TAU = 0.5
+hi_ov, neither = OV >= TAU, ~REF & ~EST
+hollow = int((hi_ov & neither).sum()) / max(int(hi_ov.sum()), 1)
+
+Markdown(
+    f"**Presence 2×2 (all cells):** both-present (TP) = {tp}, "
+    f"iEEG-only / HD missed (FN) = {fn}, HD-only (FP) = {fp}, "
+    f"both-absent (TN) = {tn}.  **Hollow-agreement rate** "
+    f"(overlap ≥ {TAU} with no rhythm in either) = {100 * hollow:.0f}%.\n\n"
+    + pd.DataFrame(rows).set_index("subset").to_markdown()
+)
+```
+
+
+# Plot afnan 
+
+
+
+```{python}
+#| label: fig-overlap-corr-frauscher-dots
+# Dot variant of @fig-afnan-overlap-raw-frauscher-presence, for the aperiodic-
+# removed overlap. Every cell keeps its full overlap colour (YlGnBu, not muted);
+# a dot marks cells where BOTH modalities carry a bootstrap-significant rhythm
+# (the same subject-clustered CI>0 presence as fig-overlap-corr-frauscher,
+# reused here). The dot is drawn dark on light fills and white on dark fills so
+# it stays legible at any overlap level. Sub-1 Hz bin is blank (residual on
+# 1-80 Hz), so it carries no dots.
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from pesco.experimental.plotting import _LOBE_COLORS, _LOBE_ORDER
+
+# Lobe-grouped row order + lobe-coloured labels, matching the matplotlib raw
+# heatmaps above. region_lobe is rebuilt locally so the cell is self-contained.
+region_lobe = (
+    ieeg_psd[["Region name", "Lobe"]]
+    .drop_duplicates()
+    .set_index("Region name")["Lobe"]
+    .to_dict()
+)
+lobe_rank = {lobe: i for i, lobe in enumerate(_LOBE_ORDER)}
+cfb_regions = sorted(
+    overlap_corr_fb.index,
+    key=lambda r: (lobe_rank.get(region_lobe.get(r), len(_LOBE_ORDER)), r),
+)
+cfb_names = [b.name for b in FRAUSCHER_BANDS]
+cfb_labels = [str(r).strip().strip("'").strip('"').strip() for r in cfb_regions]
+cfb_vals = overlap_corr_fb.reindex(index=cfb_regions, columns=cfb_names)
+cfb_both = (
+    (fb_pres_ie & fb_pres_hd)
+    .reindex(index=cfb_regions, columns=cfb_names)
+    .fillna(False)
+    .to_numpy(bool)
+)
+
+cmap = plt.get_cmap("YlGnBu")
+fig, ax = plt.subplots(
+    figsize=(0.5 * len(cfb_names) + 5, 0.32 * len(cfb_regions) + 2)
+)
+sns.heatmap(
+    cfb_vals,
+    cmap=cmap,
+    vmin=0.0,
+    vmax=1.0,
+    linewidths=0.5,
+    linecolor="white",
+    cbar_kws={"label": "Overlap", "shrink": 0.55, "aspect": 30, "pad": 0.02},
+    xticklabels=cfb_names,
+    yticklabels=cfb_labels,
+    ax=ax,
+)
+ax.set_xlabel("Frauscher interval (Hz)")
+ax.set_ylabel("Region")
+ax.set_title(
+    "iEEG vs HD-EEG overlap (aperiodic-removed, Frauscher bins)\n"
+    "dot = bootstrap-significant rhythm in both modalities"
+)
+plt.setp(ax.get_xticklabels(), rotation=90)
+ax.tick_params(axis="both", length=0)
+for tick, region in zip(ax.get_yticklabels(), cfb_regions):
+    tick.set_color(_LOBE_COLORS.get(region_lobe.get(region), "black"))
+row_lobes = [region_lobe.get(r) for r in cfb_regions]
+for i, (prev, cur) in enumerate(zip(row_lobes, row_lobes[1:]), start=1):
+    if prev != cur:
+        ax.axhline(i, color="white", linewidth=2.0)
+
+# Dot at each present cell, coloured for contrast: white on dark fills, black on
+# light fills (luminance of the YlGnBu colour at the cell's overlap value).
+vmat = cfb_vals.to_numpy()
+ys, xs = np.where(cfb_both & ~np.isnan(vmat))
+dot_colors = []
+for y, x in zip(ys, xs):
+    r, g, b, _ = cmap(vmat[y, x])
+    dot_colors.append("white" if (0.299 * r + 0.587 * g + 0.114 * b) < 0.5 else "black")
+ax.scatter(xs + 0.5, ys + 0.5, c=dot_colors, marker="o", s=12, linewidths=0)
+
+fig.tight_layout()
+fig.savefig(
+    fig_dir_corr / "afnan_overlap_corrected_frauscherbins_dots_heatmap.pdf",
+    bbox_inches="tight",
+    dpi=300,
+)
+fig.savefig(
+    fig_dir_corr / "afnan_overlap_corrected_frauscherbins_dots_heatmap.svg",
+    bbox_inches="tight",
+    dpi=300,
+)
+fig
+```
+
+## Single bands
+
+## Uncorrcted 
+
+![Uncorrected cross-modal overlap on the 22 Frauscher intervals, with a bootstrap confidence interval on the metric. Whole subjects are resampled with replacement in **both** modalities (iEEG patients, HD datasets — the iEEG atlas is the reference but is still a finite patient sample, so it is resampled too) and the Afnan overlap recomputed each draw (B = 2000). Cells are coloured by the point overlap; cells whose 95% percentile CI includes 0 are greyed out (overlap not reliably above zero), as the clustering heatmap blanks non-significant cells. A contrast dot (white on dark, black on light) marks "similar but flat" cells — a reliable overlap sitting on a flat spectrum with no bootstrap-significant rhythm in either modality (hollow agreement). For uncorrected relative power this set is empty; it becomes informative for the aperiodic-removed residual. The metric has no chance baseline, so the CI is a stability test, not a test against a no-correspondence null.](figures/chapter2/uncorrected/overlap_frauscher_uncorrected.pdf){#fig-overlap-frauscher-uncorrected}
+
+
+![Canonical-band (5 EEG bands) counterpart of @fig-overlap-frauscher-uncorrected and the uncorrected twin of @fig-overlap-canonical-corrected: cross-modal overlap of the uncorrected relative PSD per region × canonical band, with a subject-clustered bootstrap CI on the overlap (whole subjects resampled in both modalities, B = 2000). Cells whose 95% CI includes 0 are greyed; a contrast dot would mark "similar but flat" cells but none arise (raw relative power is always present). Because the overlap is averaged over a wide band its CI is reliably above 0 almost everywhere, so — unlike the 22 narrow Frauscher bins — very few cells grey out.](figures/chapter2/uncorrected/overlap_canonical_uncorrected.pdf){#fig-overlap-canonical-uncorrected}
+
+
+
+### Aperiodic removed 
+
+[Canonical-band twin of @fig-overlap-frauscher-corrected: cross-modal overlap of the aperiodic-removed residual over the five canonical EEG bands, with a subject-clustered bootstrap CI on the overlap (whole subjects resampled in both modalities, B = 2000). Cells whose 95% CI includes 0 are greyed (overlap not reliably above zero); a contrast dot marks "similar but flat" cells — a reliable overlap with no bootstrap-significant residual rhythm in either modality (hollow agreement). Same scheme and code path as the 22-bin figure, only the band definition differs.](figures/chapter2/corrected/overlap_canonical_corrected.pdf){#fig-overlap-canonical-corrected}
+
+![Aperiodic-removed twin of @fig-overlap-frauscher-uncorrected: cross-modal overlap of the oscillatory residual, per region × Frauscher bin, with a subject-clustered bootstrap CI on the overlap (whole subjects resampled in both modalities, B = 2000). Cells whose 95% CI includes 0 are greyed (overlap not reliably above zero), as the clustering heatmap blanks non-significant cells. A contrast dot (white on dark, black on light) marks "similar but flat" cells — a reliable overlap with no bootstrap-significant residual rhythm in either modality, i.e. hollow agreement between two flat residuals. Unlike the uncorrected relative power, this set is non-empty here. The sub-1 Hz interval is blank (residual defined on the 1-80 Hz fit grid).](figures/chapter2/corrected/overlap_frauscher_corrected.pdf){#fig-overlap-frauscher-corrected}

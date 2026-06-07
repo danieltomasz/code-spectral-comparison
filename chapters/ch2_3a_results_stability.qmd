@@ -1,0 +1,65 @@
+
+
+### Stability of aperiodic estimates
+
+Finally, we ask how far the aperiodic estimates themselves depend on the modelling choices made to obtain them.
+
+#### Knee vs fixed
+
+<!-- REVIEW: "exactly as the model-selection result predicts" — overstated certainty. "consistent with the model-selection result" fits the descriptive register. -->
+<!-- The two aperiodic modes return very different exponents in the iEEG atlas and nearly identical ones in source HD-EEG, exactly as the model-selection result predicts. In iEEG the knee exponent (median $\chi = 3.30$) is far steeper than the fixed exponent (median $\chi = 1.94$), and the two correlate only moderately across channels (Pearson $r = 0.49$, Spearman $\rho = 0.45$): forcing a single line through a spectrum that has a genuine knee biases the exponent low and does so by a channel-specific amount, so the fixed estimate is not a faithful rescaling of the knee estimate. In HD-EEG, where the knee is essentially absent, the two exponents coincide (median 0.94 vs 0.93) and agree tightly across channels ($r = 0.88$, $\rho = 0.92$). Colouring each channel by its fitted knee frequency (@fig-knee-vs-fixed) shows the iEEG gap widens where the knee sits higher, consistent with the fixed exponent partly absorbing the knee [@ameen2025TemporallyResolvedAnalyses]. The exponent one reports in iEEG is therefore a modelling choice, not a fixed property of the spectrum — reinforcing the per-modality mode selection. -->
+
+The two aperiodic modes return very different exponents in the iEEG atlas and nearly identical ones in source HD-EEG, as the model-selection result predicts —
+but in iEEG the difference is partly one of definition, not only of value. The fixed $\chi$ is a single slope fit across the whole band, dragged shallow by the
+low-frequency plateau; the knee $\chi$ is the asymptotic high-frequency slope above the corner $f_k = k^{1/\chi}$, so it is effectively measured over a channel-specific window above the knee. The two are different estimands, which is why the knee exponent (median $\chi = 3.30$) is far steeper than the fixed
+one (median $\chi = 1.94$). Because they are different parameters, their across-channel correlation (Pearson $r = 0.49$, Spearman $\rho = 0.45$) measures
+how the two co-vary, not agreement on a common quantity; its moderate value reflects that the fixed estimate is not a simple rescaling of the knee estimate, since the bias from fitting one line through the knee varies channel to channel
+with $f_k$. Colouring each channel by its fitted knee frequency (@fig-knee-vs-fixed)  shows the gap widening where the knee sits higher, consistent with the fixed exponent partly absorbing the knee [@ameen2025TemporallyResolvedAnalyses]. In
+HD-EEG the knee is essentially absent, so $\chi$ describes the whole band in both modes; the two definitions converge, the exponents coincide (median 0.94 vs 0.93), and they track closely across channels ($r = 0.88$, $\rho = 0.92$). 
+<!-- The exponent reported for iEEG is therefore a modelling choice — the model sets the frequency support over which the slope is defined, the same dependence the fitting-range comparison (§3.3.2) shows by varying the upper bound explicitly —
+not a fixed property of the spectrum, reinforcing the per-modality mode
+selection. -->
+
+![Knee- vs fixed-model aperiodic exponent per channel, one panel per modality (dashed line = identity). Points coloured by the fitted knee frequency. iEEG exponents diverge between modes; HD-EEG exponents coincide.](figures/chapter2/h3_knee_vs_fixed_exponent.svg){#fig-knee-vs-fixed width="100%" column="page"}
+
+#### Fitting range
+
+The upper edge of the fit window matters mainly for iEEG. Narrowing the fixed-mode range from 1-80 Hz to 1-45 Hz lowered the iEEG exponent by a mean $\Delta\chi = +0.47$ (median 1.94 → 1.50), a large and consistent shift: the two estimates correlate well in rank ($r = 0.77$, $\rho = 0.76$) but sit off the identity line, and the Bland-Altman plot [@bland1986StatisticalMethodsAssessing] (@fig-range-ba) shows the difference is an approximately constant positive offset rather than noise — the steeper high-frequency portion of the iEEG spectrum pulls the 1-80 Hz exponent up. In HD-EEG the range had essentially no effect ($\Delta\chi = -0.04$; $r = 0.91$, $\rho = 0.93$), because the source spectrum is already close to a single power law over the whole band. The per-region map of $\Delta\chi$ (@fig-range-region) shows the iEEG shift is broadly distributed rather than confined to one lobe. Cross-modal exponent comparisons must therefore hold the fit range fixed, and are only meaningful below ~45 Hz where the two modalities behave comparably.
+
+![Fitting-range agreement of the fixed exponent: χ over 1-45 Hz vs 1-80 Hz, per modality (dashed = identity).](figures/chapter2/h3_fitting_range_scatter.svg){#fig-range-scatter width="100%" column="page"}
+
+![Bland-Altman of the range effect: mean exponent vs $\Delta\chi = \chi_{1\text{-}80} - \chi_{1\text{-}45}$. The iEEG shift is a near-constant positive offset; HD-EEG is centred on zero.](figures/chapter2/h3_fitting_range_bland_altman.svg){#fig-range-ba width="100%" column="page"}
+
+![Per-region mean range shift $\Delta\chi$. The iEEG offset is broadly distributed across regions; HD-EEG is near zero everywhere.](figures/chapter2/h3_fitting_range_region_delta.svg){#fig-range-region width="45%"}
+
+#### IRASA vs specparam
+
+As a cross-method check in HD-EEG, the specparam fixed-mode exponent (refit over 2-40 Hz) and the IRASA fractal exponent over the same band agree almost perfectly across channels (Pearson $r = 0.97$, Spearman $\rho = 0.96$; median 1.00 vs 1.06), with specparam marginally shallower (@fig-irasa). The recovered aperiodic slope is thus essentially method-independent in the source data:
+<!-- REVIEW: "agree almost perfectly" + "essentially method-independent" — two superlatives for one r=0.97. Keep one, e.g. "agree closely (r=0.97)". -->
+ the cross-modal and range effects above are properties of the spectra, not artefacts of the specparam parameterisation.
+
+![HD-EEG aperiodic exponent from specparam (fixed, 2-40 Hz) vs IRASA (2-40 Hz), one point per channel; dashed line is identity.](figures/chapter2/hd_exponent_specparam_vs_irasa.svg){#fig-irasa width="60%"}
+
+#### Summary
+
+```{=typst}
+#figure(
+  table(
+    columns: 5,
+    align: (left, center, center, center, center),
+    stroke: none,
+    inset: (x: 7pt, y: 4pt),
+    table.hline(stroke: 0.8pt),
+    table.header([*Comparison*], [*Modality*], [*Pearson r*], [*Spearman ρ*], [*n ch.*]),
+    table.hline(stroke: 0.5pt),
+    [knee vs fixed χ], [iEEG], [0.49], [0.45], [1772],
+    [], [HD-EEG], [0.88], [0.92], [1444],
+    [range 1-80 vs 1-45 (fixed χ)], [iEEG], [0.77], [0.76], [1772],
+    [], [HD-EEG], [0.91], [0.93], [1444],
+    [IRASA vs specparam (2-40)], [HD-EEG], [0.97], [0.96], [1444],
+    table.hline(stroke: 0.8pt),
+  ),
+  caption: [Stability of the aperiodic exponent across modelling choices. Per-channel Pearson and Spearman correlations within each modality.],
+  kind: table,
+) <tbl-aperiodic-stability>
+```
