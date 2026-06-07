@@ -682,7 +682,13 @@ def plot_overlap_frauscher_heatmap(
     cbar_ax: "Axes | None" = None,
     show_yticks: bool = True,
     show_ylabel: bool = True,
+    show_xticks: bool = True,
     dot_size: float = 12.0,
+    tick_fontsize: float | None = None,
+    ytick_fontsize: float | None = None,
+    title_fontsize: float | None = None,
+    axis_label_fontsize: float | None = None,
+    xtick_step: int = 1,
     ax: "Axes | None" = None,
 ) -> "tuple[Figure, Axes]":
     """Region x band overlap heatmap, lobe-grouped like the clustering heatmap.
@@ -767,15 +773,27 @@ def plot_overlap_frauscher_heatmap(
         yticklabels=labels if show_yticks else False,
         ax=ax,
     )
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel("Region" if (show_yticks and show_ylabel) else "")
+    lab_kw = {} if axis_label_fontsize is None else {"fontsize": axis_label_fontsize}
+    ax.set_xlabel(xlabel if show_xticks else "", **lab_kw)
+    ax.set_ylabel("Region" if (show_yticks and show_ylabel) else "", **lab_kw)
     if title is not None:
-        ax.set_title(title)
-    plt.setp(ax.get_xticklabels(), rotation=90)
+        ax.set_title(title, **({} if title_fontsize is None else {"fontsize": title_fontsize}))
+    xtick_kw = {} if tick_fontsize is None else {"fontsize": tick_fontsize}
+    if show_xticks:
+        plt.setp(ax.get_xticklabels(), rotation=90, **xtick_kw)
+        if xtick_step > 1:  # thin overlapping x labels: keep every xtick_step-th
+            for i, lbl in enumerate(ax.get_xticklabels()):
+                if i % xtick_step:
+                    lbl.set_visible(False)
+    else:
+        ax.set_xticklabels([])
     ax.tick_params(axis="both", length=0)
     if show_yticks:
+        ysize = ytick_fontsize if ytick_fontsize is not None else tick_fontsize
         for tick, region in zip(ax.get_yticklabels(), regions):
             tick.set_color(lobe_colors.get(region_lobe.get(region), "black"))
+            if ysize is not None:
+                tick.set_fontsize(ysize)
     row_lobes = [region_lobe.get(r) for r in regions]
     for i, (prev, cur) in enumerate(zip(row_lobes, row_lobes[1:]), start=1):
         if prev != cur:

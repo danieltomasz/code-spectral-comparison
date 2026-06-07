@@ -642,15 +642,23 @@ fig, _ = overlap_heatmap_grid(
     vmin=0.0,
     vmax=None,  # per-panel colorbar, each auto-scaled to its own maximum
     shared_cbar=False,
+    nrows=2,  # stack modalities: iEEG (top), HD-EEG (bottom); schemes across cols
     cmap="rocket_r",  # near-white = little power, dark = concentrated
     cbar_label="Median relative band power",
+    row_height=0.32,  # inches per region row — raise for more legible y labels
+    tick_fontsize=13,
+    ytick_fontsize=12,
+    title_fontsize=15,
+    axis_label_fontsize=12,
+    # per-panel `xtick_step` (in the panel dict) thins the 22 Frauscher x labels
+    # if they overlap, e.g. {"df": ..., "xtick_step": 2}.
 )
 fig.savefig(fig_dir / "relpower_heatmaps_uncorrected.pdf", bbox_inches="tight", dpi=300)
 fig.savefig(fig_dir / "relpower_heatmaps_uncorrected.svg", bbox_inches="tight", dpi=300)
 fig
 ```
 
-![Median relative band power per bilateral region, before aperiodic correction, as region × band heatmaps: iEEG and HD-EEG, each over the five canonical bands and the 22 Frauscher intervals (@frauscher2018AtlasNormalIntracranial). The value in each cell is the median across the region's channels of the within-band relative power (band power as a fraction of total power, so in [0, 1]); each panel has its own colorbar, auto-scaled to its maximum, because the wide canonical bands carry a much larger fraction of total power than the narrow Frauscher bins. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/uncorrected/relpower_heatmaps_uncorrected.pdf){#fig-relpower-heatmaps}
+![Median relative band power per bilateral region, before aperiodic correction, as region × band heatmaps. Modalities are stacked — iEEG (top, A–B) over HD-EEG (bottom, C–D) — with the five canonical bands (left) and the 22 Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial) across the columns, so each band scheme aligns vertically between modalities. The value in each cell is the median across the region's channels of the within-band relative power (band power as a fraction of total power, so in [0, 1]); each panel has its own colorbar, auto-scaled to its maximum, because the wide canonical bands carry a much larger fraction of total power than the narrow Frauscher bins. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/uncorrected/relpower_heatmaps_uncorrected.pdf){#fig-relpower-heatmaps}
 
 
 #### Aperiodic-removed band power
@@ -857,7 +865,55 @@ plot_last
 
 ![Group-average oscillatory residual per ROI (aperiodic component removed), faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's residual min-max normalised across both modalities (per-band shared scale), so the within-band spatial pattern is comparable across modalities. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/corrected/relpower_maps_corrected.pdf){#fig-relpower-maps-corrected}
 
+```{python}
+#| label: fig-relpower-heatmaps-corrected
+# Aperiodic-removed twin of @fig-relpower-heatmaps: median oscillatory band power
+# per region (specparam residual), same stacked 4-panel layout. The residual is
+# already normalised to total power, so the per-band value is the within-band
+# integral of the residual (a fraction of total power, directly comparable to
+# the uncorrected relative band power) — NOT band_fraction_by_channel, which
+# would re-normalise to total oscillatory power. The sub-1 Hz Frauscher bin is
+# blank (residual defined on the 1-80 Hz fit grid).
+def region_median_osc_power(osc_df, ff, bands):
+    tuples = [(b.name, b.lo, b.hi) for b in bands]
+    bp = integrate_bands(osc_df[list(ff)].to_numpy(dtype=float), ff, tuples)
+    bp["region"] = osc_df["Region name"].to_numpy()
+    return bp.groupby("region")[[b.name for b in bands]].median()
 
+
+op_ie_can = region_median_osc_power(ieeg_osc, ieeg_ff, EEG_BANDS)
+op_ie_fb = region_median_osc_power(ieeg_osc, ieeg_ff, FRAUSCHER_BANDS)
+op_hd_can = region_median_osc_power(hd_osc, hd_ff, EEG_BANDS)
+op_hd_fb = region_median_osc_power(hd_osc, hd_ff, FRAUSCHER_BANDS)
+
+op_regions = sorted(set(op_ie_can.index) & set(op_hd_can.index))
+op_panels = [
+    {"df": op_ie_can.reindex(op_regions), "title": "iEEG · canonical", "xlabel": "Frequency band"},
+    {"df": op_ie_fb.reindex(op_regions), "title": "iEEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+    {"df": op_hd_can.reindex(op_regions), "title": "HD-EEG · canonical", "xlabel": "Frequency band"},
+    {"df": op_hd_fb.reindex(op_regions), "title": "HD-EEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+]
+fig, _ = overlap_heatmap_grid(
+    op_panels,
+    REGION_LOBE,
+    vmin=0.0,
+    vmax=None,
+    shared_cbar=False,
+    nrows=2,
+    cmap="rocket_r",
+    cbar_label="Median oscillatory band power",
+    row_height=0.32,
+    tick_fontsize=13,
+    ytick_fontsize=12,
+    title_fontsize=15,
+    axis_label_fontsize=12,
+)
+fig.savefig(fig_dir_corr / "relpower_heatmaps_corrected.pdf", bbox_inches="tight", dpi=300)
+fig.savefig(fig_dir_corr / "relpower_heatmaps_corrected.svg", bbox_inches="tight", dpi=300)
+fig
+```
+
+![Median oscillatory band power per bilateral region after specparam aperiodic correction — the aperiodic-removed twin of @fig-relpower-heatmaps, same stacked layout: iEEG (top, A–B) over HD-EEG (bottom, C–D), canonical bands (left) and the 22 Frauscher intervals (right). Each cell is the median across the region's channels of the within-band oscillatory residual (a fraction of total power, so directly comparable to the uncorrected relative band power); each panel has its own colorbar auto-scaled to its maximum. The sub-1 Hz Frauscher interval is blank (the residual is defined on the 1–80 Hz fit grid). Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/corrected/relpower_heatmaps_corrected.pdf){#fig-relpower-heatmaps-corrected}
 
 ```{python}
 #| label: fig-overlap-corr-frauscher-dots
@@ -1036,4 +1092,3 @@ fig
 ```
 
 ![Presence-conditioned cross-modal overlap of the aperiodic-removed residual, the two band schemes side by side (composed with `compose_panels`): five canonical EEG bands (left) and the 22 Frauscher intervals (right), at their natural asymmetric width. In both panels the Afnan overlap is coloured only where a subject-clustered bootstrap (whole subjects resampled — iEEG patients, HD datasets; 95% CI of the mean residual band power excludes 0) finds a rhythm in **both** modalities; cells are masked where no rhythm is present in both and marked × where the iEEG atlas carries a rhythm that HD-EEG did not recover. Same renderer as the confidence-interval pair (@fig-overlap-pair-corrected); only the masking rule differs (presence rather than the overlap's confidence interval), and the band scheme differs between panels.](figures/chapter2/corrected/overlap_pair_corrected_presencegated.pdf){#fig-overlap-corr-presence-gated-pair}
-
