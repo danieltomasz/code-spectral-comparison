@@ -106,11 +106,11 @@ The Kolmogorov-Smirnov screen identifies where a region differs from the no-peak
 For HD-EEG we applied the same procedure and kept the iEEG-derived intervals for comparability, even though the 4% power condition did not hold for the source-reconstructed spectra; we report the consequences in the Results.
 
 
-#### Canonical-band relative-power map
+#### Canonical-band and normalised relative-power maps
 
 As a second, complementary  approach, we mapped each region's normalised PSD onto the canonical bands defined above and took relative band power per region.
 
-Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2025QuantifyingRhythmicArrhythmic].
+Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower; @castanheira2025QuantifyingRhythmicArrhythmic].
 Relative band powers are also compositional — within each region the five bands are normalised to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We therefore report the cross-modal correlations of these maps as descriptive measures of spatial agreement rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure.
 
 #### Cross-modal correspondence on relative PSD spectra
@@ -133,15 +133,61 @@ $$
 
 The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and falls linearly to 0 once the two medians differ by one HD-EEG standard deviation. We averaged the bin-wise overlap across the frequency bins of each canonical band, giving one value per region per band, and report both the bin-level and the band-averaged overlap. To complement the overlap, we also rank-correlated the regional band estimates between modalities across regions (Spearman).
 
+We also recomputed the overlap on the 22 data-driven Frauscher intervals [@frauscher2018AtlasNormalIntracranial], which give a more fine-grained view than the five canonical bands.
 
 
-
-### Specparam-related measures of spectral power
+### Relative power after specparam aperiodic part removal
 
 
 We asked whether separating periodic from aperiodic activity changes the above picture. We addressed it in two linked ways: by modelling oscillatory peaks directly with specparam, and by removing the aperiodic background and recomputing the cross-modal overlap.
 
-Model fits were evaluated using R² and mean absolute error; fits with R² below 0.90 were exluded 
+Each channel's PSD was parameterised with specparam, the spectral parameterisation model of @donoghue2020ParameterizingNeuralPower, fitted over 1-80 Hz with a peak configuration shared across both modalities: peak width limits of 1-8 Hz, at most 8 peaks, a minimum peak height of 0.1, and a peak threshold of 3 SD. Only the aperiodic component differed between modalities: it was modelled in the form chosen by the per-modality knee-versus-fixed BIC comparison (@sec-aperiodic-selection) — a knee model for the iEEG atlas and a fixed (knee-free) model for the source-reconstructed HD-EEG. From each fit we reconstructed the aperiodic component on the fitted frequency grid and subtracted it in linear power (next subsection), then normalised the residual to total power, so each band's oscillatory power is expressed as a fraction of total power and is directly comparable to the uncorrected relative band power above. One fit was produced per channel; goodness of fit and the fitted aperiodic parameters are reported in the Results.
+
+We reconstructed the fitted aperiodic component on the fitted frequency grid and subtracted it from the empirical PSD in linear power space, giving the residual
+
+
+$$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f).$$
+
+
+This is the primary residual used throughout. A log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, could equally be used and is the variant adopted for detrending in many studies.
+
+Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space, which is why we work with the linear residual. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models.
+
+
+We evaluated each fit with R² and mean absolute error but did not exclude channels on fit quality in the main analysis: the poorer fits are concentrated in the HD-EEG data, where dropping everything below R² 0.90 would remove roughly a quarter of its channels. We instead treat fit quality as a sensitivity analysis, repeating the band-power and overlap analyses on the channels with R² > 0.90, to check that the conclusions do not depend on the poorer-fitting channels [TODO: cross-reference to the sensitivity analysis].
+<!-- 
+Model fits were evaluated using R² and mean absolute error; fits with R² below 0.90 were exluded  -->
+
+#### Assessing the overlap: reliability and rhythm presence
+
+
+The band-overlap of @afnan2023ValidatingMEGSource is a *descriptive* agreement metric: on its own it indicates neither whether the agreement is statistically reliable nor whether there is a rhythm present to agree about — two flat residuals coincide and score an overlap near 1, a spurious agreement. We therefore assess the overlap in two complementary ways. Both are subject-clustered bootstraps with whole subjects resampled with replacement (iEEG `patient`, HD `dataset`; B = 2000), but they target different quantities and answer different questions.
+
+We deliberately use a subject-clustered bootstrap rather than the channel-wise Welch *t*-test of @afnan2023ValidatingMEGSource, for three reasons specific to our design. First, our channels are nested in a small number of subjects (the source-reconstructed HD-EEG comprises only 19 subjects, each contributing many channels), and source leakage makes neighbouring source-space channels strongly correlated; a *t*-test on channels treats them as independent and so inflates the effective sample size from ~19 to several hundred, anti-conservatively shrinking the standard error. Welch's correction addresses unequal *variance*, not this non-independence, so it does not remedy the problem — whereas resampling whole subjects respects the nesting and keeps the exchangeable unit (the subject) as the unit of inference. Second, relative band power is bounded and the aperiodic-removed residual has a point mass at zero, violating the normality the *t*-test leans on at this sample size; the bootstrap is distribution-free. Third, and most directly, the overlap is a single statistic *derived* from both modalities, not a contrast between two samples, so a two-sample *t*-test does not apply to it at all — the only way to attach uncertainty to the overlap is to resample and recompute it. The reference (iEEG) modality is resampled too, since the atlas medians are themselves estimated from a finite set of patients.
+
+The first assesses the reliability of the overlap value. We resample subjects in both modalities, recompute the band-overlap on each draw, and take a 95% percentile confidence interval per region and band; cells whose interval includes 0 are masked (shown in grey; @fig-overlap-pair-corrected). This asks *is the measured agreement reliably above zero?* Because the metric is bounded in $[0,1]$ and has no chance or permutation baseline, it is a reliability check — that the value is robust rather than zero by sampling noise — not a test against a null of no correspondence. It is also band-width dependent: averaging a non-negative metric over a wide canonical band drives its lower confidence bound above zero almost everywhere, so the five canonical bands leave far fewer cells masked than the 22 narrow Frauscher intervals, and the two band schemes are not directly comparable on this criterion.
+
+The second assesses whether a rhythm is present to be compared, using the iEEG atlas as the reference (the ground truth). We bootstrap the aperiodic-removed band power per region and band and consider a region to carry a rhythm in a band when its mean residual power reliably exceeds zero (95% CI > 0). The overlap is then shown only where *both* modalities carry a rhythm; cells are masked where neither does (the overlap is uninterpretable — there is no oscillation to recover), and marked with a cross where the iEEG atlas carries a rhythm that HD-EEG fails to recover (@fig-overlap-corr-presence-gated-pair). This addresses the validation question directly: *where does source-reconstructed HD-EEG recover a genuine iEEG rhythm, and where does it miss one?* Presence here is significant oscillatory power above the $1/f$ background, a more permissive criterion than a fitted specparam peak.
+
+The two analyses are complementary — the first measures how trustworthy the agreement value is, the second whether the agreement concerns real oscillatory structure — so we read the presence-conditioned map as the primary validation summary, because it separates genuine rhythm recovery from the spurious agreement of two flat residuals, and the confidence-interval map as a check on the metric itself. Both use the same display, differing only in the masking rule, and we show each band scheme (canonical bands, Frauscher intervals) side by side (@fig-overlap-pair-corrected, @fig-overlap-corr-presence-gated-pair).
+
+
+
+<!-- #### Cross-modal overlap before and after aperiodic correction
+
+We reconstructed the fitted aperiodic component on the fitted frequency grid and subtracted it from the empirical PSD in linear power space, giving the residual
+
+$$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f).$$
+
+This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, the variant used for  detrending in many studies, as a sensitivity comparison.
+
+Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models. 
+ -->
+<!-- A difference in the residual overlap between modalities can therefore follow from that asymmetry in the fit rather than from the rhythms. For this reason we do not read the subtraction-based correspondence on its own, but against the modelled-peak correspondence. -->
+
+<!-- ### Cross-modal concordance across correspondence measures {#sec-concordance}
+
+We now have three measures of which regional oscillatory features correspond across modalities, resting on different treatments of the aperiodic background: relative band power ignores it, the subtraction residual removes it with a fitted model, and modelled power never estimates it. We compare the regional cross-modal agreement under each. Where the three agree, the correspondence is robust to how the background is handled. Where they disagree, we take the modelled-peak result as the reference, because it does not depend on the accuracy of the aperiodic fit, whereas the subtraction measures can produce apparent oscillatory differences that follow from aperiodic-fit error rather than from the rhythm [@castanheira2025QuantifyingRhythmicArrhythmic]. -->
 
 
 #### Per-band peak prevalence and modelled power
@@ -153,22 +199,6 @@ We also kept the parameters of the fitted peaks: centre frequency, amplitude, an
 Modelled power exists only where specparam fits a peak, so the per-band prevalence above is also a fit-success rate. We report it separately for each modality. <!-- If the algorithm fits peaks less often in the source-reconstructed HD-EEG than in the iEEG, a difference in modelled power between modalities could reflect differential peak detection rather than a difference in the rhythm itself, and we read the modelled-power comparison with that rate in hand. -->
 
 Assigning peaks to fixed canonical bands by centre frequency is sensitive to peaks that sit near a band edge [@castanheira2025QuantifyingRhythmicArrhythmic], and source reconstruction can shift the estimated peak frequency. We therefore also report the distribution of peak centre frequencies per region per modality, and compare the regional dominant peak frequency across modalities directly, without binning.
-
-#### Cross-modal overlap before and after aperiodic correction
-
-We reconstructed the fitted aperiodic component on the fitted frequency grid and subtracted it from the empirical PSD in linear power space, giving the residual
-
-$$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f).$$
-
-This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, the variant used for  detrending in many studies, as a sensitivity comparison.
-
-Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models. 
-
-<!-- A difference in the residual overlap between modalities can therefore follow from that asymmetry in the fit rather than from the rhythms. For this reason we do not read the subtraction-based correspondence on its own, but against the modelled-peak correspondence. -->
-
-<!-- ### Cross-modal concordance across correspondence measures {#sec-concordance}
-
-We now have three measures of which regional oscillatory features correspond across modalities, resting on different treatments of the aperiodic background: relative band power ignores it, the subtraction residual removes it with a fitted model, and modelled power never estimates it. We compare the regional cross-modal agreement under each. Where the three agree, the correspondence is robust to how the background is handled. Where they disagree, we take the modelled-peak result as the reference, because it does not depend on the accuracy of the aperiodic fit, whereas the subtraction measures can produce apparent oscillatory differences that follow from aperiodic-fit error rather than from the rhythm [@castanheira2025QuantifyingRhythmicArrhythmic]. -->
 
 ###  Stability of aperiodic estimates
 

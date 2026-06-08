@@ -19,7 +19,7 @@ execute:
 
 ## Sensitivity to the specparam aperiodic/peak model
 
-The aperiodic-removed residual — and every result built on it — depends on the specparam model fitted to the HD-EEG. We test how much that choice matters while holding the iEEG atlas fixed as the ground truth. Besides the fixed-mode baseline (HD-EEG aperiodic mode = fixed; peak width 1–8 Hz, threshold 3 SD), we refit HD-EEG under two alternatives: a **knee** model with the same peak settings, and a **broad-low** model that admits wider, weaker peaks (peak width 1–12 Hz, threshold 2 SD). Each fit is linear-subtracted and normalised to total power exactly as the baseline.
+The aperiodic-removed residual — and every result built on it — depends on the specparam model fitted to the HD-EEG. We test how much that choice matters while holding the iEEG atlas fixed as the ground truth. Besides the fixed-mode baseline (HD-EEG aperiodic mode = fixed; peak width 1-8 Hz, threshold 3 SD), we refit HD-EEG under two alternatives: a **knee** model with the same peak settings, and a **broad-low** model that admits wider, weaker peaks (peak width 1-12 Hz, threshold 2 SD). Each fit is linear-subtracted and normalised to total power exactly as the baseline.
 
 ```{python}
 #| label: setup
