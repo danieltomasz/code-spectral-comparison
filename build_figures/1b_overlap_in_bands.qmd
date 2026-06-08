@@ -39,7 +39,7 @@ from pesco.bandpower import (
 from pesco.experimental.plotting import plot_overlap_heatmap, plot_psd_brain_maps
 from pesco.io import load_sources, prepare_psd
 from pesco.preprocess import compute_psd
-from pesco.spectral import afnan_band_overlap
+from pesco.spectral import EEG_BANDS, afnan_band_overlap
 
 np.random.seed(3)
 
@@ -130,286 +130,10 @@ hd_f = freq_cols(hd_psd)
 atlas = load_frauscher()
 ```
 
-## Methods
-
-#### Canonical-band and normalised relative-power maps
-
-As a second, complementary approach, we mapped each region's normalised PSD onto the canonical bands defined above and took relative band power per region.
-
-Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2025QuantifyingRhythmicArrhythmic].
-Relative band powers are also compositional — within each region the five bands are normalised to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We therefore report the cross-modal correlations of these maps as descriptive measures of spatial agreement rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure.
-
-### Quantitative descriptions 
-
-
-#### Cross-modal correspondence on relative PSD spectra
-
-This is the first of three cross-modal correspondence computations; the subtraction-based and modelled-peak versions are defined below and compared in @sec-concordance
-
-We quantified cross-modal agreement on the unit-power PSDs using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, we treated the iEEG atlas as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding HD-EEG standard deviation. The bin-wise overlap is
-
-$$
-\text{overlap}_r(f) =
-\begin{cases}
-    1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert}
-              {\text{SD}^{\,\text{HD}}_r(f)},
-        & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert
-          \le \text{SD}^{\,\text{HD}}_r(f) \\[2mm]
-    0,  & \text{otherwise.}
-\end{cases}
-$$
-
-
-The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and falls linearly to 0 once the two medians differ by one HD-EEG standard deviation. We averaged the bin-wise overlap across the frequency bins of each canonical band, giving one value per region per band, and report both the bin-level and the band-averaged overlap. To complement the overlap, we also rank-correlated the regional band estimates between modalities across regions (Spearman).
-
-We also recomputed the overlap on the 22 data-driven Frauscher intervals [@frauscher2018AtlasNormalIntracranial], which give a more fine-grained view than the five canonical bands.
-
-### Relative power after specparam aperiodic part removal 
-
-
-We asked whether separating periodic from aperiodic activity changes the above picture. We addressed it in two linked ways: by modelling oscillatory peaks directly with specparam, and by removing the aperiodic background and recomputing the cross-modal overlap.
-
-Each channel's PSD was parameterised with specparam, the spectral parameterisation model of @donoghue2020ParameterizingNeuralPower, fitted over 1-80 Hz with a peak configuration shared across both modalities: peak width limits of 1-8 Hz, at most 8 peaks, a minimum peak height of 0.1, and a peak threshold of 3 SD. Only the aperiodic component differed between modalities: it was modelled in the form chosen by the per-modality knee-versus-fixed BIC comparison (@sec-aperiodic-selection) — a knee model for the iEEG atlas and a fixed (knee-free) model for the source-reconstructed HD-EEG. From each fit we reconstructed the aperiodic component on the fitted frequency grid and subtracted it in linear power (next subsection), then normalised the residual to total power, so each band's oscillatory power is expressed as a fraction of total power and is directly comparable to the uncorrected relative band power above. One fit was produced per channel; goodness of fit and the fitted aperiodic parameters are reported in the Results.
-
-We reconstructed the fitted aperiodic component on the fitted frequency grid and subtracted it from the empirical PSD in linear power space, giving the residual
-
-$$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f).$$
-
-This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, the variant used for  detrending in many studies, as a sensitivity comparison.
-
-Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models.
-
-#### Assessing the overlap: reliability and rhythm presence
-
-The band-overlap of @afnan2023ValidatingMEGSource is a *descriptive* agreement metric: on its own it indicates neither whether the agreement is statistically reliable nor whether there is a rhythm present to agree about — two flat residuals coincide and score an overlap near 1, a spurious agreement. We therefore assess the overlap in two complementary ways. Both are subject-clustered bootstraps with whole subjects resampled with replacement (iEEG `patient`, HD `dataset`; B = 2000), but they target different quantities and answer different questions.
-
-We deliberately use a subject-clustered bootstrap rather than the channel-wise Welch *t*-test of @afnan2023ValidatingMEGSource, for three reasons specific to our design. First, our channels are nested in a small number of subjects (the source-reconstructed HD-EEG comprises only 19 subjects, each contributing many channels), and source leakage makes neighbouring source-space channels strongly correlated; a *t*-test on channels treats them as independent and so inflates the effective sample size from ~19 to several hundred, anti-conservatively shrinking the standard error. Welch's correction addresses unequal *variance*, not this non-independence, so it does not remedy the problem — whereas resampling whole subjects respects the nesting and keeps the exchangeable unit (the subject) as the unit of inference. Second, relative band power is bounded and the aperiodic-removed residual has a point mass at zero, violating the normality the *t*-test leans on at this sample size; the bootstrap is distribution-free. Third, and most directly, the overlap is a single statistic *derived* from both modalities, not a contrast between two samples, so a two-sample *t*-test does not apply to it at all — the only way to attach uncertainty to the overlap is to resample and recompute it. The reference (iEEG) modality is resampled too, since the atlas medians are themselves estimated from a finite set of patients.
-
-The first assesses the **reliability of the overlap value**. We resample subjects in both modalities, recompute the band-overlap on each draw, and take a 95% percentile confidence interval per region and band; cells whose interval includes 0 are masked (shown in grey; @fig-overlap-pair-corrected). This asks *is the measured agreement reliably above zero?* Because the metric is bounded in $[0,1]$ and has no chance or permutation baseline, it is a reliability check — that the value is robust rather than zero by sampling noise — not a test against a null of no correspondence. It is also band-width dependent: averaging a non-negative metric over a wide canonical band drives its lower confidence bound above zero almost everywhere, so the five canonical bands leave far fewer cells masked than the 22 narrow Frauscher intervals, and the two band schemes are not directly comparable on this criterion.
-
-The second assesses whether **a rhythm is present to be compared**, using the iEEG atlas as the reference (the ground truth). We bootstrap the aperiodic-removed band power per region and band and consider a region to carry a rhythm in a band when its mean residual power reliably exceeds zero (95% CI > 0). The overlap is then shown only where *both* modalities carry a rhythm; cells are masked where neither does (the overlap is uninterpretable — there is no oscillation to recover), and marked with a cross where the iEEG atlas carries a rhythm that HD-EEG fails to recover (@fig-overlap-corr-presence-gated-pair). This addresses the validation question directly: *where does source-reconstructed HD-EEG recover a genuine iEEG rhythm, and where does it miss one?* Presence here is significant oscillatory power above the $1/f$ background, a more permissive criterion than a fitted specparam peak.
-
-The two analyses are complementary — the first measures how trustworthy the agreement value is, the second whether the agreement concerns real oscillatory structure — so we read the presence-conditioned map as the primary validation summary, because it separates genuine rhythm recovery from the spurious agreement of two flat residuals, and the confidence-interval map as a check on the metric itself. Both use the same display, differing only in the masking rule, and we show each band scheme (canonical bands, Frauscher intervals) side by side (@fig-overlap-pair-corrected, @fig-overlap-corr-presence-gated-pair).
-
-Model fits were evaluated using R² and mean absolute error; fits with R² below 0.90 were excluded.
-
-
-
-
-## Results
-
-
-
-
-#### Band-power map and cross-modal overlap
-
-We present regional relative band power, compared across modalities with the band-overlap metric.
-
-
-
-Regional relative-power maps agreed across modalities most strongly in the alpha band (r = 0.60) and, more weakly, in the delta band (r = 0.42). Theta showed essentially no cross-modal correspondence (r = 0.13), beta only weak agreement (r = 0.30), and gamma was anti-correlated (r = −0.29). The spatial organisation of relative power is therefore only partially preserved between the iEEG atlas and source-reconstructed HD-EEG, and the preservation is band-dependent: it is confined largely to the alpha and low-frequency ranges that carry the clearest oscillatory structure, and breaks down at high frequencies. The negative gamma correlation is consistent with the high-frequency HD-EEG signal being dominated by a shallow aperiodic tail and noise floor rather than by physiological gamma — the same mechanism that drove the spurious gamma over-segmentation in the interval analysis — so that regions ranked high in HD-EEG gamma relative power are not those ranked high in the atlas. Relative to the identity line
-
-
 ```{python}
-#| label: fig-scatter
-# Relative band power per channel (0.5-80 Hz, EEG_BANDS), pooled, averaged into
-# bilateral MICCAI regions, then the two modalities paired region-by-region.
-ieeg_bp = relative_band_power_by_channel(ieeg_psd, ieeg_f, dataset="iEEG atlas")
-hd_bp = relative_band_power_by_channel(hd_psd, hd_f, dataset="source HD-EEG")
-region_bp = region_band_power(
-    pd.concat([ieeg_bp, hd_bp], ignore_index=True),
-    summary="mean",
-    roi_level="bilateral",
-)
-paired, correlations = compare_region_band_power(
-    region_bp,
-    x_dataset="source HD-EEG",
-    y_dataset="iEEG atlas",
-    roi_col="roi_bilateral",
-    n_label="n_regions",
-)
-corr1  = plot_band_power_correlation_grid(
-    paired,
-    correlations,
-    color_by="lobe",
-    method="pearson",
-    identity_line=True,
-    x_label="source HD-EEG\nrelative band power",
-    y_label="iEEG atlas\nrelative band power",
-    title="Uncorrected PSD: bilateral regional relative band-power correspondence",
-)
-corr1 .save(
-    fig_dir / "relpower_scatter_uncorrected.pdf",
-    verbose=False,
-)
-corr1 
-```
-
-![Cross-modal correspondence of uncorrected relative band power. Each panel is one canonical band; each point is one bilateral MICCAI region, with source HD-EEG relative power on the x-axis and the iEEG atlas on the y-axis. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). Strip labels give the per-band Pearson](figures/chapter2/uncorrected/relpower_scatter_uncorrected.pdf){#fig-relpower-scatter-uncorrected}
-
-These per-band correlations should be read as descriptive rather than inferential. Relative band powers are *compositional*: within each channel they are normalised to a fixed total, so the five bands are not independent and an increase in one band necessarily depresses the others. This closure constraint induces negative coupling between bands by construction — part of the negative gamma correlation is therefore arithmetic rather than physiological — and it violates the independence assumptions of ordinary correlation and t-tests applied to the raw proportions[@filzmoser2012CorrelationAnalysisCompositional]. Valid inference would require analysing the maps in a log-ratio space (e.g. centred or isometric log-ratio transforms), which also removes any dependence on the per-channel normalisation choice. We retain the untransformed maps here as a descriptive summary and defer formal cross-modal inference to the aperiodic-separated peak descriptors below, which are not subject to the same closure.
-
-
-In @fig-relpower-maps-uncorrected we present results on scalp.
-
-
-
-
-
-```{python}
-#| label: fig-maps
-# Fraction of total power per band (>=1 Hz), averaged per ROI, mapped onto the
-# Frauscher 38-region atlas, faceted band x modality with one shared 0-1 bar.
-ieeg_maps = band_fraction_by_channel(
-    ieeg_psd, freq_cols(ieeg_psd, MAP_FMIN), "ChannelRegion", MAP_BANDS
-)
-hd_maps = band_fraction_by_channel(
-    hd_psd, freq_cols(hd_psd, MAP_FMIN), "region_number", MAP_BANDS
-)
-ieeg_roi = (
-    ieeg_maps.groupby("ChannelRegion")[MAP_BAND_ORDER]
-    .mean()
-    .rename_axis("frauscher_id")
-    .reset_index()
-)
-hd_roi = (
-    hd_maps.groupby("region_number")[MAP_BAND_ORDER]
-    .mean()
-    .rename_axis("frauscher_id")
-    .reset_index()
-)
-maps_long = pd.concat(
-    [
-        roi_to_atlas_long(ieeg_roi, atlas, "iEEG", MAP_BANDS),
-        roi_to_atlas_long(hd_roi, atlas, "HD-EEG source", MAP_BANDS),
-    ],
-    ignore_index=True,
-)
-maps_fig = plot_psd_brain_maps(
-    maps_long,
-    atlas,
-    MAP_BANDS,
-    modality_order=("iEEG", "HD-EEG source"),
-    modality_labels={"iEEG": "iEEG", "HD-EEG source": "HD-EEG"},
-    legend_title="within-band\nrel. PSD",
-    cmap_name="magma",
-)
-maps_fig.save(fig_dir / "relpower_maps_uncorrected.pdf", width=15, height=3.4, verbose=False)
-maps_fig 
-```
-
-![Group average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's relative power min-max normalised across both modalities (the per-band shared scale of @afnan2023ValidatingMEGSource, shown as one 0-1 bar), so the within-band spatial pattern is comparable across modalities; absolute magnitude differs across bands and is not encoded. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/relpower_maps_uncorrected.pdf){#fig-relpower-maps-uncorrected}
-
-
-
-```{python}
-#| label: fig-overlap
-# Afnan band-overlap on the unit-power PSDs: iEEG as reference, HD-EEG as
-# estimate, grouped on the bilateral MICCAI region name (default region_col).
-overlap_raw = afnan_band_overlap(
-    ref_df=relative_psd_df(ieeg_psd, ieeg_f),
-    est_df=relative_psd_df(hd_psd, hd_f),
-    ref_freqs=ieeg_f,
-    est_freqs=hd_f,
-)
-# Render the per-band overlap as cortical maps — one panel per canonical band,
-# laid out horizontally like @fig-relpower-maps-uncorrected — instead of a heatmap.
-# Each region's bilateral overlap is mapped onto the Frauscher atlas by its
-# frauscher_id and shown on a FIXED 0-1 colour scale: the metric is already in
-# [0, 1], so (unlike the relative-power maps) it is not per-band renormalised.
-from ggsegpy.geom_brain import geom_brain
-from plotnine import (
-    aes,
-    element_blank,
-    element_text,
-    facet_grid,
-    ggplot,
-    scale_fill_cmap,
-    theme,
-    theme_gray,
-)
-from plotnine.facets.labelling import labeller
-
-from pesco.spectral import EEG_BANDS
-
-OVERLAP_BANDS = [(b.name, b.lo, b.hi) for b in EEG_BANDS]
-name_to_fid = dict(zip(ieeg_psd["Region name"], ieeg_psd["ChannelRegion"]))
-overlap_roi = overlap_raw.copy()
-overlap_roi.insert(0, "frauscher_id", [name_to_fid[r] for r in overlap_roi.index])
-overlap_long = roi_to_atlas_long(overlap_roi, atlas, "overlap", OVERLAP_BANDS)
-
-# Per-band mean overlap across regions, written into the facet strip. The "i · "
-# prefix only orders the facets and is stripped back off by the labeller.
-band_mean = overlap_raw.mean()
-band_facet = {
-    name: f"{i} · {name} ({lo:g}-{hi:g} Hz)\nmean {band_mean[name]:.2f}"
-    for i, (name, lo, hi) in enumerate(OVERLAP_BANDS)
-}
-overlap_long["band_facet"] = overlap_long["band"].astype(str).map(band_facet)
-overlap_long = overlap_long[["label", "value", "band_facet"]]
-
-
-def _strip(s):
-    return s.split(" · ", 1)[1]
-
-
-overlap_brain = (
-    ggplot(overlap_long, aes(fill="value"))
-    + geom_brain(atlas=atlas, mapping=aes(fill="value"), hemi="left", show_legend=True)
-    + facet_grid(". ~ band_facet", labeller=labeller(band_facet=_strip))
-    + scale_fill_cmap(
-        cmap_name="YlGnBu",  # match the Frauscher-bin overlap heatmaps
-        limits=(0, 1),
-        breaks=[0.0, 0.5, 1.0],
-        labels=["0", "0.5", "1"],
-        name="Overlap",
-    )
-    + theme_gray()
-    + theme(
-        strip_text=element_text(size=9, weight="bold", family="sans-serif"),
-        axis_text_x=element_blank(),
-        axis_text_y=element_blank(),
-        axis_ticks=element_blank(),
-        axis_title_x=element_blank(),
-        axis_title_y=element_blank(),
-        panel_grid_major=element_blank(),
-        panel_grid_minor=element_blank(),
-        legend_position="right",
-        legend_key_height=22,  # short bar, small relative to the brain panels
-        legend_key_width=8,
-        legend_title=element_text(size=8, family="sans-serif"),
-        legend_text=element_text(size=7, family="sans-serif"),
-        panel_spacing_x=0.02,
-        plot_margin=0.01,
-    )
-)
-overlap_brain.save(
-    fig_dir / "overlap_maps_uncorrected.pdf",
-    width=15,
-    height=2.4,
-    dpi=300,
-    verbose=False,
-)
-overlap_brain
-```
-
-![Cross-modal spectral overlap between the iEEG atlas and source-reconstructed HD-EEG mapped onto the cortex, one panel per canonical band (left hemisphere, lateral and medial views), computed on uncorrected relative-power PSDs. Each bilateral MICCAI region is coloured by its band-averaged Afnan overlap on a fixed 0-1 scale — the metric is already bounded, so colour is comparable across bands and across regions; the strip reports the per-band mean overlap across regions. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/overlap_maps_uncorrected.pdf){#fig-overlap-maps-uncorrected}
-
-We recreated simlat plot as in the clustering part to be able to compare. (we retrive a strong delta and  alpha with some regions with string beta ). We also tested again presence of no-peaks (which is imprtant later) but we also butstraped aggainst 0 difference 
-
-```{python}
-#| label: fig-overlap-frauscher-bootci
-# Frauscher-binned cross-modal overlap with a subject-clustered bootstrap CI on
-# the metric itself (pesco.spectral.bootstrap_overlap_ci): whole subjects are
-# resampled in BOTH modalities — the iEEG reference is a finite patient sample
-# too — and the Afnan overlap is recomputed each draw (B=2000, cached). Cells
-# whose 95% CI includes 0 are greyed (overlap not reliably > 0), as the
-# clustering heatmap blanks non-significant cells. A contrast dot flags "similar
-# but flat" cells — a reliable overlap with no bootstrap-significant rhythm in
-# EITHER modality (spurious agreement); empty for uncorrected relative power
-# (always present), it becomes informative on the aperiodic-removed residual.
-# Shared FRAUSCHER_BANDS / REGION_LOBE / helpers are defined here and reused by
-# the aperiodic-removed twin below.
+#| label: shared-bands-helpers
+# Shared FRAUSCHER_BANDS / REGION_LOBE / bootstrap helpers, defined once here and
+# reused by the relative-power and aperiodic-removed overlap figures below.
 import warnings
 
 from pesco.bandpower import integrate_bands
@@ -501,8 +225,342 @@ def presence_gated_masks(pres_ref, pres_est, regions, *, names=FB_NAMES):
     ref = pres_ref.reindex(index=regions, columns=names).fillna(False)
     est = pres_est.reindex(index=regions, columns=names).fillna(False)
     return ~(ref & est), ref & ~est
+```
+
+## Methods
+
+#### Canonical-band and normalised relative-power maps
+
+As a second, complementary approach, we mapped each region's normalised PSD onto the canonical bands defined above and took relative band power per region.
+
+Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2025QuantifyingRhythmicArrhythmic].
+Relative band powers are also compositional — within each region the five bands are normalised to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We therefore report the cross-modal correlations of these maps as descriptive measures of spatial agreement rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure.
+
+### Quantitative descriptions 
 
 
+#### Cross-modal correspondence on relative PSD spectra
+
+This is the first of three cross-modal correspondence computations; the subtraction-based and modelled-peak versions are defined below and compared in @sec-concordance
+
+We quantified cross-modal agreement on the unit-power PSDs using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, we treated the iEEG atlas as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding HD-EEG standard deviation. The bin-wise overlap is
+
+$$
+\text{overlap}_r(f) =
+\begin{cases}
+    1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert}
+              {\text{SD}^{\,\text{HD}}_r(f)},
+        & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert
+          \le \text{SD}^{\,\text{HD}}_r(f) \\[2mm]
+    0,  & \text{otherwise.}
+\end{cases}
+$$
+
+
+The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and falls linearly to 0 once the two medians differ by one HD-EEG standard deviation. We averaged the bin-wise overlap across the frequency bins of each canonical band, giving one value per region per band, and report both the bin-level and the band-averaged overlap. To complement the overlap, we also rank-correlated the regional band estimates between modalities across regions (Spearman).
+
+We also recomputed the overlap on the 22 data-driven Frauscher intervals [@frauscher2018AtlasNormalIntracranial], which give a more fine-grained view than the five canonical bands.
+
+### Relative power after specparam aperiodic part removal 
+
+
+We asked whether separating periodic from aperiodic activity changes the above picture. We addressed it in two linked ways: by modelling oscillatory peaks directly with specparam, and by removing the aperiodic background and recomputing the cross-modal overlap.
+
+Each channel's PSD was parameterised with specparam, the spectral parameterisation model of @donoghue2020ParameterizingNeuralPower, fitted over 1-80 Hz with a peak configuration shared across both modalities: peak width limits of 1-8 Hz, at most 8 peaks, a minimum peak height of 0.1, and a peak threshold of 3 SD. Only the aperiodic component differed between modalities: it was modelled in the form chosen by the per-modality knee-versus-fixed BIC comparison (@sec-aperiodic-selection) — a knee model for the iEEG atlas and a fixed (knee-free) model for the source-reconstructed HD-EEG. From each fit we reconstructed the aperiodic component on the fitted frequency grid and subtracted it in linear power (next subsection), then normalised the residual to total power, so each band's oscillatory power is expressed as a fraction of total power and is directly comparable to the uncorrected relative band power above. One fit was produced per channel; goodness of fit and the fitted aperiodic parameters are reported in the Results.
+
+We reconstructed the fitted aperiodic component on the fitted frequency grid and subtracted it from the empirical PSD in linear power space, giving the residual
+
+$$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f).$$
+
+This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, the variant used for  detrending in many studies, as a sensitivity comparison.
+
+Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models.
+
+#### Assessing the overlap: reliability and rhythm presence
+
+The band-overlap of @afnan2023ValidatingMEGSource is a *descriptive* agreement metric: on its own it indicates neither whether the agreement is statistically reliable nor whether there is a rhythm present to agree about — two flat residuals coincide and score an overlap near 1, a spurious agreement. We therefore assess the overlap in two complementary ways. Both are subject-clustered bootstraps with whole subjects resampled with replacement (iEEG `patient`, HD `dataset`; B = 2000), but they target different quantities and answer different questions.
+
+We deliberately use a subject-clustered bootstrap rather than the channel-wise Welch *t*-test of @afnan2023ValidatingMEGSource, for three reasons specific to our design. First, our channels are nested in a small number of subjects (the source-reconstructed HD-EEG comprises only 19 subjects, each contributing many channels), and source leakage makes neighbouring source-space channels strongly correlated; a *t*-test on channels treats them as independent and so inflates the effective sample size from ~19 to several hundred, anti-conservatively shrinking the standard error. Welch's correction addresses unequal *variance*, not this non-independence, so it does not remedy the problem — whereas resampling whole subjects respects the nesting and keeps the exchangeable unit (the subject) as the unit of inference. Second, relative band power is bounded and the aperiodic-removed residual has a point mass at zero, violating the normality the *t*-test leans on at this sample size; the bootstrap is distribution-free. Third, and most directly, the overlap is a single statistic *derived* from both modalities, not a contrast between two samples, so a two-sample *t*-test does not apply to it at all — the only way to attach uncertainty to the overlap is to resample and recompute it. The reference (iEEG) modality is resampled too, since the atlas medians are themselves estimated from a finite set of patients.
+
+The first assesses the **reliability of the overlap value**. We resample subjects in both modalities, recompute the band-overlap on each draw, and take a 95% percentile confidence interval per region and band; cells whose interval includes 0 are masked (shown in grey; @fig-overlap-pair-corrected). This asks *is the measured agreement reliably above zero?* Because the metric is bounded in $[0,1]$ and has no chance or permutation baseline, it is a reliability check — that the value is robust rather than zero by sampling noise — not a test against a null of no correspondence. It is also band-width dependent: averaging a non-negative metric over a wide canonical band drives its lower confidence bound above zero almost everywhere, so the five canonical bands leave far fewer cells masked than the 22 narrow Frauscher intervals, and the two band schemes are not directly comparable on this criterion.
+
+The second assesses whether **a rhythm is present to be compared**, using the iEEG atlas as the reference (the ground truth). We bootstrap the aperiodic-removed band power per region and band and consider a region to carry a rhythm in a band when its mean residual power reliably exceeds zero (95% CI > 0). The overlap is then shown only where *both* modalities carry a rhythm; cells are masked where neither does (the overlap is uninterpretable — there is no oscillation to recover), and marked with a cross where the iEEG atlas carries a rhythm that HD-EEG fails to recover (@fig-overlap-corr-presence-gated-pair). This addresses the validation question directly: *where does source-reconstructed HD-EEG recover a genuine iEEG rhythm, and where does it miss one?* Presence here is significant oscillatory power above the $1/f$ background, a more permissive criterion than a fitted specparam peak.
+
+The two analyses are complementary — the first measures how trustworthy the agreement value is, the second whether the agreement concerns real oscillatory structure — so we read the presence-conditioned map as the primary validation summary, because it separates genuine rhythm recovery from the spurious agreement of two flat residuals, and the confidence-interval map as a check on the metric itself. Both use the same display, differing only in the masking rule, and we show each band scheme (canonical bands, Frauscher intervals) side by side (@fig-overlap-pair-corrected, @fig-overlap-corr-presence-gated-pair).
+
+Model fits were evaluated using R² and mean absolute error; fits with R² below 0.90 were excluded.
+
+
+
+
+## Results
+
+```{python}
+#| label: fig-relpower-heatmaps
+# Median relative band power per region (before aperiodic correction), as
+# region x band heatmaps rather than cortical maps: four panels laid out
+# horizontally — iEEG and HD-EEG, each in the 5 canonical bands and the 22
+# Frauscher intervals — sharing one 0-1 colour scale (relative power is a
+# fraction of total power, so it is bounded in [0, 1]). Reuses
+# plot_overlap_frauscher_heatmap via overlap_heatmap_grid; the per-region value
+# is the MEDIAN across the region's channels of the within-band relative power.
+from pesco.experimental.facets import overlap_heatmap_grid
+
+
+def region_median_relpower(psd_df, freqs, bands):
+    # band_fraction_by_channel = band power / total power per channel, so each
+    # value is a fraction in [0, 1]; median across the region's channels.
+    tuples = [(b.name, b.lo, b.hi) for b in bands]
+    bf = band_fraction_by_channel(psd_df, freqs, "Region name", tuples)
+    return bf.groupby("Region name")[[b.name for b in bands]].median()
+
+
+rp_ie_can = region_median_relpower(ieeg_psd, ieeg_f, EEG_BANDS)
+rp_ie_fb = region_median_relpower(ieeg_psd, ieeg_f, FRAUSCHER_BANDS)
+rp_hd_can = region_median_relpower(hd_psd, hd_f, EEG_BANDS)
+rp_hd_fb = region_median_relpower(hd_psd, hd_f, FRAUSCHER_BANDS)
+
+# Shared region rows across all four panels (regions present in both modalities).
+rp_regions = sorted(set(rp_ie_can.index) & set(rp_hd_can.index))
+rp_panels = [
+    {"df": rp_ie_can.reindex(rp_regions), "title": "iEEG · canonical", "xlabel": "Frequency band"},
+    {"df": rp_ie_fb.reindex(rp_regions), "title": "iEEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+    {"df": rp_hd_can.reindex(rp_regions), "title": "HD-EEG · canonical", "xlabel": "Frequency band"},
+    {"df": rp_hd_fb.reindex(rp_regions), "title": "HD-EEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+]
+fig, _ = overlap_heatmap_grid(
+    rp_panels,
+    REGION_LOBE,
+    vmin=0.0,
+    vmax=None,  # per-panel colorbar, each auto-scaled to its own maximum
+    shared_cbar=False,
+    nrows=2,  # stack modalities: iEEG (top), HD-EEG (bottom); schemes across cols
+    cmap="rocket_r",  # near-white = little power, dark = concentrated
+    cbar_label="Median relative band power",
+    row_height=0.32,  # inches per region row — raise for more legible y labels
+    tick_fontsize=13,
+    ytick_fontsize=12,
+    title_fontsize=15,
+    axis_label_fontsize=12,
+    # per-panel `xtick_step` (in the panel dict) thins the 22 Frauscher x labels
+    # if they overlap, e.g. {"df": ..., "xtick_step": 2}.
+)
+fig.savefig(fig_dir / "relpower_heatmaps_uncorrected.pdf", bbox_inches="tight", dpi=300)
+
+fig
+```
+
+![Median relative band power per bilateral region, before aperiodic correction, as region × band heatmaps. Modalities are stacked — iEEG (top, A-B) over HD-EEG (bottom, C-D) — with the five canonical bands (left) and the 22 Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial) across the columns, so each band scheme aligns vertically between modalities. The value in each cell is the median across the region's channels of the within-band relative power (band power as a fraction of total power, so in [0, 1]); each panel has its own colorbar, auto-scaled to its maximum, because the wide canonical bands carry a much larger fraction of total power than the narrow Frauscher bins. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/uncorrected/relpower_heatmaps_uncorrected.pdf){#fig-relpower-heatmaps}
+
+
+```{python}
+#| label: fig-maps
+# Fraction of total power per band (>=1 Hz), averaged per ROI, mapped onto the
+# Frauscher 38-region atlas, faceted band x modality with one shared 0-1 bar.
+ieeg_maps = band_fraction_by_channel(
+    ieeg_psd, freq_cols(ieeg_psd, MAP_FMIN), "ChannelRegion", MAP_BANDS
+)
+hd_maps = band_fraction_by_channel(
+    hd_psd, freq_cols(hd_psd, MAP_FMIN), "region_number", MAP_BANDS
+)
+ieeg_roi = (
+    ieeg_maps.groupby("ChannelRegion")[MAP_BAND_ORDER]
+    .mean()
+    .rename_axis("frauscher_id")
+    .reset_index()
+)
+hd_roi = (
+    hd_maps.groupby("region_number")[MAP_BAND_ORDER]
+    .mean()
+    .rename_axis("frauscher_id")
+    .reset_index()
+)
+maps_long = pd.concat(
+    [
+        roi_to_atlas_long(ieeg_roi, atlas, "iEEG", MAP_BANDS),
+        roi_to_atlas_long(hd_roi, atlas, "HD-EEG source", MAP_BANDS),
+    ],
+    ignore_index=True,
+)
+maps_fig = plot_psd_brain_maps(
+    maps_long,
+    atlas,
+    MAP_BANDS,
+    modality_order=("iEEG", "HD-EEG source"),
+    modality_labels={"iEEG": "iEEG", "HD-EEG source": "HD-EEG"},
+    legend_title="within-band\nrel. PSD",
+    cmap_name="magma",
+)
+maps_fig.save(fig_dir / "relpower_maps_uncorrected.pdf", width=15, height=3.4, verbose=False)
+maps_fig 
+```
+
+![Group average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's relative power min-max normalised across both modalities (the per-band shared scale of @afnan2023ValidatingMEGSource, shown as one 0-1 bar), so the within-band spatial pattern is comparable across modalities; absolute magnitude differs across bands and is not encoded. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/relpower_maps_uncorrected.pdf){#fig-relpower-maps-uncorrected}
+
+
+#### Band-power map and cross-modal overlap
+
+We present regional relative band power, compared across modalities with the band-overlap metric.
+
+
+
+Regional relative-power maps agreed across modalities most strongly in the alpha band (r = 0.60) and, more weakly, in the delta band (r = 0.42). Theta showed essentially no cross-modal correspondence (r = 0.13), beta only weak agreement (r = 0.30), and gamma was anti-correlated (r = −0.29). The spatial organisation of relative power is therefore only partially preserved between the iEEG atlas and source-reconstructed HD-EEG, and the preservation is band-dependent: it is confined largely to the alpha and low-frequency ranges that carry the clearest oscillatory structure, and breaks down at high frequencies. The negative gamma correlation is consistent with the high-frequency HD-EEG signal being dominated by a shallow aperiodic tail and noise floor rather than by physiological gamma — the same mechanism that drove the spurious gamma over-segmentation in the interval analysis — so that regions ranked high in HD-EEG gamma relative power are not those ranked high in the atlas. Relative to the identity line
+
+
+```{python}
+#| label: fig-scatter
+# Relative band power per channel (0.5-80 Hz, EEG_BANDS), pooled, averaged into
+# bilateral MICCAI regions, then the two modalities paired region-by-region.
+ieeg_bp = relative_band_power_by_channel(ieeg_psd, ieeg_f, dataset="iEEG atlas")
+hd_bp = relative_band_power_by_channel(hd_psd, hd_f, dataset="source HD-EEG")
+region_bp = region_band_power(
+    pd.concat([ieeg_bp, hd_bp], ignore_index=True),
+    summary="mean",
+    roi_level="bilateral",
+)
+paired, correlations = compare_region_band_power(
+    region_bp,
+    x_dataset="source HD-EEG",
+    y_dataset="iEEG atlas",
+    roi_col="roi_bilateral",
+    n_label="n_regions",
+)
+corr1  = plot_band_power_correlation_grid(
+    paired,
+    correlations,
+    color_by="lobe",
+    method="pearson",
+    identity_line=True,
+    x_label="source HD-EEG\nrelative band power",
+    y_label="iEEG atlas\nrelative band power",
+    title="Uncorrected PSD: bilateral regional relative band-power correspondence",
+)
+corr1 .save(
+    fig_dir / "relpower_scatter_uncorrected.pdf",
+    verbose=False,
+)
+corr1 
+```
+
+![Cross-modal correspondence of uncorrected relative band power. Each panel is one canonical band; each point is one bilateral MICCAI region, with source HD-EEG relative power on the x-axis and the iEEG atlas on the y-axis. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). Strip labels give the per-band Pearson](figures/chapter2/uncorrected/relpower_scatter_uncorrected.pdf){#fig-relpower-scatter-uncorrected}
+
+These per-band correlations should be read as descriptive rather than inferential. Relative band powers are *compositional*: within each channel they are normalised to a fixed total, so the five bands are not independent and an increase in one band necessarily depresses the others. This closure constraint induces negative coupling between bands by construction — part of the negative gamma correlation is therefore arithmetic rather than physiological — and it violates the independence assumptions of ordinary correlation and t-tests applied to the raw proportions[@filzmoser2012CorrelationAnalysisCompositional]. Valid inference would require analysing the maps in a log-ratio space (e.g. centred or isometric log-ratio transforms), which also removes any dependence on the per-channel normalisation choice. We retain the untransformed maps here as a descriptive summary and defer formal cross-modal inference to the aperiodic-separated peak descriptors below, which are not subject to the same closure.
+
+
+In @fig-relpower-maps-uncorrected we present results on scalp.
+
+
+
+
+
+
+
+
+
+```{python}
+#| label: fig-overlap
+# Afnan band-overlap on the unit-power PSDs: iEEG as reference, HD-EEG as
+# estimate, grouped on the bilateral MICCAI region name (default region_col).
+overlap_raw = afnan_band_overlap(
+    ref_df=relative_psd_df(ieeg_psd, ieeg_f),
+    est_df=relative_psd_df(hd_psd, hd_f),
+    ref_freqs=ieeg_f,
+    est_freqs=hd_f,
+)
+# Render the per-band overlap as cortical maps — one panel per canonical band,
+# laid out horizontally like @fig-relpower-maps-uncorrected — instead of a heatmap.
+# Each region's bilateral overlap is mapped onto the Frauscher atlas by its
+# frauscher_id and shown on a FIXED 0-1 colour scale: the metric is already in
+# [0, 1], so (unlike the relative-power maps) it is not per-band renormalised.
+from ggsegpy.geom_brain import geom_brain
+from plotnine import (
+    aes,
+    element_blank,
+    element_text,
+    facet_grid,
+    ggplot,
+    scale_fill_cmap,
+    theme,
+    theme_gray,
+)
+from plotnine.facets.labelling import labeller
+
+OVERLAP_BANDS = [(b.name, b.lo, b.hi) for b in EEG_BANDS]
+name_to_fid = dict(zip(ieeg_psd["Region name"], ieeg_psd["ChannelRegion"]))
+overlap_roi = overlap_raw.copy()
+overlap_roi.insert(0, "frauscher_id", [name_to_fid[r] for r in overlap_roi.index])
+overlap_long = roi_to_atlas_long(overlap_roi, atlas, "overlap", OVERLAP_BANDS)
+
+# Per-band mean overlap across regions, written into the facet strip. The "i · "
+# prefix only orders the facets and is stripped back off by the labeller.
+band_mean = overlap_raw.mean()
+band_facet = {
+    name: f"{i} · {name} ({lo:g}-{hi:g} Hz)\nmean {band_mean[name]:.2f}"
+    for i, (name, lo, hi) in enumerate(OVERLAP_BANDS)
+}
+overlap_long["band_facet"] = overlap_long["band"].astype(str).map(band_facet)
+overlap_long = overlap_long[["label", "value", "band_facet"]]
+
+
+def _strip(s):
+    return s.split(" · ", 1)[1]
+
+
+overlap_brain = (
+    ggplot(overlap_long, aes(fill="value"))
+    + geom_brain(atlas=atlas, mapping=aes(fill="value"), hemi="left", show_legend=True)
+    + facet_grid(". ~ band_facet", labeller=labeller(band_facet=_strip))
+    + scale_fill_cmap(
+        cmap_name="YlGnBu",  # match the Frauscher-bin overlap heatmaps
+        limits=(0, 1),
+        breaks=[0.0, 0.5, 1.0],
+        labels=["0", "0.5", "1"],
+        name="Overlap",
+    )
+    + theme_gray()
+    + theme(
+        strip_text=element_text(size=9, weight="bold", family="sans-serif"),
+        axis_text_x=element_blank(),
+        axis_text_y=element_blank(),
+        axis_ticks=element_blank(),
+        axis_title_x=element_blank(),
+        axis_title_y=element_blank(),
+        panel_grid_major=element_blank(),
+        panel_grid_minor=element_blank(),
+        legend_position="right",
+        legend_key_height=22,  # short bar, small relative to the brain panels
+        legend_key_width=8,
+        legend_title=element_text(size=8, family="sans-serif"),
+        legend_text=element_text(size=7, family="sans-serif"),
+        panel_spacing_x=0.02,
+        plot_margin=0.01,
+    )
+)
+overlap_brain.save(
+    fig_dir / "overlap_maps_uncorrected.pdf",
+    width=15,
+    height=2.4,
+    dpi=300,
+    verbose=False,
+)
+overlap_brain
+```
+
+![Cross-modal spectral overlap between the iEEG atlas and source-reconstructed HD-EEG mapped onto the cortex, one panel per canonical band (left hemisphere, lateral and medial views), computed on uncorrected relative-power PSDs. Each bilateral MICCAI region is coloured by its band-averaged Afnan overlap on a fixed 0-1 scale — the metric is already bounded, so colour is comparable across bands and across regions; the strip reports the per-band mean overlap across regions. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/uncorrected/overlap_maps_uncorrected.pdf){#fig-overlap-maps-uncorrected}
+
+We recreated simlat plot as in the clustering part to be able to compare. (we retrive a strong delta and  alpha with some regions with string beta ). We also tested again presence of no-peaks (which is imprtant later) but we also butstraped aggainst 0 difference 
+
+```{python}
+#| label: fig-overlap-frauscher-bootci
+# Frauscher-binned cross-modal overlap with a subject-clustered bootstrap CI on
+# the metric itself (pesco.spectral.bootstrap_overlap_ci): whole subjects are
+# resampled in BOTH modalities — the iEEG reference is a finite patient sample
+# too — and the Afnan overlap is recomputed each draw (B=2000, cached). Cells
+# whose 95% CI includes 0 are greyed (overlap not reliably > 0), as the
+# clustering heatmap blanks non-significant cells. A contrast dot flags "similar
+# but flat" cells — a reliable overlap with no bootstrap-significant rhythm in
+# EITHER modality (spurious agreement); empty for uncorrected relative power
+# (always present), it becomes informative on the aperiodic-removed residual.
 rel_ie = relative_psd_df(ieeg_psd, ieeg_f)
 rel_hd = relative_psd_df(hd_psd, hd_f)
 ie_subj = rel_ie["patient"].to_numpy()
@@ -603,62 +661,8 @@ fig
 
 ![Uncorrected cross-modal overlap. A) five canonical EEG bands B)the 22 intervals defined in @frauscher2018AtlasNormalIntracranial.  Both panels are masked (grey) where the bootstrap 95% CI of the overlap includes 0 and carry a contrast dot where a reliable overlap sits on a flat residual (no significant rhythm in either modality — spurious agreement).](figures/chapter2/uncorrected/overlap_pair_uncorrected.pdf){#fig-overlap-pair-uncorrected}
 
-```{python}
-#| label: fig-relpower-heatmaps
-# Median relative band power per region (before aperiodic correction), as
-# region x band heatmaps rather than cortical maps: four panels laid out
-# horizontally — iEEG and HD-EEG, each in the 5 canonical bands and the 22
-# Frauscher intervals — sharing one 0-1 colour scale (relative power is a
-# fraction of total power, so it is bounded in [0, 1]). Reuses
-# plot_overlap_frauscher_heatmap via overlap_heatmap_grid; the per-region value
-# is the MEDIAN across the region's channels of the within-band relative power.
-from pesco.experimental.facets import overlap_heatmap_grid
 
 
-def region_median_relpower(psd_df, freqs, bands):
-    # band_fraction_by_channel = band power / total power per channel, so each
-    # value is a fraction in [0, 1]; median across the region's channels.
-    tuples = [(b.name, b.lo, b.hi) for b in bands]
-    bf = band_fraction_by_channel(psd_df, freqs, "Region name", tuples)
-    return bf.groupby("Region name")[[b.name for b in bands]].median()
-
-
-rp_ie_can = region_median_relpower(ieeg_psd, ieeg_f, EEG_BANDS)
-rp_ie_fb = region_median_relpower(ieeg_psd, ieeg_f, FRAUSCHER_BANDS)
-rp_hd_can = region_median_relpower(hd_psd, hd_f, EEG_BANDS)
-rp_hd_fb = region_median_relpower(hd_psd, hd_f, FRAUSCHER_BANDS)
-
-# Shared region rows across all four panels (regions present in both modalities).
-rp_regions = sorted(set(rp_ie_can.index) & set(rp_hd_can.index))
-rp_panels = [
-    {"df": rp_ie_can.reindex(rp_regions), "title": "iEEG · canonical", "xlabel": "Frequency band"},
-    {"df": rp_ie_fb.reindex(rp_regions), "title": "iEEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
-    {"df": rp_hd_can.reindex(rp_regions), "title": "HD-EEG · canonical", "xlabel": "Frequency band"},
-    {"df": rp_hd_fb.reindex(rp_regions), "title": "HD-EEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
-]
-fig, _ = overlap_heatmap_grid(
-    rp_panels,
-    REGION_LOBE,
-    vmin=0.0,
-    vmax=None,  # per-panel colorbar, each auto-scaled to its own maximum
-    shared_cbar=False,
-    nrows=2,  # stack modalities: iEEG (top), HD-EEG (bottom); schemes across cols
-    cmap="rocket_r",  # near-white = little power, dark = concentrated
-    cbar_label="Median relative band power",
-    row_height=0.32,  # inches per region row — raise for more legible y labels
-    tick_fontsize=13,
-    ytick_fontsize=12,
-    title_fontsize=15,
-    axis_label_fontsize=12,
-    # per-panel `xtick_step` (in the panel dict) thins the 22 Frauscher x labels
-    # if they overlap, e.g. {"df": ..., "xtick_step": 2}.
-)
-fig.savefig(fig_dir / "relpower_heatmaps_uncorrected.pdf", bbox_inches="tight", dpi=300)
-fig.savefig(fig_dir / "relpower_heatmaps_uncorrected.svg", bbox_inches="tight", dpi=300)
-fig
-```
-
-![Median relative band power per bilateral region, before aperiodic correction, as region × band heatmaps. Modalities are stacked — iEEG (top, A–B) over HD-EEG (bottom, C–D) — with the five canonical bands (left) and the 22 Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial) across the columns, so each band scheme aligns vertically between modalities. The value in each cell is the median across the region's channels of the within-band relative power (band power as a fraction of total power, so in [0, 1]); each panel has its own colorbar, auto-scaled to its maximum, because the wide canonical bands carry a much larger fraction of total power than the narrow Frauscher bins. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/uncorrected/relpower_heatmaps_uncorrected.pdf){#fig-relpower-heatmaps}
 
 
 #### Aperiodic-removed band power
@@ -913,7 +917,7 @@ fig.savefig(fig_dir_corr / "relpower_heatmaps_corrected.svg", bbox_inches="tight
 fig
 ```
 
-![Median oscillatory band power per bilateral region after specparam aperiodic correction — the aperiodic-removed twin of @fig-relpower-heatmaps, same stacked layout: iEEG (top, A–B) over HD-EEG (bottom, C–D), canonical bands (left) and the 22 Frauscher intervals (right). Each cell is the median across the region's channels of the within-band oscillatory residual (a fraction of total power, so directly comparable to the uncorrected relative band power); each panel has its own colorbar auto-scaled to its maximum. The sub-1 Hz Frauscher interval is blank (the residual is defined on the 1–80 Hz fit grid). Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/corrected/relpower_heatmaps_corrected.pdf){#fig-relpower-heatmaps-corrected}
+![Median oscillatory band power per bilateral region after specparam aperiodic correction — the aperiodic-removed twin of @fig-relpower-heatmaps, same stacked layout: iEEG (top, A-B) over HD-EEG (bottom, C-D), canonical bands (left) and the 22 Frauscher intervals (right). Each cell is the median across the region's channels of the within-band oscillatory residual (a fraction of total power, so directly comparable to the uncorrected relative band power); each panel has its own colorbar auto-scaled to its maximum. The sub-1 Hz Frauscher interval is blank (the residual is defined on the 1-80 Hz fit grid). Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/corrected/relpower_heatmaps_corrected.pdf){#fig-relpower-heatmaps-corrected}
 
 ```{python}
 #| label: fig-overlap-corr-frauscher-dots

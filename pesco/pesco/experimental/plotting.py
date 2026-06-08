@@ -1576,8 +1576,20 @@ def plot_psd_brain_maps(
     modality_labels: Mapping[str, str] | None = None,
     legend_title: str = "within-band\nrel. PSD",
     cmap_name: str = "viridis",
+    normalize: bool = True,
+    vmax: float | None = None,
+    show_legend: bool = True,
 ):
     """Faceted cortical maps: bands as columns, modalities as rows.
+
+    With ``normalize=True`` (default) each band is min-max scaled across both
+    modalities to a 0-1 colour scale. With ``normalize=False`` the raw ``value``
+    is shown on an absolute ``0..vmax`` scale (``vmax`` defaults to the data
+    maximum), so the maps can share one colour scale with another plot (e.g.
+    stacked under a heatmap via :func:`pesco.experimental.facets.compose_figures`);
+    the colours are sampled from the matplotlib colormap ``cmap_name``, so any
+    matplotlib/seaborn map works (e.g. ``rocket_r``), not only the mizani names.
+    ``show_legend=False`` drops the colourbar (when an external one is shared).
 
     Within each band the values are min-max normalised across both modalities
     to a shared 0-1 colour scale (the per-band shared scale of Afnan et al.,
@@ -1615,6 +1627,7 @@ def plot_psd_brain_maps(
         facet_grid,
         ggplot,
         scale_fill_cmap,
+        scale_fill_gradientn,
         theme,
         theme_gray,
     )
@@ -1636,36 +1649,48 @@ def plot_psd_brain_maps(
 
     df = long_df.copy()
     df["band"] = pd.Categorical(df["band"], categories=band_order, ordered=True)
-    # Per-band min-max across both modalities -> one shared 0-1 colour scale
-    # that preserves each band's within-band spatial contrast.
-    grp = df.groupby("band", observed=True)["value"]
-    vmin, vmax = grp.transform("min"), grp.transform("max")
-    df["value_scaled"] = np.where(vmax > vmin, (df["value"] - vmin) / (vmax - vmin), 0.5)
-    df["band_facet"] = df["band"].astype(str).map(band_facet)
-    df["modality_facet"] = df["modality"].map(modality_facet)
-    # Keep only the atlas key + fill + facet vars so geom_brain joins on `label`
-    # alone and treats band/modality purely as facet-replication variables.
-    df = df[["label", "value_scaled", "band_facet", "modality_facet"]]
-
-    def _strip(s: str) -> str:
-        return s.split(" · ", 1)[1]
-
-    return (
-        ggplot(df, aes(fill="value_scaled"))
-        + geom_brain(
-            atlas=atlas, mapping=aes(fill="value_scaled"), hemi="left", show_legend=True
-        )
-        + facet_grid(
-            "modality_facet ~ band_facet",
-            labeller=labeller(band_facet=_strip, modality_facet=_strip),
-        )
-        + scale_fill_cmap(
+    if normalize:
+        # Per-band min-max across both modalities -> one shared 0-1 colour scale
+        # that preserves each band's within-band spatial contrast.
+        grp = df.groupby("band", observed=True)["value"]
+        lo, hi = grp.transform("min"), grp.transform("max")
+        df["fill"] = np.where(hi > lo, (df["value"] - lo) / (hi - lo), 0.5)
+        fill_scale = scale_fill_cmap(
             cmap_name=cmap_name,
             limits=(0, 1),
             breaks=[0.0, 0.5, 1.0],
             labels=["0\nlow", "0.5", "1\nhigh"],
             name=legend_title,
         )
+    else:
+        # Absolute 0..vmax scale; sample the colours from the matplotlib colormap
+        # so any mpl/seaborn map (e.g. rocket_r) matches an external heatmap.
+        df["fill"] = df["value"]
+        top = float(df["value"].max()) if vmax is None else float(vmax)
+        import seaborn as _sns  # noqa: F401  (registers rocket/mako/... in mpl)
+
+        cmap = plt.get_cmap(cmap_name)
+        colors = [matplotlib.colors.to_hex(cmap(x)) for x in np.linspace(0, 1, 256)]
+        fill_scale = scale_fill_gradientn(colors=colors, limits=(0, top), name=legend_title)
+    df["band_facet"] = df["band"].astype(str).map(band_facet)
+    df["modality_facet"] = df["modality"].map(modality_facet)
+    # Keep only the atlas key + fill + facet vars so geom_brain joins on `label`
+    # alone and treats band/modality purely as facet-replication variables.
+    df = df[["label", "fill", "band_facet", "modality_facet"]]
+
+    def _strip(s: str) -> str:
+        return s.split(" · ", 1)[1]
+
+    return (
+        ggplot(df, aes(fill="fill"))
+        + geom_brain(
+            atlas=atlas, mapping=aes(fill="fill"), hemi="left", show_legend=show_legend
+        )
+        + facet_grid(
+            "modality_facet ~ band_facet",
+            labeller=labeller(band_facet=_strip, modality_facet=_strip),
+        )
+        + fill_scale
         + theme_gray()
         + theme(
             strip_text=element_text(size=9, weight="bold", family="sans-serif"),
@@ -1676,7 +1701,7 @@ def plot_psd_brain_maps(
             axis_title_y=element_blank(),
             panel_grid_major=element_blank(),
             panel_grid_minor=element_blank(),
-            legend_position="right",
+            legend_position="right" if show_legend else "none",
             legend_title=element_text(size=8, family="sans-serif"),
             legend_text=element_text(size=7, family="sans-serif"),
             legend_key_height=46,

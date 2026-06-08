@@ -531,3 +531,64 @@ fig
 # Presence gated
 
 ![Presence-gated cross-modal overlap of the aperiodic-removed residual over the five canonical EEG bands (Option C). The Afnan overlap is coloured only where a subject-clustered bootstrap (whole subjects resampled — iEEG patients, HD datasets; 95% CI of the mean residual band power excludes 0) finds a rhythm in **both** modalities. Cells are greyed where no rhythm is present in both, and marked × where the iEEG atlas carries a rhythm that HD-EEG did not recover. This gates on rhythm *presence* (the peaks-presence bootstrap), in contrast to @fig-overlap-canonical-corrected which gates on the overlap's own confidence interval.](figures/chapter2/corrected/overlap_canonical_corrected_presencegated.pdf){#fig-overlap-canonical-corrected-presencegated}
+
+
+```{python}
+#| label: fig-relpower-combined
+# Combine the two uncorrected relative-power views into one chapter figure:
+# the canonical region x band heatmaps (iEEG, HD-EEG) on top and the cortical
+# brain maps (@fig-relpower-maps-uncorrected) below, on ONE shared absolute
+# colour scale + a single colorbar. The two are rasterised and stacked with
+# compose_figures (a plotnine ggplot under a multi-axes matplotlib figure can't
+# share an axes grid); only the colour scale is shared, not the axes. The brain
+# maps use the same absolute relative-power scale (normalize=False) so the
+# heatmap's colorbar is the shared legend.
+from pesco.experimental.facets import compose_figures
+
+
+def _region_median_relpower(psd_df, fmin=MAP_FMIN):
+    bf = band_fraction_by_channel(psd_df, freq_cols(psd_df, fmin), "Region name", MAP_BANDS)
+    return bf.groupby("Region name")[MAP_BAND_ORDER].median()
+
+
+rc_ie = _region_median_relpower(ieeg_psd)
+rc_hd = _region_median_relpower(hd_psd)
+rc_regions = sorted(set(rc_ie.index) & set(rc_hd.index))
+# Shared scale across the heatmaps and the brain maps (same quantity, [0, 1]).
+RC_VMAX = float(
+    np.nanmax([rc_ie.to_numpy().max(), rc_hd.to_numpy().max(), maps_long["value"].max()])
+)
+
+rc_heatmaps, _ = overlap_heatmap_grid(
+    [
+        {"df": rc_ie.reindex(rc_regions), "title": "iEEG", "xlabel": "Frequency band"},
+        {"df": rc_hd.reindex(rc_regions), "title": "HD-EEG", "xlabel": "Frequency band"},
+    ],
+    REGION_LOBE,
+    vmin=0.0,
+    vmax=RC_VMAX,
+    shared_cbar=True,
+    cmap="rocket_r",  # same colorscale as fig-relpower-heatmaps-corrected
+    cbar_label="median relative band power",
+    row_height=0.30,
+    tick_fontsize=12,
+    ytick_fontsize=11,
+    title_fontsize=14,
+    axis_label_fontsize=12,
+)
+rc_brain = plot_psd_brain_maps(
+    maps_long,
+    atlas,
+    MAP_BANDS,
+    modality_order=("iEEG", "HD-EEG source"),
+    modality_labels={"iEEG": "iEEG", "HD-EEG source": "HD-EEG"},
+    cmap_name="rocket_r",
+    normalize=False,  # absolute scale, shared with the heatmaps
+    vmax=RC_VMAX,
+    show_legend=False,  # the heatmap colorbar is the shared legend
+)
+#fig = compose_figures([(rc_heatmaps, None), (rc_brain, None)], ncols=1, panel_dpi=200)
+#fig.savefig(fig_dir / "relpower_combined_uncorrected.pdf", bbox_inches="tight", dpi=300)
+fig.savefig(fig_dir / "relpower_combined_uncorrected.svg", bbox_inches="tight", dpi=300)
+#fig
+```

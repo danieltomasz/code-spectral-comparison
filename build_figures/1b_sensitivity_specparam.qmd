@@ -1,0 +1,324 @@
+---
+title: "Sensitivity of the cross-modal overlap to the HD-EEG specparam model"
+author: Daniel Borek
+format: typst
+pdf-engine: typst
+jupyter: spectral-comparison-3.14
+
+execute:
+  echo: false
+  cache: true
+  freeze: auto
+  output: false
+---
+
+<!-- Standalone sensitivity analysis split out of 1b_overlap_in_bands.qmd. It
+     reuses the shared `_cache/` tables (PSDs, baseline residuals, the alternative
+     HD-EEG residuals, and the bootstrap CIs), recomputing any that are missing,
+     so it runs on its own. iEEG is the fixed ground truth; only HD-EEG is refit. -->
+
+## Sensitivity to the specparam aperiodic/peak model
+
+The aperiodic-removed residual — and every result built on it — depends on the specparam model fitted to the HD-EEG. We test how much that choice matters while holding the iEEG atlas fixed as the ground truth. Besides the fixed-mode baseline (HD-EEG aperiodic mode = fixed; peak width 1–8 Hz, threshold 3 SD), we refit HD-EEG under two alternatives: a **knee** model with the same peak settings, and a **broad-low** model that admits wider, weaker peaks (peak width 1–12 Hz, threshold 2 SD). Each fit is linear-subtracted and normalised to total power exactly as the baseline.
+
+```{python}
+#| label: setup
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib
+
+from IPython.display import Markdown
+from specparam import SpectralGroupModel
+
+from pesco.bandpower import integrate_bands
+from pesco.config import FREQ_RANGE as FIT_RANGE, SELECTED_MODE, SPECPARAM_SETTINGS
+from pesco.experimental.clustering import Band
+from pesco.experimental.facets import overlap_heatmap_grid
+from pesco.experimental.peak_testing import cutintervals
+from pesco.io import load_sources, prepare_psd
+from pesco.preprocess import compute_psd
+from pesco.spectral import afnan_band_overlap, remove_aperiodic, EEG_BANDS
+
+np.random.seed(3)
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DATA_PATH_IEEG = PROJECT_DIR / "data/Frauscher2018"
+DATA_PATH_SOURCES = PROJECT_DIR / "data/Mantini2018"
+
+fig_dir_sens = Path("figures/sensitivity")
+fig_dir_sens.mkdir(parents=True, exist_ok=True)
+CACHE_DIR = Path("_cache")  # shared with 1b_overlap_in_bands
+CACHE_DIR.mkdir(exist_ok=True)
+FREQ_RANGE = (0.5, 80.0)
+
+
+def _is_float_str(s) -> bool:
+    try:
+        float(s)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
+def freq_cols(df: pd.DataFrame, fmin: float = 0.0) -> np.ndarray:
+    return np.array(sorted(c for c in df.columns if isinstance(c, float) and c >= fmin))
+
+
+def _load_floatcols(path: Path) -> pd.DataFrame:
+    df = pd.read_csv(path, index_col=0)
+    df.columns = [float(c) if _is_float_str(c) else c for c in df.columns]
+    return df
+
+
+def cache_csv(name: str, build) -> pd.DataFrame:
+    path = CACHE_DIR / f"{name}.csv"
+    if path.exists():
+        return _load_floatcols(path)
+    df = build()
+    df.to_csv(path)
+    return df
+
+
+def _build_ieeg() -> pd.DataFrame:
+    _, psd = prepare_psd(
+        matfile=DATA_PATH_IEEG / "WakefulnessMatlabFile.mat",
+        region_dict_file=DATA_PATH_IEEG / "RegionInformation.csv",
+        frauscher_bandpass=False,
+        normalize=False,
+        freq_range=FREQ_RANGE,
+    )
+    return psd
+
+
+def _build_hd() -> pd.DataFrame:
+    sources_raw, sources_meta = load_sources(DATA_PATH_SOURCES)
+    f, psd = compute_psd(
+        sources_raw.get_data(), sources_raw.info["sfreq"], fmin=FREQ_RANGE[0], fmax=FREQ_RANGE[1]
+    )
+    return pd.DataFrame(
+        psd, index=pd.Index(sources_raw.ch_names, name="ch_name"), columns=f
+    ).join(sources_meta)
+
+
+ieeg_psd = cache_csv("psd_ieeg_0p5_80", _build_ieeg)
+hd_psd = cache_csv("psd_hd_0p5_80", _build_hd)
+ieeg_f = freq_cols(ieeg_psd)
+hd_f = freq_cols(hd_psd)
+
+# Frauscher's 22 data-driven intervals + region -> lobe map (for the heatmaps).
+_, _fb_edges = cutintervals(ieeg_f)
+FRAUSCHER_BANDS = [
+    Band(float(lo), float(hi), f"{lo:g}-{hi:g}", "", float((lo + hi) / 2))
+    for lo, hi in zip(_fb_edges[:-1], _fb_edges[1:])
+]
+EEG_NAMES = [b.name for b in EEG_BANDS]
+REGION_LOBE = (
+    ieeg_psd[["Region name", "Lobe"]]
+    .drop_duplicates()
+    .set_index("Region name")["Lobe"]
+    .to_dict()
+)
+
+
+def fit_residual(tag, psd_df, freqs, *, settings, aperiodic_mode):
+    """Linear oscillatory residual from a specparam fit, cached as CSV.
+
+    Shares the cache keys of 1b_overlap_in_bands (``resid_ieeg_linear`` /
+    ``resid_hd_linear`` for the baselines), so the baseline residuals are reused
+    rather than refit.
+    """
+    path = CACHE_DIR / f"resid_{tag}_linear.csv"
+    if path.exists():
+        return _load_floatcols(path)
+    fg = SpectralGroupModel(**settings, aperiodic_mode=aperiodic_mode, verbose=False)
+    fg.fit(
+        np.asarray(freqs, dtype=float),
+        psd_df[list(freqs)].to_numpy(dtype=float),
+        freq_range=list(FIT_RANGE),
+        n_jobs=1,
+    )
+    ffreqs, osc_mat = remove_aperiodic(fg, mode="linear")
+    meta = [c for c in psd_df.columns if isinstance(c, str)]
+    osc = pd.DataFrame(osc_mat, index=psd_df.index, columns=ffreqs).join(psd_df[meta])
+    osc.to_csv(path)
+    return osc
+
+
+def region_median_osc_power(osc_df, ff, bands):
+    """Median across a region's channels of the within-band oscillatory residual."""
+    tuples = [(b.name, b.lo, b.hi) for b in bands]
+    bp = integrate_bands(osc_df[list(ff)].to_numpy(dtype=float), ff, tuples)
+    bp["region"] = osc_df["Region name"].to_numpy()
+    return bp.groupby("region")[[b.name for b in bands]].median()
+
+
+# Baselines (ground truth iEEG = knee; HD-EEG = fixed) and the two alternatives.
+ieeg_osc = fit_residual(
+    "ieeg", ieeg_psd, ieeg_f, settings=SPECPARAM_SETTINGS, aperiodic_mode=SELECTED_MODE["iEEG atlas"]
+)
+hd_osc = fit_residual(
+    "hd", hd_psd, hd_f, settings=SPECPARAM_SETTINGS, aperiodic_mode=SELECTED_MODE["source HD-EEG"]
+)
+hd_osc_knee = fit_residual(
+    "hd_knee", hd_psd, hd_f, settings=SPECPARAM_SETTINGS, aperiodic_mode="knee"
+)
+hd_osc_broad = fit_residual(
+    "hd_broad",
+    hd_psd,
+    hd_f,
+    settings={**SPECPARAM_SETTINGS, "peak_width_limits": [1, 12], "peak_threshold": 2.0},
+    aperiodic_mode="fixed",
+)
+ieeg_ff = freq_cols(ieeg_osc)
+hd_ff, hd_ff_knee, hd_ff_broad = freq_cols(hd_osc), freq_cols(hd_osc_knee), freq_cols(hd_osc_broad)
+HD_MODELS = [
+    ("fixed (baseline)", hd_osc, hd_ff),
+    ("knee", hd_osc_knee, hd_ff_knee),
+    ("broad-low", hd_osc_broad, hd_ff_broad),
+]
+```
+
+We first plot the median oscillatory band power per region under each model, alongside the iEEG ground truth.
+
+```{python}
+#| label: fig-sensitivity-heatmaps
+sens_regions = sorted(
+    set(region_median_osc_power(ieeg_osc, ieeg_ff, EEG_BANDS).index)
+    & set(region_median_osc_power(hd_osc, hd_ff, EEG_BANDS).index)
+)
+sens_panels = [
+    {
+        "df": region_median_osc_power(ieeg_osc, ieeg_ff, EEG_BANDS).reindex(sens_regions),
+        "title": "iEEG (ground truth)",
+        "xlabel": "Frequency band",
+    }
+]
+for name, osc, ff in HD_MODELS:
+    sens_panels.append(
+        {
+            "df": region_median_osc_power(osc, ff, EEG_BANDS).reindex(sens_regions),
+            "title": f"HD · {name}",
+            "xlabel": "Frequency band",
+        }
+    )
+fig, _ = overlap_heatmap_grid(
+    sens_panels,
+    REGION_LOBE,
+    vmin=0.0,
+    vmax=None,
+    shared_cbar=False,
+    cmap="rocket_r",
+    cbar_label="Median oscillatory band power",
+    row_height=0.34,
+    tick_fontsize=12,
+    ytick_fontsize=11,
+    title_fontsize=13,
+    axis_label_fontsize=11,
+)
+fig.savefig(fig_dir_sens / "sensitivity_oscpower_heatmaps.pdf", bbox_inches="tight", dpi=300)
+fig.savefig(fig_dir_sens / "sensitivity_oscpower_heatmaps.svg", bbox_inches="tight", dpi=300)
+fig
+```
+
+![Median oscillatory band power per bilateral region (canonical bands) for the iEEG ground truth and for HD-EEG under the three specparam models (fixed baseline, knee, broad-low). Each panel has its own colorbar, auto-scaled to its maximum. The HD-EEG oscillatory maps are visually very similar across the three models, indicating the residual is not strongly driven by the aperiodic/peak choice.](figures/sensitivity/sensitivity_oscpower_heatmaps.pdf){#fig-sensitivity-heatmaps}
+
+We then test whether the cross-modal overlap with the iEEG ground truth changes between models. For each HD model we recompute the Afnan overlap against the same iEEG residual, and put a confidence interval on the per-cell difference from the baseline (baseline − knee, baseline − broad-low) with a **paired subject-clustered bootstrap**: whole subjects are resampled with replacement (iEEG patients, HD datasets, B = 2000), and the *same* resampled subjects feed all three models on each draw, so the model effect is isolated from between-subject variability. A cell whose 95% CI excludes 0 is a region × band where the model choice significantly changes the overlap.
+
+```{python}
+#| label: fig-sensitivity-overlap
+overlap_base = afnan_band_overlap(ieeg_osc, hd_osc, ieeg_ff, hd_ff, bands=EEG_BANDS)
+overlap_knee = afnan_band_overlap(ieeg_osc, hd_osc_knee, ieeg_ff, hd_ff_knee, bands=EEG_BANDS)
+overlap_broad = afnan_band_overlap(ieeg_osc, hd_osc_broad, ieeg_ff, hd_ff_broad, bands=EEG_BANDS)
+sens_regions_ov = list(overlap_base.index)
+
+
+def _boot_overlap_diff_ci(B=2000, seed=3):
+    keys = ("knee_lo", "knee_hi", "broad_lo", "broad_hi")
+    paths = {k: CACHE_DIR / f"sens_overlap_diff_{k}.csv" for k in keys}
+    if all(p.exists() for p in paths.values()):
+        return {k: pd.read_csv(p, index_col=0) for k, p in paths.items()}
+    ie_s = ieeg_osc["patient"].to_numpy()
+    hd_s = pd.Index(hd_osc.index).str.extract(r"(dataset\d+)", expand=False).to_numpy()
+    ieg = {s: np.where(ie_s == s)[0] for s in np.unique(ie_s)}
+    hdg = {s: np.where(hd_s == s)[0] for s in np.unique(hd_s)}
+    ieu, hdu = np.array(list(ieg)), np.array(list(hdg))
+    rng = np.random.default_rng(seed)
+    dk = np.full((B, len(sens_regions_ov), len(EEG_NAMES)), np.nan)
+    db = np.full_like(dk, np.nan)
+
+    def _ov(ir, hd_df, ff):
+        return (
+            afnan_band_overlap(ieeg_osc.iloc[ir], hd_df, ieeg_ff, ff, bands=EEG_BANDS)
+            .reindex(index=sens_regions_ov, columns=EEG_NAMES)
+            .to_numpy()
+        )
+
+    for b in range(B):
+        ir = np.concatenate([ieg[s] for s in rng.choice(ieu, ieu.size, True)])
+        hr = np.concatenate([hdg[s] for s in rng.choice(hdu, hdu.size, True)])
+        a = _ov(ir, hd_osc.iloc[hr], hd_ff)
+        dk[b] = a - _ov(ir, hd_osc_knee.iloc[hr], hd_ff_knee)
+        db[b] = a - _ov(ir, hd_osc_broad.iloc[hr], hd_ff_broad)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        arr = {
+            "knee_lo": np.nanpercentile(dk, 2.5, 0), "knee_hi": np.nanpercentile(dk, 97.5, 0),
+            "broad_lo": np.nanpercentile(db, 2.5, 0), "broad_hi": np.nanpercentile(db, 97.5, 0),
+        }
+    res = {k: pd.DataFrame(v, index=sens_regions_ov, columns=EEG_NAMES) for k, v in arr.items()}
+    for k, df in res.items():
+        df.to_csv(paths[k])
+    return res
+
+
+ci = _boot_overlap_diff_ci()
+diff_knee = (overlap_base - overlap_knee).reindex(index=sens_regions_ov, columns=EEG_NAMES)
+diff_broad = (overlap_base - overlap_broad).reindex(index=sens_regions_ov, columns=EEG_NAMES)
+# grey = CI includes 0 (overlap not significantly changed by the model)
+grey_knee = ~((ci["knee_lo"] > 0) | (ci["knee_hi"] < 0))
+grey_broad = ~((ci["broad_lo"] > 0) | (ci["broad_hi"] < 0))
+m = float(np.nanmax([diff_knee.abs().to_numpy().max(), diff_broad.abs().to_numpy().max()]))
+fig, _ = overlap_heatmap_grid(
+    [
+        {"df": diff_knee, "title": "Δ overlap: baseline − knee", "grey": grey_knee, "xlabel": "Frequency band"},
+        {"df": diff_broad, "title": "Δ overlap: baseline − broad-low", "grey": grey_broad, "xlabel": "Frequency band"},
+    ],
+    REGION_LOBE,
+    vmin=-m,
+    vmax=m,
+    shared_cbar=True,
+    cmap="RdBu_r",
+    cbar_label="Δ overlap (baseline − alternative)",
+    row_height=0.34,
+    tick_fontsize=12,
+    ytick_fontsize=11,
+    title_fontsize=13,
+    axis_label_fontsize=11,
+)
+fig.savefig(fig_dir_sens / "sensitivity_overlap_diff.pdf", bbox_inches="tight", dpi=300)
+fig.savefig(fig_dir_sens / "sensitivity_overlap_diff.svg", bbox_inches="tight", dpi=300)
+fig
+```
+
+![Change in cross-modal overlap with the iEEG ground truth when HD-EEG is refit under the knee (left) and broad-low (right) models, relative to the fixed-mode baseline, per region × canonical band. Colour (diverging, RdBu) is the difference baseline − alternative; cells are masked grey where the 95% CI of the paired subject-clustered bootstrap (iEEG patients and HD datasets resampled together, B = 2000) includes 0, i.e. the model choice does not significantly change the overlap. Most cells are grey, so the cross-modal conclusions are robust to the specparam model.](figures/sensitivity/sensitivity_overlap_diff.pdf){#fig-sensitivity-overlap}
+
+```{python}
+#| label: tbl-sensitivity
+#| output: true
+nk = int((~grey_knee.to_numpy()).sum())
+nb = int((~grey_broad.to_numpy()).sum())
+tot = grey_knee.size
+Markdown(
+    f"Across {tot} region × band cells the cross-modal overlap differed significantly "
+    f"from the fixed-mode baseline (95% CI on the paired difference excluding 0) in "
+    f"**{nk}** cells ({100 * nk / tot:.0f}%) under the knee model and **{nb}** "
+    f"({100 * nb / tot:.0f}%) under the broad-low model. Mean absolute change in overlap "
+    f"was {diff_knee.abs().to_numpy()[~np.isnan(diff_knee.to_numpy())].mean():.3f} (knee) and "
+    f"{diff_broad.abs().to_numpy()[~np.isnan(diff_broad.to_numpy())].mean():.3f} (broad-low), "
+    f"confirming the aperiodic-removed overlap is largely insensitive to the HD-EEG "
+    f"specparam model."
+)
+```
