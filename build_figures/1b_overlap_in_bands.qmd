@@ -7,7 +7,7 @@ jupyter: spectral-comparison-3.14
 
 execute:
   echo: false
-  cache: true
+  cache:  false
   freeze: false
   output: false
 ---
@@ -684,8 +684,8 @@ from pesco.bandpower import BAND_LABELS, add_roi_hemisphere_labels, integrate_ba
 from pesco.config import FREQ_RANGE as FIT_RANGE, SELECTED_MODE, SPECPARAM_SETTINGS
 from pesco.spectral import remove_aperiodic, specparam2pandas
 
-fig_dir_corr = Path("figures/chapter2/corrected")
-fig_dir_corr.mkdir(parents=True, exist_ok=True)
+#fig_dir_corr = Path("figures/chapter2/corrected")
+#fig_dir_corr.mkdir(parents=True, exist_ok=True)
 
 # Scatter/overlap bands keep the canonical 0.5 Hz delta edge; the fitted grid
 # starts at FIT_RANGE[0] so the mask is identical in practice.
@@ -822,13 +822,13 @@ plot_band_grid = plot_band_power_correlation_grid(
     title="Aperiodic-removed: bilateral regional oscillatory-residual correspondence",
 )
 plot_band_grid.save(
-    fig_dir_corr / "relpower_scatter_corrected.pdf",
+    fig_dir / "relpower_scatter_corrected.pdf",
     verbose=False,
 )
 plot_band_grid 
 ```
 
-![Cross-modal correspondence of the aperiodic-removed (oscillatory residual) band power. Each panel is one canonical band; each point is one bilateral MICCAI region, source HD-EEG oscillatory residual on x and the iEEG atlas on y. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). The residual is the specparam linear oscillatory power (band fraction of total) with the BIC-selected aperiodic component removed.](figures/chapter2/corrected/relpower_scatter_corrected.pdf){#fig-relpower-scatter-corrected}
+![Cross-modal correspondence of the aperiodic-removed (oscillatory residual) band power. Each panel is one canonical band; each point is one bilateral MICCAI region, source HD-EEG oscillatory residual on x and the iEEG atlas on y. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). The residual is the specparam linear oscillatory power (band fraction of total) with the BIC-selected aperiodic component removed.](figures/chapter2/relative_power/relpower_scatter_corrected.pdf){#fig-relpower-scatter-corrected}
 
 
 
@@ -863,7 +863,7 @@ plot_last = plot_psd_brain_maps(
     legend_title="within-band\nosc. residual",
     cmap_name="magma",
 )
-plot_last.save(fig_dir_corr / "relpower_maps_corrected.pdf", width=15, height=3.4, verbose=False)
+plot_last.save(fig_dir / "relpower_maps_corrected.pdf", width=15, height=3.4, verbose=False)
 plot_last
 ```
 
@@ -912,8 +912,7 @@ fig, _ = overlap_heatmap_grid(
     title_fontsize=15,
     axis_label_fontsize=12,
 )
-fig.savefig(fig_dir_corr / "relpower_heatmaps_corrected.pdf", bbox_inches="tight", dpi=300)
-fig.savefig(fig_dir_corr / "relpower_heatmaps_corrected.svg", bbox_inches="tight", dpi=300)
+fig.savefig(fig_dir / "relpower_heatmaps_corrected.pdf", bbox_inches="tight", dpi=300)
 fig
 ```
 
@@ -1022,10 +1021,7 @@ fig, _ = overlap_heatmap_pair(
     "grey = 95% CI includes 0 · dot = reliable overlap but flat (spurious agreement)",
 )
 fig.savefig(
-    fig_dir_corr / "overlap_pair_corrected.pdf", bbox_inches="tight", dpi=300
-)
-fig.savefig(
-    fig_dir_corr / "overlap_pair_corrected.svg", bbox_inches="tight", dpi=300
+    fig_dir / "overlap_pair_corrected.pdf", bbox_inches="tight", dpi=300
 )
 fig
 ```
@@ -1089,7 +1085,7 @@ fig, _ = overlap_heatmap_pair(
     "grey = no rhythm in both · x = iEEG rhythm not recovered by HD",
 )
 fig.savefig(
-    fig_dir_corr / "overlap_pair_corrected_presencegated.pdf", bbox_inches="tight", dpi=300
+    fig_dir / "overlap_pair_corrected_presencegated.pdf", bbox_inches="tight", dpi=300
 )
 
 fig

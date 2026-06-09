@@ -34,6 +34,9 @@ context-pesco:
 ch2:
 	quarto render chapters/ch02.qmd --to typst
 
+ch2-latex:
+	quarto render chapters/ch02_0_standalone.qmd --profile latex --to pdf
+
 preview:
 	quarto preview chapters/ch02.qmd 	
 
