@@ -1,31 +1,39 @@
 flowchart TD
-    %% Custom styling using distinct, harmonious palettes
-    classDef ieeg fill:#f0f9ff,stroke:#0284c7,stroke-width:1.5px,color:#0369a1;
-    classDef hdeeg fill:#fff5f5,stroke:#ef4444,stroke-width:1.5px,color:#991b1b;
-    classDef step fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#334155;
-    classDef highlight fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#166534;
-    classDef stability fill:#fffbeb,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+    classDef frame fill:#ffffff,stroke:#0f172a,stroke-width:2px,color:#0f172a;
+    classDef data fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#1e293b;
+    classDef method fill:#f8fafc,stroke:#64748b,stroke-width:1.2px,color:#334155;
+    classDef take fill:#f0fdf4,stroke:#16a34a,stroke-width:1.2px,color:#166534;
+    classDef qhead fill:#eef2ff,stroke:#4f46e5,stroke-width:1.5px,color:#3730a3;
 
-    subgraph Inputs ["Modality Inputs"]
-        A1["iEEG Reference Atlas<br>(106 Patients, eyes-closed)"]:::ieeg
-        A2["HD-EEG Dataset<br>(19 Subjects, eyes-open)"]:::hdeeg
+    P["<b>Central question</b><br>Is the regional spectral organisation of the iEEG atlas<br>recoverable in source-reconstructed HD-EEG?"]:::frame
+
+    D["<b>Common ground</b><br>iEEG atlas (1772 channels) · source HD-EEG (1444 sources)<br>unit-power Welch PSD over 38 shared MICCAI regions"]:::data
+
+    P --> D
+    D --> Q1
+    D --> Q2
+    D --> Q3
+
+    subgraph Q1 ["Q1 · Uncorrected spectra"]
+        direction TB
+        Q1h["Does regional organisation<br>transfer without correction?"]:::qhead
+        Q1m["k-means clustering · relative band power<br>cross-modal overlap (Afnan)"]:::method
+        Q1t["Preserved in alpha / low frequencies;<br>breaks down at high frequencies"]:::take
+        Q1h --> Q1m --> Q1t
     end
 
-    subgraph Prep ["Data Preparation"]
-        B1["eLORETA Source Localization<br>(Mapped to 38 MICCAI regions)"]:::hdeeg
-        B2["Welch PSD & Unit Normalization<br>(Identical Welch settings)"]:::step
+    subgraph Q2 ["Q2 · Periodic / aperiodic separation"]
+        direction TB
+        Q2h["Does removing the 1/f background<br>change the correspondence?"]:::qhead
+        Q2m["specparam · BIC-selected mode<br>modelled-peak power vs detrended residual"]:::method
+        Q2t["Modelled peaks agree in alpha;<br>residual high-freq gap is a 1/f artefact"]:::take
+        Q2h --> Q2m --> Q2t
     end
 
-    subgraph Analysis ["Comparison Pipeline"]
-        C["1. Raw Spectra Comparison<br>- k-means clustering of profiles<br>- Baseline cross-modal overlap"]:::step
-        D["2. Aperiodic Fitting & Removal<br>- Specparam fitting (Knee / Fixed)<br>- Subtract 1/f background"]:::step
-        E["3. Residual Spectra Comparison<br>- Oscillatory overlap after 1/f removal"]:::highlight
-        F["4. Stability Assessments<br>- Exponent vs. range & method choices<br>- Hierarchical Bayesian regression"]:::stability
+    subgraph Q3 ["Q3 · Stability of aperiodic estimates"]
+        direction TB
+        Q3h["How robust is the exponent<br>to modelling choices?"]:::qhead
+        Q3m["knee vs fixed · fitting range · IRASA<br>subject-clustered bootstrap"]:::method
+        Q3t["Modelling-dependent in iEEG;<br>stable in HD-EEG"]:::take
+        Q3h --> Q3m --> Q3t
     end
-
-    A1 --> B2
-    A2 --> B1 --> B2
-    B2 --> C
-    C --> D
-    D --> E
-    D --> F

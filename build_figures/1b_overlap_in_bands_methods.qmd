@@ -11,7 +11,7 @@ Relative band powers are also compositional — within each region the five band
 
 #### Cross-modal correspondence on relative PSD spectra
 
-This is the first of three cross-modal correspondence computations: the subtraction-based version is defined below, the modelled-peak version later in the chapter, and the three are compared in @sec-concordance.
+This is the first of three cross-modal correspondence computations: 
 
 We quantified cross-modal agreement on the unit-power PSDs using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, we treated the iEEG atlas as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding HD-EEG standard deviation. The bin-wise overlap is
 

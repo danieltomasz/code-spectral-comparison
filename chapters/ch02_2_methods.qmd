@@ -5,7 +5,7 @@
 
 The analysis pipeline is summarised in @fig-pipeline. 
 
-![Schematic analysis pipeline.](figures/chapter2/pipeline.png){#fig-pipeline height="60%" column="page"}
+![Schematic analysis pipeline.](figures/chapter2/diagrams/pipeline.png){#fig-pipeline height="60%" column="page"}
 
 ### Intracranial data
 
@@ -63,7 +63,7 @@ with an additional knee parameter, $k$. Here $k$ sets both the height of the low
 ![Geometry of the knee aperiodic model and the consequence of omitting it. All curves are real specparam fits to simulated spectra. (**A**) A spectrum generated with a genuine knee (true $f_k = 10$ Hz) fit in both modes. The knee model recovers the generating exponent ($\hat{\chi} = 2.0$), whereas the fixed model, lacking a plateau term, pivots a single line through plateau and slope and underestimates the exponent by ~39%, despite an apparently acceptable $R^2$. (**B**) Effect of the knee parameter $k$ at fixed exponent: larger $k$ lowers the plateau and shifts the corner frequency $f_k$ to higher values, while the high-frequency slope is unchanged. (**C**) Effect of the exponent $\chi$ at fixed knee: $\chi$ sets the high-frequency slope while the low-frequency plateau ($b - \log_{10} k$) is shared.](figures/chapter2/diagrams/knee_misfit_combined.svg){#fig-knee-misfit width="100%" column="page"}
 
 
-#### Choice of fitting mode
+#### Choice of fitting mode {#sec-aperiodic-selection}
 
 Rather than choosing the aperiodic mode by inspection, we selected it per modality with the Bayesian Information Criterion, following
 @ameen2025TemporallyResolvedAnalyses:
@@ -115,7 +115,7 @@ Relative band powers are also compositional — within each region the five band
 
 #### Cross-modal correspondence on relative PSD spectra
 
-This is the first of three cross-modal correspondence computations; the subtraction-based and modelled-peak versions are defined below and compared in @sec-concordance
+This is the first of three cross-modal correspondence computations; the subtraction-based and modelled-peak versions are defined below.
 
 We quantified cross-modal agreement on the unit-power PSDs using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, we treated the iEEG atlas as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding HD-EEG standard deviation. The bin-wise overlap is
 
