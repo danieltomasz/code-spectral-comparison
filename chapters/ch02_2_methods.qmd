@@ -5,7 +5,7 @@
 
 The analysis pipeline is summarised in @fig-pipeline. 
 
-![Schematic analysis pipeline.](figures/chapter2/diagrams/pipeline.png){#fig-pipeline height="60%" column="page"}
+![Schematic analysis pipeline.](figures/chapter2/diagrams/figure1_pipeline.svg){#fig-pipeline width="95%" column="page"}
 
 ### Intracranial data
 
@@ -84,9 +84,11 @@ preference collapses toward zero under subject clustering. We therefore retain t
 convention for source-reconstructed scalp data [@donoghue2020ParameterizingNeuralPower].
 
 
-###  Recovery of regional spectral organisation on uncorrected spectra
 
-We first tested whether the regional spectral organisation of the iEEG atlas was preserved in source-reconstructed HD-EEG, before any aperiodic correction.
+###  Recovery of regional spectral organisation on uncorrected spectra {#sec-m-q1}
+
+This section addresses the first question: whether the regional spectral organisation of the iEEG atlas is preserved in source-reconstructed HD-EEG before any aperiodic correction.
+We test it using two descriptors -  data-driven k-means clustering and per-region relative band power.
 
 
 #### K-means clustering and no-peak reference 
@@ -136,7 +138,7 @@ The metric equals 1 when the iEEG median lands exactly on the HD-EEG median and 
 We also recomputed the overlap on the 22 data-driven Frauscher intervals [@frauscher2018AtlasNormalIntracranial], which give a more fine-grained view than the five canonical bands.
 
 
-### Relative power after specparam aperiodic part removal
+### Relative power after specparam aperiodic part removal {#sec-m-q2}
 
 
 We asked whether separating periodic from aperiodic activity changes the above picture. We addressed it in two linked ways: by modelling oscillatory peaks directly with specparam, and by removing the aperiodic background and recomputing the cross-modal overlap.
@@ -154,8 +156,10 @@ This is the primary residual used throughout. A log-ratio alternative, $L_{\math
 Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space, which is why we work with the linear residual. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models.
 
 
-We evaluated each fit with R² and mean absolute error but did not exclude channels on fit quality in the main analysis: the poorer fits are concentrated in the HD-EEG data, where dropping everything below R² 0.90 would remove roughly a quarter of its channels. We instead treat fit quality as a sensitivity analysis, repeating the band-power and overlap analyses on the channels with R² > 0.90, to check that the conclusions do not depend on the poorer-fitting channels [TODO: cross-reference to the sensitivity analysis].
-<!-- 
+We evaluated each fit with R² and mean absolute error but did not exclude channels on fit quality in the main analysis: the poorer fits are concentrated in the HD-EEG data, where dropping everything below R² 0.90 would remove roughly a quarter of its channels. We instead treat fit quality as a sensitivity analysis, repeating the band-power and overlap analyses on the channels with R² > 0.90, to check that the conclusions do not depend on the poorer-fitting channels.
+
+<!-- [TODO: cross-reference to the sensitivity analysis].
+
 Model fits were evaluated using R² and mean absolute error; fits with R² below 0.90 were exluded  -->
 
 #### Assessing the overlap: reliability and rhythm presence
@@ -200,7 +204,7 @@ Modelled power exists only where specparam fits a peak, so the per-band prevalen
 
 Assigning peaks to fixed canonical bands by centre frequency is sensitive to peaks that sit near a band edge [@castanheira2025QuantifyingRhythmicArrhythmic], and source reconstruction can shift the estimated peak frequency. We therefore also report the distribution of peak centre frequencies per region per modality, and compare the regional dominant peak frequency across modalities directly, without binning.
 
-###  Stability of aperiodic estimates
+###  Stability of aperiodic estimates {#sec-m-q3}
 
 Our last questions asks whether the regional aperiodic estimates agree across three methodological choices. Because some comparisons involve parameters that are not on a common scale, we quantify agreement by correlation, rank-based where the scales differ. This stability also bears on the oscillation comparison. 
 
