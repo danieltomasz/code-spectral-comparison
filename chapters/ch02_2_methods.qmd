@@ -3,9 +3,9 @@
 
 ### Experimental design
 
-The analysis pipeline is summarised in @fig-pipeline. 
+The analysis pipeline is summarised in @fig-pipeline, which also shows the preprocessing and source-space extraction steps that prepare the HD-EEG data for comparison with the iEEG atlas. Because regional spectral organisation is not captured by a single measure, we compare several *spectral descriptors*, defined here as PSD summaries used for cross-modal comparison: uncorrected relative band power, aperiodic-subtracted residual power, fitted peak parameters, and aperiodic parameters. We first examine uncorrected unit-power spectra using the Frauscher clustering procedure, relative band-power maps, and band-overlap metrics. We then parameterise each spectrum to obtain two aperiodic-separated descriptions of oscillatory organisation: residual band power after subtracting the fitted broadband component, and fitted peak descriptors such as prevalence, amplitude, and centre frequency. Finally, we test whether the aperiodic estimates used in this separation are stable across fitting mode, frequency range, and decomposition method.
 
-![Schematic analysis pipeline.](figures/chapter2/diagrams/figure1_pipeline.svg){#fig-pipeline width="95%" column="page"}
+![Schematic of preprocessing and analysis pipeline.](figures/chapter2/diagrams/figure1_pipeline.svg){#fig-pipeline width="95%" column="page"}
 
 ### Intracranial data
 
@@ -33,14 +33,14 @@ In the iEEG dataset, power spectral density (PSD) was estimated using Welch's me
 
 In HD EEG reconstructed sensors, 60s activity was extracted  from each time series according to the parameters defined in Frauscher's paper (sampling frequency 200Hz). Spectral densities were computed using identical Welch parameters (2s windows, 50% overlap, 0.5 Hz resolution). 
 
-All spectral data were normalised to unit total power to ensure that the comparison focused on the distribution of frequency peaks (e.g., the occipital alpha or hippocampal delta) rather than absolute amplitude differences between scalp and intracranial sensors.
+All spectral data were normalised to unit total power to ensure that the comparison focused on the relative distribution of spectral power across frequency, including both peaks and broadband shape, rather than on absolute amplitude differences between scalp and intracranial sensors. .
 
 Where later analyses use canonical bands, we define them as delta 1-4 Hz, theta 4-8 Hz, alpha 8-13 Hz, beta 13-30 Hz,  gamma 30-80 Hz. We use 1 Hz as the lower bound throughout to aid the cross-modal comparison and define power in a band as sum of values in specific band.
 
 
-###  Choice of models for spectral parametrisation 
+###  Shared spectral framework
 
-#### Knee and fixed mode of specparam fit 
+#### Spectral parameterisation and aperiodic modes
 
 Introduced by @donoghue2020ParameterizingNeuralPower, the *specparam* (formerly FOOOF) method  and toolbox decomposes the log power spectrum into an aperiodic component $L(f)$ and a sum of $N$ peaks, each modelled as a Gaussian (@fig-specparam A):
 
@@ -60,28 +60,23 @@ with an additional knee parameter, $k$. Here $k$ sets both the height of the low
 
 ![Decomposition and aperiodic parameters of the specparam model. (**A**) A single power spectrum (grey) is decomposed into an aperiodic component $L(f)$ (blue dashed) and a set of Gaussian peaks capturing periodic activity; their sum is the full model fit (teal). The offset $b$ (orange) sets the broadband level at low frequency. (**B**) The aperiodic component alone (fixed mode, $k=0$): increasing the exponent $\chi$ steepens the slope, rotating the line about a pivot frequency, while decreasing it flattens the spectrum. (**C**) Varying the offset $b$ shifts the aperiodic line vertically in parallel, raising or lowering broadband power without changing the slope.](figures/chapter2/diagrams/specparam_parameterization.svg){#fig-specparam width="100%" column="page"}
 
-![Geometry of the knee aperiodic model and the consequence of omitting it. All curves are real specparam fits to simulated spectra. (**A**) A spectrum generated with a genuine knee (true $f_k = 10$ Hz) fit in both modes. The knee model recovers the generating exponent ($\hat{\chi} = 2.0$), whereas the fixed model, lacking a plateau term, pivots a single line through plateau and slope and underestimates the exponent by ~39%, despite an apparently acceptable $R^2$. (**B**) Effect of the knee parameter $k$ at fixed exponent: larger $k$ lowers the plateau and shifts the corner frequency $f_k$ to higher values, while the high-frequency slope is unchanged. (**C**) Effect of the exponent $\chi$ at fixed knee: $\chi$ sets the high-frequency slope while the low-frequency plateau ($b - \log_{10} k$) is shared.](figures/chapter2/diagrams/knee_misfit_combined.svg){#fig-knee-misfit width="100%" column="page"}
+![Geometry of the knee aperiodic model and the consequence of omitting it. All curves are real specparam fits to simulated spectra. (**A**) A spectrum generated with a genuine knee (true $f_k = 10$ Hz) fit in both modes. The knee model recovers the generating exponent ($\hat{\chi} = 2.0$), whereas the fixed model, lacking a plateau term, pivots a single line through plateau and slope and misestimates the exponent, despite an apparently acceptable $R^2$. (**B**) Effect of the knee parameter $k$ at fixed exponent: larger $k$ lowers the plateau and shifts the corner frequency $f_k$ to higher values, while the high-frequency slope is unchanged. (**C**) Effect of the exponent $\chi$ at fixed knee: $\chi$ sets the high-frequency slope while the low-frequency plateau ($b - \log_{10} k$) is shared.](figures/chapter2/diagrams/knee_misfit_combined.svg){#fig-knee-misfit width="100%" column="page"}
 
 
-#### Choice of fitting mode {#sec-aperiodic-selection}
+#### Choice of aperiodic fitting mode{#sec-aperiodic-selection}
 
 Rather than choosing the aperiodic mode by inspection, we selected it per modality with the Bayesian Information Criterion, following
 @ameen2025TemporallyResolvedAnalyses:
 
 $$\mathrm{BIC} = N \log(\mathrm{MSE}) + n_p \log(N),$$
 
-with $N$ the number of fitted bins, MSE the full-model log-power residual, and $n_p$ the free-parameter count. Because BIC can favour the knee on a negligible
-gain, we read it alongside raw fit quality (median $R^2$, median MSE) rather than alone. Both modes were fit to every channel with identical peak settings
-and range and compared per spectrum. Channels are nested within patients (iEEG) or subjects (HD-EEG), so we report subject-clustered percentile bootstrap CIs
-(10,000 resamples) for inference; the gap from the naive channel-level interval indexes the pseudoreplication, severe in the 19-subject HD-EEG data.
+with $N$ the number of fitted bins, MSE the full-model log-power residual, and $n_p$ the free-parameter count. Because BIC can favour the knee on a negligible gain, we read it alongside raw fit quality (median $R^2$, median MSE) rather than alone. Both modes were fit to every channel with identical peak settings and range and compared per spectrum. Channels are nested within patients (iEEG) or subjects (HD-EEG), so we report subject-clustered percentile bootstrap CIs (10,000 resamples) for inference; the gap from the naive channel-level interval indexes the pseudoreplication, severe in the 19-subject HD-EEG data.
 
- Fitting  was done in range 1-80 Hz; peak width 1.0-8.0 Hz; maximum 8 peaks; minimum peak height 0.1 (log power); peak threshold 3.0 SD of the residual.
+Fitting  was done in range 1-80 Hz; peak width 1.0-8.0 Hz; maximum 8 peaks; minimum peak height 0.1 (log power); peak threshold 3.0 SD of the residual.
 
-In the iEEG atlas the knee improved fit substantially (median $R^2$ 0.93→0.98, MSE − 77%) and was preferred on every measure (median $\Delta$BIC −225; 96% of
-channels strong-knee). In source HD-EEG the gain was marginal (median $R^2$ 0.942→0.948, MSE −7%): the median $\Delta$BIC was formally 'strong' (−7.7), but
-this follows from the $N\log(\mathrm{MSE})$ term — at $N=159$ bins a 7% MSE reduction clears the threshold once the extra parameter is paid — and the
-preference collapses toward zero under subject clustering. We therefore retain the knee for iEEG and the fixed model for HD-EEG, the latter consistent with
-convention for source-reconstructed scalp data [@donoghue2020ParameterizingNeuralPower].
+In the iEEG atlas the knee improved fit substantially (median $R^2$ 0.93→0.98, MSE − 77\%) and was preferred on every measure (median $\Delta$BIC −225; 96\% of channels strong-knee). In source HD-EEG the gain was marginal (median $R^2$ 0.942→0.948, MSE −7\%): the median $\Delta$BIC was formally 'strong' (−7.7), but
+this follows from the $N\log(\mathrm{MSE})$ term — at $N=159$ bins a 7\% MSE reduction clears the threshold once the extra parameter is paid — and the
+preference collapses toward zero under subject clustering. We therefore retain the knee for iEEG and the fixed model for HD-EEG, the latter consistent with convention for source-reconstructed scalp data [@donoghue2020ParameterizingNeuralPower].
 
 
 
@@ -153,7 +148,7 @@ $$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(
 
 This is the primary residual used throughout. A log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, could equally be used and is the variant adopted for detrending in many studies.
 
-Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space, which is why we work with the linear residual. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models.
+Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space, which is why we work with the linear residual. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models. Thus, the residual is treated as one operational estimate of oscillatory power, not as a direct observation of a rhythm.
 
 
 We evaluated each fit with R² and mean absolute error but did not exclude channels on fit quality in the main analysis: the poorer fits are concentrated in the HD-EEG data, where dropping everything below R² 0.90 would remove roughly a quarter of its channels. We instead treat fit quality as a sensitivity analysis, repeating the band-power and overlap analyses on the channels with R² > 0.90, to check that the conclusions do not depend on the poorer-fitting channels.
