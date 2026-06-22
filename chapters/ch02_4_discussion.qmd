@@ -1,10 +1,23 @@
 ## Discussion
 
+### Clustering can retrive some spectral structure but is unstable
+
+The clustering descriptor was itself unstable, and that instability is part of the finding. The k-means solution, the no-peak reference set, and the data-driven interval definition all shifted with reasonable changes to preprocessing and fitting range, and the 4% power rule of the original atlas did not transfer to the source-reconstructed spectra: applied to HD-EEG it over-segmented the high-frequency tail. This over-segmentation follows from the unit-power normalisation rather than from physiological structure: normalising each spectrum to unit total power redistributes mass toward the flat, high-frequency tail of the source data, which the cumulative 4% rule then carves into spurious narrow intervals. Because the clustering descriptor was not robust to these choices, we did not carry it forward to the aperiodic-corrected spectra, and characterised oscillatory content with the more stable per-band parametrised-peak descriptor, which needs neither a clustering step nor a no-peak reference. The instability is not noise around a true answer; it is a reason to prefer one operationalisation over another.
+
+The clustering comparison also bears on the reference itself. Removing the 0.5-80 Hz bandpass collapsed the gamma cluster and the low/high-beta split that the filtered solution reproduced, which suggests that these distinctions in the published atlas may be driven, at least in part, by filter edge effects rather than by physiological structure. Because the comparison was run on our own pipeline, it is suggestive rather than a demonstration that the atlas is artefactual.
+
+
+### Removal of spectral backround mitigate some issues of relative power
+
+### 
+
+### General discussion 
+
 The main lesson of this study is methodological as much as empirical. The comparison between the iEEG atlas and source-reconstructed HD-EEG does not reduce to whether one dataset reproduces the other: the answer depends on what counts as oscillatory power and how it is measured, and different spectral techniques turn the same data into different comparison objects. These summaries are closely related, but they are not interchangeable.
 
 The two modalities did not differ only in signal quality. Source-reconstructed HD-EEG produced a narrow, high-amplitude, alpha-dominated pattern, whereas the iEEG atlas showed a broader distribution of peaks together with a different aperiodic shape. Depending on the descriptor, the same contrast can read as partial cross-modal recovery or as failure. The result is therefore not a single stable answer hidden behind several analyses, but a demonstration that the answer depends on how "oscillation", "frequency", and "agreement" are operationalised. That operationalisation matters is a familiar point, but the variety of available descriptors makes it a practical problem here, not only a conceptual one.
 
-### Branching paths
+#### Branching paths
 
 This chapter set out as a narrower comparison and widened as the surrounding methodological literature did; several of the studies that now anchor the analysis were published after the project began, and the scope had to be closed at some point rather than tracked indefinitely. The analysis has the structure of a garden of forking paths [@gelman2013GardenForkingPaths]: many defensible operational choices were available before the results were interpreted, in how oscillations are extracted, how frequency is represented, and how cross-modal agreement is summarised. Rather than commit to one pipeline, we report several branches and ask which conclusions survive across them.
 
@@ -12,14 +25,10 @@ One choice shaped the analysis enough to state directly: we avoided relative ban
 
 Different spectral methods rest on different assumptions about what in the power spectrum counts as the phenomenon, so each makes a different "spectral object" available rather than offering a different window onto one stable spectral truth. These operationalisations are constructed but not arbitrary, and some are more useful than others in a clinical context. The cost of treating them loosely, referring to "the" spectral measure or moving between measures without saying which, is confusion and contradictory claims about a biomarker's validity.
 
-### Stability of the clustering descriptor
-
-The clustering descriptor was itself unstable, and that instability is part of the finding. The k-means solution, the no-peak reference set, and the data-driven interval definition all shifted with reasonable changes to preprocessing and fitting range, and the 4% power rule of the original atlas did not transfer to the source-reconstructed spectra: applied to HD-EEG it over-segmented the high-frequency tail. This over-segmentation follows from the unit-power normalisation rather than from physiological structure: normalising each spectrum to unit total power redistributes mass toward the flat, high-frequency tail of the source data, which the cumulative 4% rule then carves into spurious narrow intervals. Because the clustering descriptor was not robust to these choices, we did not carry it forward to the aperiodic-corrected spectra, and characterised oscillatory content with the more stable per-band parametrised-peak descriptor, which needs neither a clustering step nor a no-peak reference. The instability is not noise around a true answer; it is a reason to prefer one operationalisation over another.
-
-The clustering comparison also bears on the reference itself. Removing the 0.5-80 Hz bandpass collapsed the gamma cluster and the low/high-beta split that the filtered solution reproduced, which suggests that these distinctions in the published atlas may be driven, at least in part, by filter edge effects rather than by physiological structure. Because the comparison was run on our own pipeline, it is suggestive rather than a demonstration that the atlas is artefactual.
+### Limitations
 
 
-## Conclusion
+## Conclusions 
 
 The cross-modal question does not have a single answer: what the comparison shows depends on the descriptor used to obtain it. The clustering route makes this concrete. The k-means clustering, no-peak reference, and interval definition of the original atlas were too sensitive to preprocessing to transfer to the source-reconstructed spectra, so we abandoned that descriptor in favour of a more stable per-band peak descriptor.
 

@@ -1,6 +1,6 @@
 
 
-### Stability of aperiodic estimates
+### Auxiliary sensitivity analyses 
 
 Finally, we ask how far the aperiodic estimates themselves depend on the modelling choices made to obtain them.
 
