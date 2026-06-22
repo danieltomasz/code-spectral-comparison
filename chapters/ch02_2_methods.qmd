@@ -80,13 +80,8 @@ preference collapses toward zero under subject clustering. We therefore retain t
 
 
 
-###  Recovery of regional spectral organisation on uncorrected spectra {#sec-m-q1}
 
-This section addresses the first question: whether the regional spectral organisation of the iEEG atlas is preserved in source-reconstructed HD-EEG before any aperiodic correction.
-We test it using two descriptors -  data-driven k-means clustering and per-region relative band power.
-
-
-#### K-means clustering and no-peak reference {#sec-clustering}
+### K-means clustering and no-peak reference {#sec-clustering}
 
 To enable comparison with @frauscher2018AtlasNormalIntracranial, we followed their peak-detection procedure: an unsupervised k-means clustering of the channel power spectra, followed by a test for region-specific peaks against a data-derived no-peak reference. We applied it to the iEEG atlas and to the source-reconstructed HD-EEG data.
 
@@ -103,9 +98,9 @@ The Kolmogorov-Smirnov screen identifies where a region differs from the no-peak
 For HD-EEG we applied the same procedure and kept the iEEG-derived intervals for comparability, even though the 4% power condition did not hold for the source-reconstructed spectra; we report the consequences in the Results.
 
 
-### Normalized relative-power maps
+### Normalized relative-power maps before and after broadband component removal
 
-As a second, complementary approach, we mapped each region's normalized PSD onto the canonical bands and the intervals defined in @sec-clustering and took relative band power per region.
+As a second, approach, we mapped each region's normalized PSD onto the canonical bands and the intervals defined in @sec-clustering and took relative band power per region.
 
 We summarize these maps in two complementary ways. To preview the spatial distribution of power, we display the median relative band power per region as region × band heatmaps, computed separately for the five canonical bands and the 22 intervals. To assess cross-modal agreement, we then correlate the regional relative power between modalities band by band (Pearson across bilateral regions) and, as a complement, compare the two regional PSDs with the band-overlap metric of @sec-overlap.
 
@@ -117,7 +112,6 @@ Normalized Relative power in bands is also compositional — within each region 
 
 #### Cross-modal correspondence on relative PSD spectra
 
-This is the first of three cross-modal correspondence computations; the subtraction-based and modelled-peak versions are defined below.
 
 We quantified cross-modal agreement on the unit-power PSDs using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$, we treated the iEEG atlas as the reference modality and the HD-EEG source data as the estimated modality. Let $\widetilde{L}_r(f)$ denote the median log-PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the corresponding HD-EEG standard deviation. The bin-wise overlap is
 
@@ -196,7 +190,7 @@ Both residuals depend on the aperiodic fit, so error in the offset or exponent p
 We now have three measures of which regional oscillatory features correspond across modalities, resting on different treatments of the aperiodic background: relative band power ignores it, the subtraction residual removes it with a fitted model, and modelled power never estimates it. We compare the regional cross-modal agreement under each. Where the three agree, the correspondence is robust to how the background is handled. Where they disagree, we take the modelled-peak result as the reference, because it does not depend on the accuracy of the aperiodic fit, whereas the subtraction measures can produce apparent oscillatory differences that follow from aperiodic-fit error rather than from the rhythm [@castanheira2026AnalyticalChoicesImpact]. -->
 
 
-#### Per-band peak prevalence and modelled power
+### Directly modelled specparam peaks
 
 For each channel, we assigned the parameterised specparam peaks to canonical bands by their centre frequency. Peak prevalence in a region is the proportion of channels in that region with at least one peak in a given band.
 
@@ -206,7 +200,7 @@ Modelled power exists only where specparam fits a peak, so the per-band prevalen
 
 Assigning peaks to fixed canonical bands by centre frequency is sensitive to peaks that sit near a band edge [@castanheira2026AnalyticalChoicesImpact], and source reconstruction can shift the estimated peak frequency. We therefore also report the distribution of peak centre frequencies per region per modality, and compare the regional dominant peak frequency across modalities directly, without binning.
 
-###  Stability of aperiodic estimates {#sec-m-q3}
+### Auxiliary sensitivity analyses {#sec-m-q3}
 
 Our last questions asks whether the regional aperiodic estimates agree across three methodological choices. Because some comparisons involve parameters that are not on a common scale, we quantify agreement by correlation, rank-based where the scales differ. This stability also bears on the oscillation comparison. 
 
