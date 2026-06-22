@@ -1626,7 +1626,6 @@ def plot_psd_brain_maps(
         element_text,
         facet_grid,
         ggplot,
-        scale_fill_cmap,
         scale_fill_gradientn,
         theme,
         theme_gray,
@@ -1655,8 +1654,15 @@ def plot_psd_brain_maps(
         grp = df.groupby("band", observed=True)["value"]
         lo, hi = grp.transform("min"), grp.transform("max")
         df["fill"] = np.where(hi > lo, (df["value"] - lo) / (hi - lo), 0.5)
-        fill_scale = scale_fill_cmap(
-            cmap_name=cmap_name,
+        # Sample colours from the matplotlib colormap so seaborn maps
+        # (rocket_r, mako, ...) work -- mizani's scale_fill_cmap only knows its
+        # own registry and KeyErrors on 'rocket'.
+        import seaborn as _sns  # noqa: F401  (registers rocket/mako/... in mpl)
+
+        cmap = plt.get_cmap(cmap_name)
+        colors = [matplotlib.colors.to_hex(cmap(x)) for x in np.linspace(0, 1, 256)]
+        fill_scale = scale_fill_gradientn(
+            colors=colors,
             limits=(0, 1),
             breaks=[0.0, 0.5, 1.0],
             labels=["0\nlow", "0.5", "1\nhigh"],
@@ -1684,7 +1690,12 @@ def plot_psd_brain_maps(
     return (
         ggplot(df, aes(fill="fill"))
         + geom_brain(
-            atlas=atlas, mapping=aes(fill="fill"), hemi="left", show_legend=show_legend
+            atlas=atlas,
+            mapping=aes(fill="fill"),
+            hemi="left",
+            color="white",
+            size=0.05,
+            show_legend=show_legend,
         )
         + facet_grid(
             "modality_facet ~ band_facet",

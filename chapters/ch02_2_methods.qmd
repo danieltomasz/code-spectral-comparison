@@ -86,7 +86,7 @@ This section addresses the first question: whether the regional spectral organis
 We test it using two descriptors -  data-driven k-means clustering and per-region relative band power.
 
 
-#### K-means clustering and no-peak reference 
+#### K-means clustering and no-peak reference {#sec-clustering}
 
 To enable comparison with @frauscher2018AtlasNormalIntracranial, we followed their peak-detection procedure: an unsupervised k-means clustering of the channel power spectra, followed by a test for region-specific peaks against a data-derived no-peak reference. We applied it to the iEEG atlas and to the source-reconstructed HD-EEG data.
 
@@ -103,12 +103,17 @@ The Kolmogorov-Smirnov screen identifies where a region differs from the no-peak
 For HD-EEG we applied the same procedure and kept the iEEG-derived intervals for comparability, even though the 4% power condition did not hold for the source-reconstructed spectra; we report the consequences in the Results.
 
 
-#### Canonical-band and normalised relative-power maps
+### Normalized relative-power maps
 
-As a second, complementary  approach, we mapped each region's normalised PSD onto the canonical bands defined above and took relative band power per region.
+As a second, complementary approach, we mapped each region's normalized PSD onto the canonical bands and the intervals defined in @sec-clustering and took relative band power per region.
 
-Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower; @castanheira2025QuantifyingRhythmicArrhythmic].
-Relative band powers are also compositional — within each region the five bands are normalised to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We therefore report the cross-modal correlations of these maps as descriptive measures of spatial agreement rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure.
+We summarize these maps in two complementary ways. To preview the spatial distribution of power, we display the median relative band power per region as region × band heatmaps, computed separately for the five canonical bands and the 22 intervals. To assess cross-modal agreement, we then correlate the regional relative power between modalities band by band (Pearson across bilateral regions) and, as a complement, compare the two regional PSDs with the band-overlap metric of @sec-overlap.
+
+Relative band power does not separate the rhythmic peak from the aperiodic background. A region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower; @castanheira2026AnalyticalChoicesImpact].
+Normalized Relative power in bands is also compositional — within each region the five bands or summed power in intervals are normalized to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We report the cross-modal correlations of these maps as descriptive measures of spatial agreement.
+<!-- rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure. -->
+
+
 
 #### Cross-modal correspondence on relative PSD spectra
 
@@ -148,7 +153,7 @@ $$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(
 
 This is the primary residual used throughout. A log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, could equally be used and is the variant adopted for detrending in many studies.
 
-Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space, which is why we work with the linear residual. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models. Thus, the residual is treated as one operational estimate of oscillatory power, not as a direct observation of a rhythm.
+Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2026AnalyticalChoicesImpact show this produces biased oscillatory power, more so in log space, which is why we work with the linear residual. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models. Thus, the residual is treated as one operational estimate of oscillatory power, not as a direct observation of a rhythm.
 
 
 We evaluated each fit with R² and mean absolute error but did not exclude channels on fit quality in the main analysis: the poorer fits are concentrated in the HD-EEG data, where dropping everything below R² 0.90 would remove roughly a quarter of its channels. We instead treat fit quality as a sensitivity analysis, repeating the band-power and overlap analyses on the channels with R² > 0.90, to check that the conclusions do not depend on the poorer-fitting channels.
@@ -176,28 +181,30 @@ The two analyses are complementary — the first measures how trustworthy the ag
 
 We reconstructed the fitted aperiodic component on the fitted frequency grid and subtracted it from the empirical PSD in linear power space, giving the residual
 
-$$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f).$$
+$$
+\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(f).
+$$
 
 This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, the variant used for  detrending in many studies, as a sensitivity comparison.
 
-Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models. 
+Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2026AnalyticalChoicesImpact show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models. 
  -->
 <!-- A difference in the residual overlap between modalities can therefore follow from that asymmetry in the fit rather than from the rhythms. For this reason we do not read the subtraction-based correspondence on its own, but against the modelled-peak correspondence. -->
 
 <!-- ### Cross-modal concordance across correspondence measures {#sec-concordance}
 
-We now have three measures of which regional oscillatory features correspond across modalities, resting on different treatments of the aperiodic background: relative band power ignores it, the subtraction residual removes it with a fitted model, and modelled power never estimates it. We compare the regional cross-modal agreement under each. Where the three agree, the correspondence is robust to how the background is handled. Where they disagree, we take the modelled-peak result as the reference, because it does not depend on the accuracy of the aperiodic fit, whereas the subtraction measures can produce apparent oscillatory differences that follow from aperiodic-fit error rather than from the rhythm [@castanheira2025QuantifyingRhythmicArrhythmic]. -->
+We now have three measures of which regional oscillatory features correspond across modalities, resting on different treatments of the aperiodic background: relative band power ignores it, the subtraction residual removes it with a fitted model, and modelled power never estimates it. We compare the regional cross-modal agreement under each. Where the three agree, the correspondence is robust to how the background is handled. Where they disagree, we take the modelled-peak result as the reference, because it does not depend on the accuracy of the aperiodic fit, whereas the subtraction measures can produce apparent oscillatory differences that follow from aperiodic-fit error rather than from the rhythm [@castanheira2026AnalyticalChoicesImpact]. -->
 
 
 #### Per-band peak prevalence and modelled power
 
 For each channel, we assigned the parameterised specparam peaks to canonical bands by their centre frequency. Peak prevalence in a region is the proportion of channels in that region with at least one peak in a given band.
 
-We also kept the parameters of the fitted peaks: centre frequency, amplitude, and bandwidth. We take the amplitude of the highest peak within a band as the modelled power of that band's rhythm, following @castanheira2025QuantifyingRhythmicArrhythmic, who retain the highest-amplitude Gaussian when more than one peak falls in the band. Channels with no fitted peak in a band are assigned a modelled power of zero rather than dropped. This keeps the channel set fixed across bands, but it leaves a spike of zeros in the distribution, so band-power comparisons use rank-based statistics. @castanheira2025QuantifyingRhythmicArrhythmic show in simulation that modelled power recovers oscillatory amplitude almost independently of the aperiodic exponent, whereas the residual obtained by subtracting the aperiodic fit (next subsection) inherits the error of that fit. We therefore carry modelled power as the periodic measure we trust by default, and the subtraction residual as the comparison.
+We also kept the parameters of the fitted peaks: centre frequency, amplitude, and bandwidth. We take the amplitude of the highest peak within a band as the modelled power of that band's rhythm, following @castanheira2026AnalyticalChoicesImpact, who retain the highest-amplitude Gaussian when more than one peak falls in the band. Channels with no fitted peak in a band are assigned a modelled power of zero rather than dropped. This keeps the channel set fixed across bands, but it leaves a spike of zeros in the distribution, so band-power comparisons use rank-based statistics. @castanheira2026AnalyticalChoicesImpact show in simulation that modelled power recovers oscillatory amplitude almost independently of the aperiodic exponent, whereas the residual obtained by subtracting the aperiodic fit (next subsection) inherits the error of that fit. We therefore carry modelled power as the periodic measure we trust by default, and the subtraction residual as the comparison.
 
 Modelled power exists only where specparam fits a peak, so the per-band prevalence above is also a fit-success rate. We report it separately for each modality. <!-- If the algorithm fits peaks less often in the source-reconstructed HD-EEG than in the iEEG, a difference in modelled power between modalities could reflect differential peak detection rather than a difference in the rhythm itself, and we read the modelled-power comparison with that rate in hand. -->
 
-Assigning peaks to fixed canonical bands by centre frequency is sensitive to peaks that sit near a band edge [@castanheira2025QuantifyingRhythmicArrhythmic], and source reconstruction can shift the estimated peak frequency. We therefore also report the distribution of peak centre frequencies per region per modality, and compare the regional dominant peak frequency across modalities directly, without binning.
+Assigning peaks to fixed canonical bands by centre frequency is sensitive to peaks that sit near a band edge [@castanheira2026AnalyticalChoicesImpact], and source reconstruction can shift the estimated peak frequency. We therefore also report the distribution of peak centre frequencies per region per modality, and compare the regional dominant peak frequency across modalities directly, without binning.
 
 ###  Stability of aperiodic estimates {#sec-m-q3}
 

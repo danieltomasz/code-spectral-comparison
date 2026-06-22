@@ -233,7 +233,7 @@ def presence_gated_masks(pres_ref, pres_est, regions, *, names=FB_NAMES):
 
 As a second, complementary approach, we mapped each region's normalised PSD onto the canonical bands defined above and took relative band power per region.
 
-Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2025QuantifyingRhythmicArrhythmic].
+Relative band power does not separate the rhythmic peak from the aperiodic background, so it carries both: a region can show high relative band power because it has a strong rhythm or because its background is steep in that band [@donoghue2020ParameterizingNeuralPower@castanheira2026AnalyticalChoicesImpact].
 Relative band powers are also compositional — within each region the five bands are normalised to a fixed total, so they are not free to vary independently [@filzmoser2012CorrelationAnalysisCompositional]. We therefore report the cross-modal correlations of these maps as descriptive measures of spatial agreement rather than as formal inference, and carry quantitative cross-modal inference with the aperiodic-separated peak descriptors, which are not subject to this closure.
 
 ### Quantitative descriptions 
@@ -274,7 +274,7 @@ $$\mathrm{PSD}_{\mathrm{osc}}(f) = \mathrm{PSD}(f) - \mathrm{PSD}_{\mathrm{ap}}(
 
 This is the primary residual used throughout. We report a log-ratio alternative, $L_{\mathrm{osc}}(f) = \log_{10}(\mathrm{PSD}(f) / \mathrm{PSD}_{\mathrm{ap}}(f))$, which detrends in log space, the variant used for  detrending in many studies, as a sensitivity comparison.
 
-Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2025QuantifyingRhythmicArrhythmic show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models.
+Both residuals depend on the aperiodic fit, so error in the offset or exponent propagates into the oscillatory estimate; @castanheira2026AnalyticalChoicesImpact show this produces biased oscillatory power, more so in log space. Because we select the aperiodic mode per modality (knee vs fixed, @sec-aperiodic-selection), the iEEG and HD-EEG residuals are produced by different aperiodic models.
 
 #### Assessing the overlap: reliability and rhythm presence
 
@@ -389,9 +389,10 @@ maps_fig = plot_psd_brain_maps(
     modality_order=("iEEG", "HD-EEG source"),
     modality_labels={"iEEG": "iEEG", "HD-EEG source": "HD-EEG"},
     legend_title="within-band\nrel. PSD",
-    cmap_name="magma",
+    cmap_name="rocket_r",
+    normalize=False,
 )
-maps_fig.save(fig_dir / "relpower_maps_uncorrected.pdf", width=15, height=3.4, verbose=False)
+maps_fig.save(fig_dir / "relpower_maps_uncorrected.pdf", width=15, height=3.5, verbose=False)
 maps_fig 
 ```
 
@@ -861,7 +862,7 @@ plot_last = plot_psd_brain_maps(
     modality_order=("iEEG", "HD-EEG source"),
     modality_labels={"iEEG": "iEEG", "HD-EEG source": "HD-EEG"},
     legend_title="within-band\nosc. residual",
-    cmap_name="magma",
+    cmap_name="rocket_r",
 )
 plot_last.save(fig_dir / "relpower_maps_corrected.pdf", width=15, height=3.4, verbose=False)
 plot_last

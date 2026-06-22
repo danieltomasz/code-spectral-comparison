@@ -3,12 +3,13 @@ name = "spectral-comparison"
 version = "0.1.0"
 description = "Analysis of intractranial and reconstructed spectral features"
 readme = "README.md"
-requires-python = ">=3.13.11"
+requires-python = ">=3.14.5"
 dependencies = [
     "mne>=1.12",
     "polars",
     "plotnine",
-    "specparam>=2.0.0rc6",
+    "numpy<2.5",
+    "specparam>=2.0.0rc7",
     "pyrasa",
     "pesco",
     "seaborn",
@@ -67,7 +68,7 @@ ridgenine = { git = "https://github.com/briandconnelly/ridgenine" }
 
 [tool.ruff]
 line-length = 88
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
@@ -75,5 +76,5 @@ ignore = []
 
 [tool.black]
 line-length = 88
-target-version = ['py313']
+target-version = ['py314']
 

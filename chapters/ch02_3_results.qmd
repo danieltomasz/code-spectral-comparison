@@ -29,17 +29,11 @@ We next evaluated the stability of the clustering solution, the no-peak referenc
 
 The data-driven intervals also failed to transfer. @frauscher2018AtlasNormalIntracranial defined 22 intervals so that each held at least 4% of the total mean power in iEEG; applied to the HD-EEG spectra, the same rule yielded 21 intervals and split the range above 31.75 Hz into five separate intervals, where the atlas defined a single 31.75-80 Hz band. We attributed this gamma over-segmentation to the unit-power normalisation (see Discussion). Because the rule did not transfer, we retained the fixed 22 intervals of @frauscher2018AtlasNormalIntracranial for both modalities to keep them comparable.
 
-
 For this reason the 4% condition does not transfer to source-reconstructed data, and data-driven HD-EEG intervals are not directly comparable with the iEEG atlas. To preserve cross-modal comparability, the fixed 22 intervals of @frauscher2018AtlasNormalIntracranial were retained for both modalities in all regional peak-detection tests (@fig-stat-reg_dfiff ).
 
 The clustering, the no-peak reference, and the power-based interval definition were therefore potentially unstable across reasonable preprocessing choices. We did not apply this k-means descriptor to the aperiodic-corrected (`specparam`) spectra. In the subsequent analyses we instead characterised oscillatory content with the per-band parametrised-peak descriptor, which needs neither a clustering step nor a no-peak reference and was therefore less dependent on these preprocessing choices.
 
-
-### Relative power after specparam aperiodic part removal
-
-![Median relative band power per bilateral region, before aperiodic correction, as region × band heatmaps. Modalities are stacked — iEEG (top, A-B) over HD-EEG (bottom, C-D) — with the five canonical bands (left) and the 22 Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial) across the columns, so each band scheme aligns vertically between modalities. The value in each cell is the median across the region's channels of the within-band relative power (band power as a fraction of total power, so in [0, 1]); each panel has its own colorbar, auto-scaled to its maximum, because the wide canonical bands carry a much larger fraction of total power than the narrow Frauscher bins. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/relative_power/relpower_heatmaps_uncorrected.pdf){#fig-relpower-heatmaps}
-
-![Group average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's relative power min-max normalised across both modalities (the per-band shared scale of @afnan2023ValidatingMEGSource, shown as one 0-1 bar), so the within-band spatial pattern is comparable across modalities; absolute magnitude differs across bands and is not encoded. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/relative_power/relpower_maps_uncorrected.pdf){#fig-relpower-maps-uncorrected}
+###  Normalised relative-power maps
 
 #### Band-power map and cross-modal overlap
 
@@ -49,7 +43,13 @@ Regional relative-power maps agreed across modalities most strongly in the alpha
 
 <!-- [moved to chapter-level Discussion] gamma anti-correlation mechanism + the sentence that broke off at "Relative to the identity line" — see chat -->
 
+![Group average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). .](figures/chapter2/relative_power/relpower_maps_uncorrected.pdf){#fig-relpower-maps-uncorrected}
+
 ![Cross-modal correspondence of uncorrected relative band power. Each panel is one canonical band; each point is one bilateral MICCAI region, with source HD-EEG relative power on the x-axis and the iEEG atlas on the y-axis. Points are coloured by lobe, the solid line is the per-band OLS fit, and the dashed line marks identity (y = x). Strip labels give the per-band Pearson correlation.](figures/chapter2/relative_power/relpower_scatter_uncorrected.pdf){#fig-relpower-scatter-uncorrected}
+
+![Median relative band power per bilateral region, before aperiodic correction, as region × band heatmaps. Modalities are stacked — iEEG (top, A-B) over HD-EEG (bottom, C-D) — with the five canonical bands (left) and the 22 Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial) across the columns, so each band scheme aligns vertically between modalities. The value in each cell is the median across the region's channels of the within-band relative power (band power as a fraction of total power, so in [0, 1]); each panel has its own colorbar, auto-scaled to its maximum, because the wide canonical bands carry a much larger fraction of total power than the narrow Frauscher bins. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/relative_power/relpower_heatmaps_uncorrected.pdf){#fig-relpower-heatmaps}
+
+
 
 These per-band correlations should be read as descriptive rather than inferential. Relative band powers are *compositional*: within each channel they are normalised to a fixed total, so the five bands are not independent and an increase in one band necessarily depresses the others. This closure constraint induces negative coupling between bands by construction — part of the negative gamma correlation is therefore arithmetic rather than physiological — and it violates the independence assumptions of ordinary correlation and t-tests applied to the raw proportions [@filzmoser2012CorrelationAnalysisCompositional]. Valid inference would require analysing the maps in a log-ratio space (e.g. centred or isometric log-ratio transforms), which also removes any dependence on the per-channel normalisation choice. We retain the untransformed maps here as a descriptive summary and defer formal cross-modal inference to the aperiodic-separated peak descriptors below, which are not subject to the same closure.
 
@@ -58,6 +58,9 @@ These per-band correlations should be read as descriptive rather than inferentia
 To compare directly with the clustering analysis, we recomputed the overlap in the same heatmap display (@fig-overlap-pair-uncorrected). The overlap is strongest in the delta and alpha bands, with beta present in some regions. Cells are masked where the bootstrap 95% CI of the overlap includes zero, and a contrast dot marks cells where a reliable overlap sits on a flat residual — a reliable agreement with no significant rhythm in either modality, which matters for the presence-conditioned analysis below.
 
 ![Uncorrected cross-modal overlap. A) five canonical EEG bands B) the 22 intervals defined in @frauscher2018AtlasNormalIntracranial. Both panels are masked (grey) where the bootstrap 95% CI of the overlap includes 0 and carry a contrast dot where a reliable overlap sits on a flat residual (no significant rhythm in either modality — spurious agreement).](figures/chapter2/relative_power/overlap_pair_uncorrected.pdf){#fig-overlap-pair-uncorrected}
+
+### Relative power after specparam aperiodic part removal
+
 
 #### Aperiodic-removed band power
 
@@ -131,7 +134,7 @@ Jointly resolving peak amplitude and centre frequency per lobe (@fig-size-freq-l
 
 Removing the aperiodic component changes the cross-modal picture, and the change depends on how the oscillatory residual is defined. We computed the per-lobe oscillatory spectrum in 2 Hz bins under four extractors — the detrended residual and the modelled (specparam-peak) power, each in a log and a linear form — and compared modalities with a subject-clustered bootstrap (per-lobe mean ± 95% CI, @fig-residual-state) and a frequency cluster-permutation test (Maris-Oostenveld, resampling whole subjects) that controls the family-wise error across frequency (@fig-residual-diff).
 
-The **modelled** rhythmic power — the measure that does not depend on the accuracy of the aperiodic fit — shows iEEG and HD-EEG differing in a contiguous beta/low-gamma cluster (~25-48 Hz, iEEG higher) across most lobes, and a parietal alpha cluster (~10-12 Hz) where HD-EEG is higher; occipital high-gamma is again higher in iEEG. The **detrended residual** reproduces the beta excess but adds a broad high-frequency cluster (~55-80 Hz) in which HD-EEG appears systematically higher than iEEG across every lobe. This high-frequency block is present in the residual but absent from the modelled measure, identifying it as aperiodic-tail/noise leakage rather than a rhythm — exactly the conflation that @castanheira2025QuantifyingRhythmicArrhythmic predict for detrended spectra.
+The **modelled** rhythmic power — the measure that does not depend on the accuracy of the aperiodic fit — shows iEEG and HD-EEG differing in a contiguous beta/low-gamma cluster (~25-48 Hz, iEEG higher) across most lobes, and a parietal alpha cluster (~10-12 Hz) where HD-EEG is higher; occipital high-gamma is again higher in iEEG. The **detrended residual** reproduces the beta excess but adds a broad high-frequency cluster (~55-80 Hz) in which HD-EEG appears systematically higher than iEEG across every lobe. This high-frequency block is present in the residual but absent from the modelled measure, identifying it as aperiodic-tail/noise leakage rather than a rhythm — exactly the conflation that @castanheira2026AnalyticalChoicesImpact predict for detrended spectra.
 <!-- REVIEW: "exactly the conflation that ... predict" overstates the match. "the kind of conflation ... describe" is safer. -->
  The log and linear residuals agree on the sign and location of the clusters but differ in magnitude, as expected from their different units.
 
