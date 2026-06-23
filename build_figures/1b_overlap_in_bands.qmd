@@ -396,7 +396,7 @@ maps_fig.save(fig_dir / "relpower_maps_uncorrected.pdf", width=15, height=3.5, v
 maps_fig 
 ```
 
-![Group average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's relative power min-max normalised across both modalities (the per-band shared scale of @afnan2023ValidatingMEGSource, shown as one 0-1 bar), so the within-band spatial pattern is comparable across modalities; absolute magnitude differs across bands and is not encoded. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/relative_power/relpower_maps_uncorrected.pdf){#fig-relpower-maps-uncorrected}
+![Group-average relative PSD per ROI, faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is the within-band relative power (fraction of total power) on a single shared scale across all panels, so magnitude is comparable across bands and modalities — delta highest, gamma lowest. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/relative_power/relpower_maps_uncorrected.pdf){#fig-relpower-maps-uncorrected}
 
 
 #### Band-power map and cross-modal overlap
@@ -863,6 +863,7 @@ plot_last = plot_psd_brain_maps(
     modality_labels={"iEEG": "iEEG", "HD-EEG source": "HD-EEG"},
     legend_title="within-band\nosc. residual",
     cmap_name="rocket_r",
+    normalize=False,
 )
 plot_last.save(fig_dir / "relpower_maps_corrected.pdf", width=15, height=3.4, verbose=False)
 plot_last
