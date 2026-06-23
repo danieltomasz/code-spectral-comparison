@@ -869,7 +869,7 @@ plot_last.save(fig_dir / "relpower_maps_corrected.pdf", width=15, height=3.4, ve
 plot_last
 ```
 
-![Group-average oscillatory residual per ROI (aperiodic component removed), faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is each band's residual min-max normalised across both modalities (per-band shared scale), so the within-band spatial pattern is comparable across modalities. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/relative_power/relpower_maps_corrected.pdf){#fig-relpower-maps-corrected}
+![Group-average oscillatory residual per ROI (aperiodic component removed), faceted by canonical band (columns) and modality (rows: iEEG top, HD-EEG source bottom). Colour is the within-band oscillatory residual (fraction of total power) on a single shared scale across all panels, so magnitude is comparable across bands and modalities — alpha highest, gamma near zero. Hippocampus and amygdala have no cortical-surface geometry in the Frauscher ggsegpy atlas and are not shown.](figures/chapter2/relative_power/relpower_maps_corrected.pdf){#fig-relpower-maps-corrected}
 
 ```{python}
 #| label: fig-relpower-heatmaps-corrected
