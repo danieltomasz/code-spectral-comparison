@@ -31,7 +31,7 @@ The same divergence appears in the lobar mean spectra overlaid on the no-peak re
 
 #### Clustering stability and data driven intervals 
 
- The no-peak reference set, and the data-driven frequency intervals used for regional peak detection were sensitive to preprocessing choices and to the fitted frequency range,  small changes in the lower or upper bound altered the number of clusters and the membership and shape of the no-peak reference set. In the source-reconstructed HD-EEG data, where some configurations failed to produce a no-peak set at all.
+ The no-peak reference set, and the data-driven frequency intervals used for regional peak detection were sensitive to preprocessing choices and to the fitted frequency range, small changes in the lower or upper bound altered the number of clusters and the membership and shape of the no-peak reference set. In the source-reconstructed HD-EEG data, where some configurations failed to produce a no-peak set at all.
 
 The data-driven intervals also failed to transfer. @frauscher2018AtlasNormalIntracranial defined 22 intervals so that each held at least 4% of the total mean power in iEEG; applied to the HD-EEG spectra the same rule yielded 21 intervals and split the range above 31.75 Hz into five separate bins, where the atlas defined a single 31.75-80 Hz band. We attributed this gamma over-segmentation to the unit-power normalisation (see Discussion). Because the 4% rule did not transfer, we retained the fixed 22 intervals of @frauscher2018AtlasNormalIntracranial for both modalities in all regional peak-detection tests (@fig-stat-reg_dfiff), to keep them comparable.
 
@@ -71,25 +71,23 @@ To compare directly with the clustering analysis, we recomputed the overlap in t
 
 
 
-#### Aperiodic-removed band power {#sec-normative-corrected}
+#### Specparam fit procedure 
 
-We now repeat the same three views on the periodic part of the spectrum. Each channel is fit with specparam in its BIC-selected aperiodic mode (knee for iEEG, fixed for HD-EEG), and the fitted aperiodic component is subtracted from the normalised spectrum, so the per-band value is the channel's oscillatory power as a fraction of total power — on the same footing as the uncorrected relative band power above.
+We next repeated the regional band-power analyses after removing the fitted aperiodic component. For each channel, the aperiodic fit was reconstructed in linear power and subtracted from the empirical PSD. The residual was expressed relative to the channel's total spectral power, allowing comparison with the uncorrected relative-power maps. We treat this residual as an operational estimate of oscillatory power, rather than as a physiologically isolated periodic signal.
 
-The fitted aperiodic parameters (@tbl-aperiodic-params) summarise each modality's $1/f$ background. Offset and exponent are mean ± sd across channels; the knee is reported as the knee _frequency_ ($\text{knee}^{1/\chi}$, in Hz) as median [IQR], since the raw knee parameter is heavy-tailed (a few channels push the knee out of band).
+The knee model was retained for iEEG because it substantially improved fit quality. For HD-EEG, the simpler fixed model was retained as the primary specification even though BIC modestly favoured the knee model: the improvement in raw fit quality was small, and the fixed model provided a parsimonious description of the approximately linear source spectra. <!--  The sensitivity analyses examine the consequences of this choice. -->
 
-| modality | n channels | offset | exponent | knee freq (Hz) | R² (mean) |
-|---|---|---|---|---|---|
-| iEEG (knee) | 1772 | 5.096 ± 1.570 | 3.392 ± 0.884 | 11.23 [7.76, 15.92] | 0.982 |
-| HD-EEG (fixed) | 1444 | -2.787 ± 0.577 | 0.944 ± 0.325 | — | 0.908 |
+The knee model described the 1772 iEEG spectra consistently well, with a mean $R^2$ of 0.982 and only four channels below 0.90.  The knee is reported as its so called knee-frequency, $f_k=k^{1/\chi}$, because this is more interpretable than the raw knee parameter. Its median was 11.23 Hz, with an interquartile range of 7.76–15.92 Hz. Across channels, the mean offset was $5.096 \pm 1.570$ and the mean exponent was $3.392 \pm 0.884$.
 
-: Fitted aperiodic parameters per modality. {#tbl-aperiodic-params}
+The fixed model provided a less consistent description of the 1444 source-reconstructed HD-EEG spectra. Its mean $R^2$ was 0.908, and 376 channels (26%) fell below 0.90. The mean offset was $-2.787 \pm 0.577$, and the mean exponent was $0.944 \pm 0.325$. Mean absolute error was nevertheless similar between datasets—0.087 for iEEG and 0.073 for HD-EEG in log10-power units—showing that $R^2$ and absolute residual error capture different aspects of fit quality.
 
-The two modalities differ sharply in fit quality. In the iEEG atlas the knee model captured the background well and consistently (mean R² 0.98, only 4/1772 channels below 0.90). The fixed model on the source-reconstructed HD-EEG channels fit less well and far more variably (mean R² 0.91; 376/1444, 26%, below 0.90), with a much lower offset and a far shallower exponent (≈0.94 vs 3.39); mean absolute error was nonetheless comparable (0.087 vs 0.073 in log₁₀ power). The poorer, more dispersed HD-EEG fits and shallow exponent indicate that the HD-EEG aperiodic estimate — and hence its oscillatory residual — is less reliable than the iEEG one.
+The aperiodic parameters must be interpreted within their respective models. The knee-model exponent represents the asymptotic slope above the corner frequency, whereas the fixed-model exponent represents a single slope across the complete fitting range. Consequently, the numerical differences in exponent and offset cannot be interpreted directly as effects of recording modality. The lower and more variable fit quality in HD-EEG nevertheless indicates greater uncertainty in its fitted background and, therefore, in its subtraction-based oscillatory residual.
 
-Removing the aperiodic background isolates the rhythmic peaks from the $1/f$ tail, so the correspondence is no longer inflated (or, in gamma, depressed) by the steepness of the background. The closure constraint still applies — the linear residual is normalised to total power — so these per-band correlations remain descriptiv
+Removing the fitted background reduces the contribution of broadband spectral shape to the regional band-power maps, but it does not guarantee complete separation of rhythmic and broadband activity. Errors in the aperiodic fit propagate into the residual, which can also be negative where the empirical spectrum falls below the fitted background. 
 
 
-#### Band-power map on corrected spectra
+
+#### Band-power map on corrected spectra {#sec-normative-corrected}
 
 We repeat the two map views on the oscillatory residual — the normalised spectrum with its fitted aperiodic component removed — so each value is a region's within-band oscillatory power as a fraction of total power, summarised across channels as the group mean on the surface maps (@fig-relpower-maps-corrected) and the median in the heatmaps (@fig-relpower-heatmaps-corrected). As before, each heatmap panel is scaled to its own maximum, so colour is not comparable across panels, and the sub-1 Hz Frauscher interval is blank because the residual is defined only on the 1-80 Hz fit grid. 
 
@@ -111,15 +109,16 @@ Across the 38 bilateral regions the oscillatory-residual maps corresponded most 
 Under the confidence-interval masking, reliable overlap of the aperiodic-removed spectra concentrated in delta and alpha across most regions, with beta in a subset; on the 22 Frauscher intervals most higher-frequency cells were masked (@fig-overlap-pair-corrected).
 
 In the residual spectra the band-overlap was strongest in delta and alpha across most regions, present in beta in a subset, and weakest in gamma (@fig-overlap-pair-corrected, A); on the 22 Frauscher intervals the reliable cells concentrated in the low-frequency and alpha intervals, with much of the higher-frequency range masked where the bootstrap interval included zero (B).
-![Aperiodic-removed cross-modal overlap. A) five canonical EEG bands B) the 22 intervals defined in @frauscher2018AtlasNormalIntracranial. Both panels are masked (grey) where the bootstrap 95% CI of the overlap includes 0 and carry a contrast dot where a reliable overlap sits on a flat residual (no significant rhythm in either modality — spurious agreement).](figures/chapter2/relative_power/overlap_pair_corrected.pdf){#fig-overlap-pair-corrected}
-
  Conditioning instead on rhythm presence, the cells where both modalities carried a genuine rhythm were concentrated in alpha — high overlap in posterior regions — with some delta, whereas many beta and gamma cells were marked where the iEEG atlas carried a rhythm that source HD-EEG did not recover, most often in frontal and temporal regions (@fig-overlap-corr-presence-gated-pair).
 
  This uses the same subject-clustered bootstrap of the oscillatory-residual band power (95% CI > 0), referenced to the iEEG atlas, to drive the canonical-band overlap shown in @fig-overlap-corr-presence-gated-pair.
+![Aperiodic-removed cross-modal overlap. A) five canonical EEG bands B) the 22 intervals defined in @frauscher2018AtlasNormalIntracranial. Both panels are masked (grey) where the bootstrap 95% CI of the overlap includes 0 and carry a contrast dot where a reliable overlap sits on a flat residual (no significant rhythm in either modality — spurious agreement).](figures/chapter2/relative_power/overlap_pair_corrected.pdf){#fig-overlap-pair-corrected}
+
+
 
 ![Presence-conditioned cross-modal overlap of the aperiodic-removed residual, the two band schemes side by side: five canonical EEG bands (left) and the 22 Frauscher intervals (right), at their natural asymmetric width. In both panels the Afnan overlap is coloured only where a subject-clustered bootstrap (whole subjects resampled — iEEG patients, HD datasets; 95% CI of the mean residual band power excludes 0) finds a rhythm in **both** modalities; cells are masked where no rhythm is present in both and marked × where the iEEG atlas carries a rhythm that HD-EEG did not recover. Same renderer as the confidence-interval pair (@fig-overlap-pair-corrected); only the masking rule differs (presence rather than the overlap's confidence interval), and the band scheme differs between panels.](figures/chapter2/relative_power/overlap_pair_corrected_presencegated.pdf){#fig-overlap-corr-presence-gated-pair}
 
-#### lKg vs linear aperiodic correction
+#### Log vs linear aperiodic correction
 
 Removing the aperiodic component changes the cross-modal picture, and the change depends on how the oscillatory residual is defined. We computed the per-lobe oscillatory spectrum in 2 Hz bins under four extractors — the detrended residual and the modelled (specparam-peak) power, each in a log and a linear form — and compared modalities with a subject-clustered bootstrap (per-lobe mean ± 95% CI, @fig-residual-state)
 

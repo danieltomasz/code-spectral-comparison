@@ -9,13 +9,27 @@ The clustering comparison also bears on the reference itself. Removing the 0.5-8
 
 ### Removal of spectral backround mitigate some issues of relative power
 
-### 
+
+
+
 
 ### General discussion 
 
 The main lesson of this study is methodological as much as empirical. The comparison between the iEEG atlas and source-reconstructed HD-EEG does not reduce to whether one dataset reproduces the other: the answer depends on what counts as oscillatory power and how it is measured, and different spectral techniques turn the same data into different comparison objects. These summaries are closely related, but they are not interchangeable.
 
 The two modalities did not differ only in signal quality. Source-reconstructed HD-EEG produced a narrow, high-amplitude, alpha-dominated pattern, whereas the iEEG atlas showed a broader distribution of peaks together with a different aperiodic shape. Depending on the descriptor, the same contrast can read as partial cross-modal recovery or as failure. The result is therefore not a single stable answer hidden behind several analyses, but a demonstration that the answer depends on how "oscillation", "frequency", and "agreement" are operationalised. That operationalisation matters is a familiar point, but the variety of available descriptors makes it a practical problem here, not only a conceptual one.
+
+#### Aperiodic estimates are a modelling choice as much as a property of the spectrum
+
+
+The aperiodic exponent reported for iEEG depends on the assumed functional form. The knee and fixed models returned very different iEEG exponents (median χ = 3.30 vs 1.94), correlated only moderately across channels (r = 0.49), because forcing a single line through a spectrum with a genuine knee biases the exponent low by a channel-specific amount. In source HD-EEG, where the knee is essentially absent, the two exponents nearly coincided (0.94 vs 0.93; r = 0.88). The fitting range mattered the same asymmetric way: narrowing the fixed-mode range from 1–80 Hz to 1–45 Hz lowered the iEEG exponent by a near-constant offset (mean Δχ ≈ +0.47) while leaving the HD-EEG exponent essentially unchanged (Δχ ≈ −0.04). Cross-modal exponent comparisons must therefore hold the fitting range fixed, and are interpretable only below ~45 Hz, where the two modalities behave comparably.
+
+#### Aperiodic estimates are a modelling choice as much as a property of the spectrum
+
+The aperiodic exponent reported for iEEG depends on the assumed functional form. The knee and fixed models returned very different iEEG exponents (median χ = 3.30 vs 1.94), correlated only moderately across channels (r = 0.49), because forcing a single line through a spectrum with a genuine knee biases the exponent low by a channel-specific amount. In source HD-EEG, where the knee is essentially absent, the two exponents nearly coincided (0.94 vs 0.93; r = 0.88). The fitting range mattered the same asymmetric way: narrowing the fixed-mode range from 1–80 Hz to 1–45 Hz lowered the iEEG exponent by a near-constant offset (mean Δχ ≈ +0.47) while leaving the HD-EEG exponent essentially unchanged (Δχ ≈ −0.04). Cross-modal exponent comparisons must therefore hold the fitting range fixed, and are interpretable only below ~45 Hz, where the two modalities behave comparably.
+
+Two checks bound how far these dependencies are artefacts of the parameterisation. In HD-EEG the specparam fixed-mode exponent and the IRASA fractal exponent agreed almost perfectly over the same band (r = 0.97), so the recovered slope aligns with an independent method: the cross-modal and range effects are properties of the spectra, not of specparam. The remaining dependency is the functional form itself, since the same data fit with a 1/f versus a knee model yield different exponents whenever a knee is present. This sits alongside reports that the exponent depends on the estimation range [@boncompte2026AperiodicExponentBrain; @gerster2022SeparatingNeuralOscillations; @wilson2024ModelSelectionSpectral], and alongside Ameen et al. [-@ameen2025TemporallyResolvedAnalyses], who, working on this same iEEG-plus-HD-EEG dataset in sleep, found that whether the knee is included substantially affects stage-dependent variation. Our wakefulness result — iEEG needs the knee, HD-EEG does not — is consistent with theirs and supports selecting the aperiodic mode per modality rather than imposing one form across both.
+
 
 #### Branching paths
 
@@ -26,6 +40,12 @@ One choice shaped the analysis enough to state directly: we avoided relative ban
 Different spectral methods rest on different assumptions about what in the power spectrum counts as the phenomenon, so each makes a different "spectral object" available rather than offering a different window onto one stable spectral truth. These operationalisations are constructed but not arbitrary, and some are more useful than others in a clinical context. The cost of treating them loosely, referring to "the" spectral measure or moving between measures without saying which, is confusion and contradictory claims about a biomarker's validity.
 
 ### Limitations
+
+Recording condition is confounded with modality. The Frauscher atlas was recorded during resting wakefulness with eyes closed, whereas the HD-EEG cohort was recorded with eyes open. Eye state is not a neutral parameter for the features compared here. Opening the eyes attenuates posterior alpha, but the effect is broader than alpha blocking: in intracranial recordings — the same modality as the reference atlas — @geller2014EyeClosureCauses found that eye closure produces a widespread low-frequency power increase together with focal gamma attenuation. Eye state therefore moves the very periodic and aperiodic descriptors this comparison is built on, and it does so within iEEG itself, not only at the scalp. Because every iEEG channel was eyes-closed and every HD-EEG sensor eyes-open, recording condition cannot be separated from modality in this design: any cross-modal difference is, in principle, partly a condition difference.
+
+This confound does not undermine the agreement that was observed, and in one respect it sharpens it. Eyes-open recording should suppress alpha relative to eyes-closed, yet the source-reconstructed HD-EEG was the more narrowly alpha-dominated of the two patterns. The condition difference works against that contrast, so the narrow alpha dominance is unlikely to be an artefact of eye state and is more plausibly attributable to modality and source reconstruction. Where agreement is weak, the interpretation is less favourable: there modality and condition are genuinely entangled and cannot be told apart with these data. The aperiodic comparison is not immune either, since eye state and visual input can shift the aperiodic fit as well [@hsuComparingAperiodicBrain], so even the aperiodic-corrected agreement carries a residual condition component. Only a simultaneously recorded iEEG-and-scalp dataset, as noted under further steps, would let recording condition, modality, and population be separated.
+
+The cohorts also differ in how regional statistics are pooled: 1772 channels across 106 patients in iEEG against 1444 virtual sensors across 19 subjects in HD-EEG, so per-region estimates aggregate different numbers of observations, which should be kept in mind when interpreting between-region differences. Finally, the atlas was recorded in patients with refractory epilepsy; only channels in non-epileptogenic regions were retained, but how far these spectral features generalise to non-epileptic populations is a known limitation of the reference [@frauscher2018AtlasNormalIntracranial].
 
 
 ## Conclusions 
