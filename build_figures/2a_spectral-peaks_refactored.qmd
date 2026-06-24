@@ -1,0 +1,128 @@
+---
+title: "Spectral peaks: per-band prevalence, modelled power, and lobe oscillatory power"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+```{python}
+#| label: imports
+from pathlib import Path
+
+import pandas as pd
+
+from pesco import config
+from pesco.bandpower import LOBE_ORDER
+from pesco.lobe_power import lobe_oscillatory_diff, plot_lobe_oscillatory_diff
+from pesco.peaks import (
+    dataset_peaks,
+    no_peak_table,
+    plot_dominant_frequency_dumbbell,
+    plot_peak_centre_frequency,
+    plot_peak_prevalence_grid,
+    region_dominant_frequency_bootmode,
+)
+from pesco.utils import save_quarto_table
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
+DB_PATH = PROJECT_DIR / "data/interim/analysis.duckdb"
+fig_dir = Path("figures/chapter2/peaks")
+fig_dir.mkdir(parents=True, exist_ok=True)
+
+INPUT_CSV = {
+    "iEEG atlas": specparam_dir / "specparam_input_normalized_psd_ieeg.csv",
+    "source HD-EEG": specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv",
+}
+```
+
+```{python}
+#| label: compute
+# Peak backbone: one row per fitted peak, plus NaN-CF rows for no-peak spectra so
+# the channel set stays the prevalence denominator. Carries channel, region,
+# Lobe, subject, dataset for the downstream figures.
+all_peaks = pd.concat(
+    [dataset_peaks(path, ds, config.SELECTED_MODE[ds]) for ds, path in INPUT_CSV.items()],
+    ignore_index=True,
+)
+```
+
+#### Per-band peak prevalence
+
+Peak prevalence — the fraction of a region's channels carrying at least one fitted peak in a band — is reported per modality in the five canonical bands and the 22 data-driven Frauscher intervals (@fig-peak-prevalence). Source HD-EEG is dominated by alpha; the iEEG atlas is broader, with substantial beta and gamma. Because modelled power exists only where a peak is fitted, prevalence is also the peak-detection rate and must be read alongside the no-peak fractions below.
+
+```{python}
+#| label: build-prevalence-frauscher
+prevalence_fig = plot_peak_prevalence_grid(all_peaks)
+prevalence_fig.savefig(
+    fig_dir / "peak_prevalence_heatmap_frauscher.pdf", bbox_inches="tight", dpi=300
+)
+prevalence_fig
+```
+
+![Per-band peak prevalence by region and modality (specparam peaks, BIC-selected aperiodic mode), in the five canonical bands (left) and the 22 data-driven Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial), stacked iEEG (top, A-B) over HD-EEG (bottom, C-D). Cell colour is the fraction of a region's channels with at least one peak in the band, on a shared 0-1 scale. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels; the sub-1 Hz Frauscher interval is empty because peaks are fitted over 1-80 Hz.](figures/chapter2/peaks/peak_prevalence_heatmap_frauscher.pdf){#fig-peak-prevalence width="100%" column="page"}
+
+**Centre frequency and dominant rhythm.** Because canonical-band assignment is sensitive to peaks near a band edge, we also examined the fitted centre frequencies directly. The HD-EEG centre-frequency distribution is a sharp alpha mode at ~10 Hz, sitting squarely against the 8 and 13 Hz band edges, whereas iEEG peaks are broadly distributed with an additional high-gamma cluster near 70 Hz (@fig-centre-freq).
+
+```{python}
+#| label: build-centre-frequency
+cf_fig = plot_peak_centre_frequency(all_peaks)
+cf_fig.save(
+    fig_dir / "peak_centre_frequency_distribution.pdf",
+    width=8, height=3.5, dpi=150, verbose=False,
+)
+cf_fig
+```
+
+![Distribution of fitted peak centre frequencies per modality, against the canonical band edges (dashed). HD-EEG shows a single sharp ~10 Hz alpha mode; iEEG is broad with a high-gamma cluster.](figures/chapter2/peaks/peak_centre_frequency_distribution.pdf){#fig-centre-freq width="80%"}
+
+Per region we summarise the dominant rhythm as the centre frequency of each channel's highest-amplitude peak, taken as a subject-bootstrap mode rather than a single global maximum: within each region we resample the subjects with replacement and, on each draw, take the modal peak frequency (snapped to the 0.5 Hz grid) across the resampled channels. Channels with no fitted peak carry no dominant frequency and are excluded from the mode, but remain the miss count behind the per-region detection rate. Source HD-EEG sits at a tight alpha mode (~9-11 Hz) across almost every region, whereas iEEG scatters from delta-locked frontal and limbic regions up into beta for several lateral regions (@fig-dominant-dumbbell).
+
+```{python}
+#| label: build-dominant-dumbbell
+dom_freq = region_dominant_frequency_bootmode(all_peaks)
+dumbbell_fig = plot_dominant_frequency_dumbbell(dom_freq)
+dumbbell_fig.savefig(
+    fig_dir / "dominant_frequency_dumbbell.pdf", bbox_inches="tight", dpi=200
+)
+dumbbell_fig
+```
+
+![Dominant peak frequency per region: the centre frequency of each channel's highest-amplitude peak, summarised as a subject-bootstrap mode and joined across iEEG (blue) and source HD-EEG (red). The x-axis is logarithmic; dashed lines mark the canonical band edges. Regions follow the lobe order and colouring of the heatmaps. HD-EEG is alpha-locked across regions; iEEG ranges from delta to beta.](figures/chapter2/peaks/dominant_frequency_dumbbell.pdf){#fig-dominant-dumbbell width="70%"}
+
+**Channels without a fitted peak.** specparam returns no oscillatory peak for a sizeable minority of channels in both modalities — 375 of 1772 iEEG channels (21.2%) and 345 of 1444 source HD-EEG channels (23.9%, @tbl-no-peak). Because modelled power and per-band prevalence are defined only where a peak is fitted, these no-peak channels set the denominator for every periodic descriptor and are carried explicitly (rather than dropped) throughout. Their spatial distribution differs by modality: the frontal lobe carries the largest no-peak fraction in both (iEEG 24%, HD-EEG 32%), but HD-EEG is lowest over posterior cortex (parietal 13%, occipital 16%) — the alpha-rich regions where the source spectrum carries a clear rhythm — whereas iEEG is flatter across lobes, with its lowest no-peak rates in occipital and insular cortex (~15%).
+
+```{python}
+#| label: write-no-peak-table
+#| output: false
+# Write a Quarto-includable markdown partial (renders natively in both LaTeX and
+# Typst). Include it where the table should appear with:
+#   {{< include tables/tbl_no_peak.md >}}
+no_peak_tbl = no_peak_table(all_peaks, group="Lobe", group_order=LOBE_ORDER)
+save_quarto_table(
+    no_peak_tbl,
+    Path("tables/tbl_no_peak.md"),
+    caption=(
+        "Channels with no fitted specparam peak, by lobe and modality. Each "
+        "modality column pair gives the number of channels and the count "
+        "(percentage) of those channels for which specparam fitted no "
+        "oscillatory peak."
+    ),
+    label="tbl-no-peak",
+)
+```
+
+{{< include tables/tbl_no_peak.md >}}

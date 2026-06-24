@@ -6,7 +6,29 @@ Created on Mon Feb 11 15:22:52 2019
 @author: daniel
 """
 
+from pathlib import Path
+
 import numpy as np
+
+
+def save_quarto_table(df, path, caption=None, label=None, index=False):
+    """Write a DataFrame as a Quarto-includable markdown table partial.
+
+    The partial is a pandoc pipe table, so ``{{< include path >}}`` renders it as
+    a native table in *both* LaTeX and Typst output (no per-format table code).
+    When ``caption`` is given it is appended as a Quarto table caption; pass a
+    ``tbl-`` ``label`` (e.g. ``"tbl-no-peak"``) to make the table
+    cross-referenceable (``@tbl-no-peak``).
+
+    Returns the written path.
+    """
+    md = df.to_markdown(index=index)
+    if caption is not None:
+        md += f"\n\n: {caption}" + (f" {{#{label}}}" if label else "")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(md + "\n", encoding="utf-8")
+    return path
 
 
 def print_mat_nested(d, indent=0, nkeys=0):

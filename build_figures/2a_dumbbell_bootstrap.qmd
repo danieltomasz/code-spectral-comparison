@@ -1,0 +1,170 @@
+---
+title: "Dominant peak frequency: subject-bootstrap mode dumbbell"
+format:
+  typst:
+    number-sections: false
+    toc: false
+jupyter: spectral-comparison-3.14
+execute:
+  echo: true
+  output: true
+  cache: false
+  freeze: false
+---
+
+Reworks the dominant-peak-frequency dumbbell. Per channel we take the centre
+frequency of its **highest-amplitude** peak, snapped to the 0.5 Hz PSD grid. Per
+region x modality we resample the region's **subjects** with replacement (iEEG =
+`patient`, HD = `datasetNN` from the channel name) and, on each draw, take the
+**modal** snapped CF across the resampled peak-bearing channels. The point is the
+mode of the per-draw modes; the whisker is the 2.5/97.5 percentile of them.
+
+No-peak channels carry no dominant frequency, so they are excluded from the
+mode; the region's peak-detection rate (fraction of channels with any peak) is
+still recorded in the output CSV as the miss count. The x-axis is logarithmic to
+spread the crowded 1-13 Hz range. Reads the cached peaks written by
+`2a_spectral-peaks.qmd`; no specparam refit.
+
+```{python}
+#| label: setup
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter, NullFormatter
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
+REGION_INFO_CSV = PROJECT_DIR / "data/Frauscher2018/RegionInformation.csv"
+fig_dir = Path("figures/chapter2/peaks")
+fig_dir.mkdir(parents=True, exist_ok=True)
+
+DATASETS = ["iEEG atlas", "source HD-EEG"]
+DATASET_COLORS = {"iEEG atlas": "#2C7FB8", "source HD-EEG": "#E8546B"}
+LOBE_ORDER = ("Occipital", "Parietal", "Frontal", "Temporal")
+LOBE_TEXT_COLORS = {"Occipital": "red", "Parietal": "green", "Frontal": "#1f6feb", "Temporal": "black", "Insula": "black"}
+BAND_EDGES = [1, 4, 8, 13, 30, 80]
+B = 2000
+GRID = 0.5  # Hz: snap each highest-peak CF to this grid before taking the mode
+INPUT_CSV = {
+    "iEEG atlas": specparam_dir / "specparam_input_normalized_psd_ieeg.csv",
+    "source HD-EEG": specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv",
+}
+
+
+def load_meta(path):
+    df = pd.read_csv(path, index_col=0)
+    num = [c for c in df.columns if str(c).replace(".", "", 1).isdigit()]
+    return df[[c for c in df.columns if c not in num]]
+
+
+def region_lobe_map():
+    info = pd.read_csv(REGION_INFO_CSV)
+    r = info["Region name"].astype(str).str.strip().str.strip("'")
+    l = info["Lobe"].astype(str).str.strip().str.strip("'")
+    return dict(zip(r, l))
+
+
+def clustering_region_order():
+    info = pd.read_csv(REGION_INFO_CSV)
+    info["region"] = info["Region name"].astype(str).str.strip().str.strip("'")
+    info["lobe"] = info["Lobe"].astype(str).str.strip().str.strip("'")
+    rank = {lo: i for i, lo in enumerate(LOBE_ORDER)}
+    info["k"] = info["lobe"].map(lambda l: rank.get(l, len(LOBE_ORDER)))
+    return info.sort_values("k", kind="stable")["region"].tolist()
+```
+
+```{python}
+#| label: load
+# channel -> (subject, region) for the full channel set (the miss denominator)
+rows = []
+for ds, path in INPUT_CSV.items():
+    m = load_meta(path)
+    if ds == "iEEG atlas":
+        subj = m["patient"].astype(str).to_numpy()
+    else:  # HD subject lives in the channel name (datasetNN_...)
+        subj = pd.Index(m.index).str.extract(r"(dataset\d+)", expand=False).to_numpy()
+    rows.append(pd.DataFrame({
+        "dataset": ds, "channel": m.index.to_numpy(), "subject": subj,
+        "region": m["Region name"].astype(str).str.strip("'").to_numpy(),
+    }))
+channels = pd.concat(rows, ignore_index=True)
+
+all_peaks = pd.read_csv(specparam_dir / "specparam_selected_model_peaks_by_channel.csv")
+# per channel: CF of its highest-PW peak, snapped to the 0.5 Hz grid
+dom = all_peaks.loc[all_peaks.groupby(["dataset", "channel"], observed=True)["PW"].idxmax()]
+dom = dom[["dataset", "channel", "CF"]].assign(cf_bin=lambda d: np.round(d["CF"] / GRID) * GRID)
+chan = channels.merge(dom[["dataset", "channel", "cf_bin"]], on=["dataset", "channel"], how="left")
+chan["has_peak"] = chan["cf_bin"].notna()
+```
+
+```{python}
+#| label: bootstrap
+def boot_mode(sub, rng, B=B):
+    """Subject-bootstrap modal snapped-CF for one region/modality.
+
+    Returns (point, lo, hi, detection_rate, n_subjects); freqs are NaN where the
+    region carries no peak at all.
+    """
+    n_total = len(sub)
+    peaked = sub[sub["has_peak"]]
+    det = len(peaked) / n_total if n_total else np.nan
+    subj_ids = peaked["subject"].dropna().unique()
+    if len(subj_ids) == 0:
+        return np.nan, np.nan, np.nan, det, sub["subject"].nunique()
+    by_subj = {s: peaked.loc[peaked["subject"] == s, "cf_bin"].to_numpy() for s in subj_ids}
+    k = len(subj_ids)
+    modes = np.empty(B)
+    for b in range(B):
+        draw = np.concatenate([by_subj[s] for s in rng.choice(subj_ids, size=k, replace=True)])
+        vals, counts = np.unique(draw, return_counts=True)
+        modes[b] = vals[counts.argmax()]  # ties -> lowest frequency
+    v, c = np.unique(modes, return_counts=True)
+    return v[c.argmax()], *np.percentile(modes, [2.5, 97.5]), det, sub["subject"].nunique()
+
+
+rng = np.random.default_rng(3)
+res = pd.DataFrame(
+    [dict(dataset=ds, region=r, **dict(zip(["mode", "lo", "hi", "detection", "n_subjects"], boot_mode(sub, rng))))
+     for (ds, r), sub in chan.groupby(["dataset", "region"], observed=True)]
+)
+res.to_csv(specparam_dir / "dominant_frequency_bootmode_by_region.csv", index=False)
+res.groupby("dataset")[["mode", "detection"]].describe().T
+```
+
+```{python}
+#| label: fig-dumbbell
+order = list(reversed(clustering_region_order()))  # Occipital on top
+lobe_of = region_lobe_map()
+res_f = res[res["region"].isin(order)].copy()
+ypos = {r: i for i, r in enumerate(order)}
+res_f["y"] = res_f["region"].map(ypos)
+wide = res_f.pivot(index="region", columns="dataset", values="mode")
+
+fig, ax = plt.subplots(figsize=(8, 11))
+for e in BAND_EDGES:
+    ax.axvline(e, ls="--", color="#cccccc", lw=0.4)
+for r in order:  # connecting segment where both modalities have a mode
+    if r in wide.index and wide.loc[r].notna().all():
+        ax.plot([wide.loc[r, "iEEG atlas"], wide.loc[r, "source HD-EEG"]], [ypos[r], ypos[r]], color="#bdbdbd", lw=1.5, zorder=1)
+for ds in DATASETS:
+    d = res_f[res_f["dataset"] == ds].dropna(subset=["mode"])
+    ax.scatter(d["mode"], d["y"], s=44, color=DATASET_COLORS[ds], edgecolor="none", zorder=3, label=ds)
+ax.set_yticks(range(len(order)))
+ax.set_yticklabels(order, fontsize=6)
+for t, r in zip(ax.get_yticklabels(), order):
+    t.set_color(LOBE_TEXT_COLORS.get(lobe_of.get(r), "black"))
+ax.set_xscale("log")
+ax.set_xticks(BAND_EDGES)
+ax.xaxis.set_major_formatter(ScalarFormatter())  # plain numbers, not 10^x
+ax.xaxis.set_minor_formatter(NullFormatter())
+ax.set_xlim(0.95, 85)
+ax.set_ylim(-1, len(order))
+ax.set_xlabel("dominant peak frequency (Hz, log scale) — subject-bootstrap mode of highest-peak CF")
+ax.set_title("Dominant peak frequency per region (subject-bootstrap mode of highest-peak CF)")
+ax.legend(loc="lower right", fontsize=8, frameon=True)
+ax.tick_params(length=0)
+fig.savefig(fig_dir / "dominant_frequency_dumbbell_bootmode.pdf", bbox_inches="tight", dpi=200)
+fig
+```

@@ -77,7 +77,7 @@ We next repeated the regional band-power analyses after removing the fitted aper
 
 The knee model was retained for iEEG because it substantially improved fit quality. For HD-EEG, the simpler fixed model was retained as the primary specification even though BIC modestly favoured the knee model: the improvement in raw fit quality was small, and the fixed model provided a parsimonious description of the approximately linear source spectra. <!--  The sensitivity analyses examine the consequences of this choice. -->
 
-The knee model described the 1772 iEEG spectra consistently well, with a mean $R^2$ of 0.982 and only four channels below 0.90.  The knee is reported as its so called knee-frequency, $f_k=k^{1/\chi}$, because this is more interpretable than the raw knee parameter. Its median was 11.23 Hz, with an interquartile range of 7.76–15.92 Hz. Across channels, the mean offset was $5.096 \pm 1.570$ and the mean exponent was $3.392 \pm 0.884$.
+The knee model described the 1772 iEEG spectra consistently well, with a mean $R^2$ of 0.982 and only four channels below 0.90.  The knee is reported as its so called knee-frequency, $f_k=k^{1/\chi}$, because this is more interpretable than the raw knee parameter. Its median was 11.23 Hz, with an interquartile range of 7.76-15.92 Hz. Across channels, the mean offset was $5.096 \pm 1.570$ and the mean exponent was $3.392 \pm 0.884$.
 
 The fixed model provided a less consistent description of the 1444 source-reconstructed HD-EEG spectra. Its mean $R^2$ was 0.908, and 376 channels (26%) fell below 0.90. The mean offset was $-2.787 \pm 0.577$, and the mean exponent was $0.944 \pm 0.325$. Mean absolute error was nevertheless similar between datasets—0.087 for iEEG and 0.073 for HD-EEG in log10-power units—showing that $R^2$ and absolute residual error capture different aspects of fit quality.
 
@@ -125,25 +125,40 @@ Removing the aperiodic component changes the cross-modal picture, and the change
 ![Per-lobe oscillatory power in 2 Hz bins (subject-clustered bootstrap mean ± 95% CI), for the four extractors (rows: detrended residual / modelled, in log and linear form) and the two modalities (columns). Lines coloured by lobe.](figures/chapter2/peaks/lobe_oscillatory_state_bootstrap.pdf){#fig-residual-state width="100%" column="page"}
 
 
-### Directly modelled specparam peaks
+### Directly parametrised  specparam peaks
 
-Having modelled the oscillatory peaks explicitly, we characterize them by three properties: where they sit (centre frequency), how often they occur (prevalence), and how strong they are (modelled amplitude).
+By parametrising the oscillatory peaks explicitly, we characterise them by three properties: where they sit (centre frequency), how often they occur (prevalence), and how strong they are (modelled amplitude). All three are conditional on a peak being fitted in the first place, so we begin with the channels that carry no modelled rhythm at all.
+
+`specparam` fitted no oscillatory peak in a comparable minority of channels in both modalities: 375 of 1772 iEEG channels (21.2%) and 345 of 1444 source HD-EEG channels (23.9%; @tbl-no-peak). In source HD-EEG the no-peak rate mirrors the alpha topography: it is lowest over posterior cortex (parietal 13%, occipital 16%), where a clear alpha rhythm dominates the spectrum, and highest frontally (32%), where the spectrum is flattest. The iEEG atlas is more uniform across lobes (15-24%), with its lowest rates in occipital and insular cortex. Because peak prevalence and modelled amplitude are defined only where a peak exists, this no-peak set is the denominator for every periodic descriptor below.
+
+
+::: {#tbl-no-peak}
+![](tables/tbl_no_peak.pdf)
+
+Channels with no fitted specparam peak, by lobe and modality.
+:::
+
 
 #### Peak centre frequency
 
- We examined the fitted centre frequencies directly. The HD-EEG centre-frequency distribution is a sharp alpha mode at ~10 Hz, sitting squarely against the 8 and 13 Hz band edges, whereas iEEG peaks are broadly distributed with an additional high-gamma cluster near 70 Hz (@fig-centre-freq). The per-region dominant peak frequency — the centre frequency of the single highest-amplitude peak — is alpha-locked across almost all regions in HD-EEG but scatters into beta and gamma for several frontal and insular regions in iEEG — most extremely the inferior frontal gyrus and posterior cingulate (@fig-dominant-dumbbell). The full per-region distribution of peak frequencies confirms a narrow posterior alpha ridge in HD against broader, multimodal iEEG ridges (@fig-region-ridges).
+ We examined the fitted centre frequencies directly. The HD-EEG centre-frequency distribution is a sharp alpha mode at ~10 Hz, sitting squarely against the 8 and 13 Hz band edges, whereas iEEG peaks are broadly distributed with an additional high-gamma cluster near 70 Hz (@fig-centre-freq).
 
 ![Distribution of fitted peak centre frequencies per modality, against the canonical band edges (dashed). HD-EEG shows a single sharp ~10 Hz alpha mode; iEEG is broad with a high-gamma cluster.](figures/chapter2/peaks/peak_centre_frequency_distribution.pdf){#fig-centre-freq width="80%"}
-
+  
+We examined the per-region dominant peak frequency using the subject-bootstrap mode of each channel's highest-amplitude peak. Dominant peak is within alpha (~9-11 Hz) across almost every region in source HD-EEG. In iEEG it is far more variable: delta- to theta-locked in medial-frontal and limbic cortex (medial segment of the superior frontal gyrus, triangular part of the inferior frontal gyrus, hippocampus), yet pushed up into beta over lateral parietal and cingulate cortex — most extremely the supramarginal gyrus, posterior cingulate, and opercular part of the inferior frontal gyrus (@fig-dominant-dumbbell). 
 ![Dominant peak frequency per region: the centre frequency of the highest-amplitude peak, connecting iEEG (blue) and source HD-EEG (red) for each region. Regions follow the lobe order and colouring of the heatmaps.](figures/chapter2/peaks/dominant_frequency_dumbbell.pdf){#fig-dominant-dumbbell width="70%"}
+
+The full per-region distribution of peak frequencies confirms a narrow posterior alpha ridge in HD against broader, multimodal iEEG ridges (@fig-region-ridges).
 
 ![Per-region distribution of peak centre frequencies (histogram ridgeline, normalised per region), filled by lobe. HD-EEG (right) is a narrow posterior alpha ridge; iEEG (left) is broader and multimodal.](figures/chapter2/peaks/region_frequency_ridges.pdf){#fig-region-ridges width="100%" column="page"}
 
 Pooling all regions, the joint distribution of peak amplitude and centre frequency (@fig-size-freq) shows the same contrast: HD-EEG peaks form one dense high-amplitude alpha mode at ~10 Hz with a sparse low-amplitude tail above it, whereas iEEG peaks spread along the frequency axis at moderate amplitude, with a distinct beta/low-gamma body and a high-gamma cluster near 70 Hz.
 
+Jointly resolving peak amplitude and centre frequency per lobe (@fig-size-freq-lobe) confirms that the two descriptors are not redundant. In HD-EEG the per-channel peak density concentrates into a single tall alpha column in occipital and parietal lobes — high amplitude at ~10 Hz — and thins sharply elsewhere. In iEEG the density is spread along the frequency axis at moderate amplitude, with frontal and temporal lobes carrying beta and low-gamma peaks that have no HD-EEG counterpart. Normalising to peaks per channel makes the lobes comparable despite their different channel counts, and shows the cross-modal divergence is one of *where in the spectrum* rhythms occur, not merely how strong they are.
+
 ![Peak size (amplitude) vs centre frequency, binned density per modality (all regions pooled). HD-EEG is a single high-amplitude alpha mode; iEEG is spread across frequency with a high-gamma cluster.](figures/chapter2/peaks/peak_size_vs_frequency.pdf){#fig-size-freq width="100%" column="page"}
 
-Jointly resolving peak amplitude and centre frequency per lobe (@fig-size-freq-lobe) confirms that the two descriptors are not redundant. In HD-EEG the per-channel peak density concentrates into a single tall alpha column in occipital and parietal lobes — high amplitude at ~10 Hz — and thins sharply elsewhere. In iEEG the density is spread along the frequency axis at moderate amplitude, with frontal and temporal lobes carrying beta and low-gamma peaks that have no HD-EEG counterpart. Normalising to peaks per channel makes the lobes comparable despite their different channel counts, and shows the cross-modal divergence is one of *where in the spectrum* rhythms occur, not merely how strong they are.
+
 
 ![Peak size (amplitude) vs centre frequency, binned density per lobe (rows) and modality (columns), normalised to peaks per channel so lobes of different size are comparable. HD-EEG concentrates in a posterior alpha column; iEEG spreads across frequency, with frontal/temporal beta-gamma.](figures/chapter2/peaks/peak_size_vs_frequency_by_lobe.pdf){#fig-size-freq-lobe width="100%" column="page"}
 
@@ -151,19 +166,13 @@ Jointly resolving peak amplitude and centre frequency per lobe (@fig-size-freq-l
 
 Once oscillations are modelled explicitly, peak prevalence — the fraction of a region's channels carrying at least one fitted peak in a band — diverges sharply between modalities (@fig-peak-prevalence). Source HD-EEG is dominated by alpha: mean prevalence across regions is 0.63 in alpha but only 0.11 in theta, 0.05 in gamma and 0.01 in delta. The iEEG atlas is broader, with substantial beta (0.40), gamma (0.26) and alpha (0.24) prevalence. The difference map (HD − iEEG) is strongly positive in alpha — HD detects alpha peaks far more often, especially in posterior regions — and negative across beta and gamma, where iEEG detects high-frequency peaks that the source fit does not recover.
 
-
 Because modelled power exists only where a peak is fitted, prevalence is also the peak-detection rate and must be read alongside the amplitude and centre-frequency descriptors. Mean peaks per channel were similar across modalities (iEEG 1.45, HD 1.37 under the main settings), but 99.7% of iEEG channels passed the $R^2 > 0.9$ screen against only 74.0% of HD channels, with the missing HD peaks concentrated in the high-frequency bands where the source spectrum is flattest.
 
-![Per-band peak prevalence by region and modality (specparam peaks, BIC-selected aperiodic mode). Regions are grouped by lobe; cell colour is the fraction of a region's channels with at least one peak in the band.](figures/chapter2/peaks/peak_prevalence_heatmap.pdf){#fig-peak-prevalence width="100%" column="page"}
-
-
-
+![Per-band peak prevalence by region and modality (specparam peaks, BIC-selected aperiodic mode). Regions are grouped by lobe; cell colour is the fraction of a region's channels with at least one peak in the band.](figures/chapter2/peaks/peak_prevalence_heatmap_frauscher.pdf){#fig-peak-prevalence width="100%" column="page"}
 
 The amplitude of the highest peak per band (median across the channels that carry a peak) is not redundant with prevalence. In HD-EEG the largest modelled power sits in posterior alpha, matching the prevalence pattern. In iEEG, by contrast, amplitude is spread across bands and regions with no single dominant band — the tallest peaks fall in scattered delta, theta and alpha regions rather than tracking the broad beta detection of the prevalence map (@fig-modelled-power).
 
-
-
-![Modelled band power by region and modality: median amplitude (log-power height above the aperiodic component) of the highest peak in each band, over channels with a detected peak.](figures/chapter2/peaks/modelled_power_heatmap.pdf){#fig-modelled-power width="100%" column="page"}
+![Modelled band power by region and modality: median amplitude (log-power height above the aperiodic component) of the highest peak in each band, over channels with a detected peak.](figures/chapter2/peaks/modelled_power_heatmap_frauscher.pdf){#fig-modelled-power width="100%" column="page"}
 
 
 ### Cross modal agreement 

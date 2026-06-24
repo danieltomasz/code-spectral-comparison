@@ -1,6 +1,6 @@
 ## Discussion
 
-### Clustering can retrive some spectral structure but is unstable
+### Clustering can retrieve some spectral structure, but is unstable
 
 The clustering descriptor was itself unstable, and that instability is part of the finding. The k-means solution, the no-peak reference set, and the data-driven interval definition all shifted with reasonable changes to preprocessing and fitting range, and the 4% power rule of the original atlas did not transfer to the source-reconstructed spectra: applied to HD-EEG it over-segmented the high-frequency tail. This over-segmentation follows from the unit-power normalisation rather than from physiological structure: normalising each spectrum to unit total power redistributes mass toward the flat, high-frequency tail of the source data, which the cumulative 4% rule then carves into spurious narrow intervals. Because the clustering descriptor was not robust to these choices, we did not carry it forward to the aperiodic-corrected spectra, and characterised oscillatory content with the more stable per-band parametrised-peak descriptor, which needs neither a clustering step nor a no-peak reference. The instability is not noise around a true answer; it is a reason to prefer one operationalisation over another.
 

@@ -19,4 +19,11 @@ from pesco.bandpower import (  # noqa: F401
     relative_psd_df,
 )
 from pesco.stats import regional_permtest  # noqa: F401
-from pesco.peaks import peak_survival  # noqa: F401
+from pesco.peaks import (  # noqa: F401
+    dataset_peaks,
+    no_peak_fraction,
+    no_peak_table,
+    peak_survival,
+    plot_no_peak_fraction,
+    plot_peak_centre_frequency,
+)
