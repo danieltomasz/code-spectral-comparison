@@ -26,12 +26,13 @@ import pandas as pd
 
 from pesco import config
 from pesco.bandpower import LOBE_ORDER
-from pesco.lobe_power import lobe_oscillatory_diff, plot_lobe_oscillatory_diff
 from pesco.peaks import (
     dataset_peaks,
     no_peak_table,
     plot_dominant_frequency_dumbbell,
+    plot_modelled_power_grid,
     plot_peak_centre_frequency,
+    plot_peak_prevalence_difference_grid,
     plot_peak_prevalence_grid,
     region_dominant_frequency_bootmode,
 )
@@ -39,7 +40,6 @@ from pesco.utils import save_quarto_table
 
 PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
 specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
-DB_PATH = PROJECT_DIR / "data/interim/analysis.duckdb"
 fig_dir = Path("figures/chapter2/peaks")
 fig_dir.mkdir(parents=True, exist_ok=True)
 
@@ -74,6 +74,30 @@ prevalence_fig
 ```
 
 ![Per-band peak prevalence by region and modality (specparam peaks, BIC-selected aperiodic mode), in the five canonical bands (left) and the 22 data-driven Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial), stacked iEEG (top, A-B) over HD-EEG (bottom, C-D). Cell colour is the fraction of a region's channels with at least one peak in the band, on a shared 0-1 scale. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels; the sub-1 Hz Frauscher interval is empty because peaks are fitted over 1-80 Hz.](figures/chapter2/peaks/peak_prevalence_heatmap_frauscher.pdf){#fig-peak-prevalence width="100%" column="page"}
+
+```{python}
+#| label: build-prevalence-difference
+prevalence_diff_fig = plot_peak_prevalence_difference_grid(all_peaks)
+prevalence_diff_fig.savefig(
+    fig_dir / "peak_prevalence_difference_heatmap.pdf", bbox_inches="tight", dpi=300
+)
+prevalence_diff_fig
+```
+
+![Prevalence difference (source HD-EEG − iEEG atlas) by region and band, in the five canonical bands (A) and the 22 data-driven Frauscher intervals (B, @frauscher2018AtlasNormalIntracranial). Blue: HD detects the band more often (strong in alpha); red: iEEG more often (beta/gamma). The diverging scale is symmetric about 0 (no difference) and shared across both panels.](figures/chapter2/peaks/peak_prevalence_difference_heatmap.pdf){#fig-prevalence-scatter width="100%" column="page"}
+
+**Modelled power.** The amplitude of the highest peak per band (median across the channels that carry a peak) tracks prevalence: posterior alpha carries the largest modelled power in HD-EEG, whereas in iEEG the amplitude is spread across beta in frontal and central regions (@fig-modelled-power).
+
+```{python}
+#| label: build-modelled-power-frauscher
+power_fig = plot_modelled_power_grid(all_peaks)
+power_fig.savefig(
+    fig_dir / "modelled_power_heatmap_frauscher.pdf", bbox_inches="tight", dpi=300
+)
+power_fig
+```
+
+![Modelled band power by region and modality — median amplitude (log-power height above the aperiodic component) of the highest peak in each band, over channels with a detected peak — in the five canonical bands (left) and the 22 Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial), stacked iEEG (top, A-B) over HD-EEG (bottom, C-D). One shared colour scale across panels (amplitude is scheme-independent); white cells carry no detected peak. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/peaks/modelled_power_heatmap_frauscher.pdf){#fig-modelled-power width="100%" column="page"}
 
 **Centre frequency and dominant rhythm.** Because canonical-band assignment is sensitive to peaks near a band edge, we also examined the fitted centre frequencies directly. The HD-EEG centre-frequency distribution is a sharp alpha mode at ~10 Hz, sitting squarely against the 8 and 13 Hz band edges, whereas iEEG peaks are broadly distributed with an additional high-gamma cluster near 70 Hz (@fig-centre-freq).
 

@@ -112,6 +112,7 @@ In the residual spectra the band-overlap was strongest in delta and alpha across
  Conditioning instead on rhythm presence, the cells where both modalities carried a genuine rhythm were concentrated in alpha — high overlap in posterior regions — with some delta, whereas many beta and gamma cells were marked where the iEEG atlas carried a rhythm that source HD-EEG did not recover, most often in frontal and temporal regions (@fig-overlap-corr-presence-gated-pair).
 
  This uses the same subject-clustered bootstrap of the oscillatory-residual band power (95% CI > 0), referenced to the iEEG atlas, to drive the canonical-band overlap shown in @fig-overlap-corr-presence-gated-pair.
+
 ![Aperiodic-removed cross-modal overlap. A) five canonical EEG bands B) the 22 intervals defined in @frauscher2018AtlasNormalIntracranial. Both panels are masked (grey) where the bootstrap 95% CI of the overlap includes 0 and carry a contrast dot where a reliable overlap sits on a flat residual (no significant rhythm in either modality — spurious agreement).](figures/chapter2/relative_power/overlap_pair_corrected.pdf){#fig-overlap-pair-corrected}
 
 
@@ -177,12 +178,12 @@ The amplitude of the highest peak per band (median across the channels that carr
 
 ### Cross modal agreement 
 
-Cross-modal agreement of the regional prevalence *pattern* (Spearman across the 38 bilateral regions) is confined to the low and mid bands: alpha $\rho = 0.60$ and beta $\rho = 0.47$, against delta $\rho = 0.04$, theta $\rho = -0.07$ and gamma $\rho = -0.25$ (@fig-prevalence-scatter). In alpha the points sit above the identity line — HD detects alpha in more regions than iEEG — yet the two modalities still rank regions consistently. This mirrors the uncorrected relative-band-power result (alpha strongest, gamma anti-correlated), now with the aperiodic background modelled out rather than carried in the power.
+Cross-modal agreement of the regional prevalence *pattern* (Spearman across the 38 bilateral regions) is confined to the low and mid bands: alpha $\rho = 0.60$ and beta $\rho = 0.47$, against delta $\rho = 0.04$, theta $\rho = -0.07$ and gamma $\rho = -0.25$. In alpha the points sit above the identity line — HD detects alpha in more regions than iEEG — yet the two modalities still rank regions consistently. This mirrors the uncorrected relative-band-power result (alpha strongest, gamma anti-correlated), now with the aperiodic background modelled out rather than carried in the power.
 
-![Prevalence difference (source HD-EEG − iEEG atlas). Blue: HD detects the band more often (strong in alpha); red: iEEG more often (beta/gamma).](figures/chapter2/peaks/peak_prevalence_difference_heatmap.pdf){#fig-prevalence-diff width="70%"}
+![Prevalence difference (source HD-EEG − iEEG atlas). Blue: HD detects the band more often (strong in alpha); red: iEEG more often (beta/gamma).](figures/chapter2/peaks/peak_prevalence_difference_heatmap.pdf){#fig-prevalence-scatter} width="70%"}
 
 
-#### Modelled power
+
 
 
 

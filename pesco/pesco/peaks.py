@@ -388,6 +388,149 @@ def plot_peak_prevalence_grid(
     return fig
 
 
+def plot_peak_prevalence_difference_grid(
+    peaks: pd.DataFrame,
+    canonical: Sequence[Band] = EEG_BANDS,
+    datasets: Sequence[str] = DATASETS,
+    cmap: str = "RdBu",
+):
+    """2-panel region x band prevalence-difference heatmap: canonical | Frauscher.
+
+    Cell is the prevalence difference ``datasets[1] - datasets[0]`` (source HD-EEG
+    minus iEEG atlas), each modality's prevalence from :func:`region_band_prevalence`,
+    in the five canonical bands (left) and the 22 Frauscher intervals (right). A
+    diverging scale centred on 0 is shared across both panels (symmetric
+    ``±max|diff|``): blue where HD detects the band more often, red where iEEG does.
+    The difference twin of :func:`plot_peak_prevalence_grid`; reuses
+    :func:`pesco.experimental.facets.overlap_heatmap_grid`. Returns the matplotlib
+    Figure; the caller saves.
+    """
+    from pesco.bandpower import BAND_LABELS
+    from pesco.experimental.facets import overlap_heatmap_grid
+
+    a, b = datasets[0], datasets[1]
+    canon = region_band_prevalence(peaks, list(canonical), datasets)
+    canon = {ds: df.rename(columns=BAND_LABELS) for ds, df in canon.items()}  # symbols -> δ θ α β γ words
+    frausch = region_band_prevalence(peaks, frauscher_bands(), datasets)
+
+    region_lobe = (
+        peaks.dropna(subset=["region"])
+        .drop_duplicates("region")
+        .set_index("region")["Lobe"]
+        .to_dict()
+    )
+    regions = sorted(set(canon[a].index) & set(canon[b].index))
+    canon_diff = canon[b].reindex(regions) - canon[a].reindex(regions)
+    frausch_diff = frausch[b].reindex(regions) - frausch[a].reindex(regions)
+    m = max(np.nanmax(np.abs(canon_diff.to_numpy())), np.nanmax(np.abs(frausch_diff.to_numpy())))
+    panels = [
+        {"df": canon_diff, "title": "canonical", "xlabel": "Frequency band"},
+        {"df": frausch_diff, "title": "Frauscher", "xlabel": "Frauscher interval (Hz)"},
+    ]
+    fig, _ = overlap_heatmap_grid(
+        panels,
+        region_lobe,
+        vmin=-m,
+        vmax=m,  # symmetric so 0 (no difference) sits at the diverging midpoint
+        nrows=1,
+        cmap=cmap,
+        cbar_label=f"prevalence difference ({b} − {a})",
+        row_height=0.32,
+        tick_fontsize=13,
+        ytick_fontsize=12,
+        title_fontsize=15,
+        axis_label_fontsize=12,
+    )
+    return fig
+
+
+def region_band_power(
+    peaks: pd.DataFrame,
+    bands: Sequence[Band],
+    datasets: Sequence[str] = DATASETS,
+) -> dict[str, pd.DataFrame]:
+    """region x band median modelled power per modality, for any band scheme.
+
+    Per channel, a band's modelled power is the amplitude (``PW``) of its highest
+    peak in the band; the regional value is the median across the channels that
+    carry a peak there (no-peak channels are absent, not zero, so the cell is NaN
+    where no channel has a peak). Returns one region x band frame per dataset.
+    """
+    names = [b.name for b in bands]
+    pk = peaks.dropna(subset=["CF", "PW"]).copy()
+    pk["sb"] = pk["CF"].map(lambda cf: _assign_band(cf, bands))
+    pk = pk.dropna(subset=["sb"])
+    best = pk.groupby(["dataset", "channel", "region", "sb"], observed=True)["PW"].max()
+    med = (
+        best.reset_index()
+        .groupby(["dataset", "region", "sb"], observed=True)["PW"]
+        .median()
+        .reset_index(name="median_power")
+    )
+    return {
+        ds: med[med["dataset"] == ds]
+        .pivot(index="region", columns="sb", values="median_power")
+        .reindex(columns=names)
+        for ds in datasets
+    }
+
+
+def plot_modelled_power_grid(
+    peaks: pd.DataFrame,
+    canonical: Sequence[Band] = EEG_BANDS,
+    datasets: Sequence[str] = DATASETS,
+    cmap: str = "rocket_r",
+):
+    """4-panel region x band modelled-power heatmap: canonical bands | Frauscher intervals.
+
+    iEEG (top, A-B) over source HD-EEG (bottom, C-D), each modality in the five
+    canonical bands and the 22 Frauscher intervals. The cell is the median highest-
+    peak amplitude over the channels that carry a peak (white where none). Amplitude
+    is scheme-independent (a peak's height is the same wherever it is binned), so a
+    single 0-max colour scale is shared across panels. Built on the peak backbone
+    from :func:`dataset_peaks`; reuses
+    :func:`pesco.experimental.facets.overlap_heatmap_grid`. Returns the matplotlib
+    Figure; the caller saves.
+    """
+    from pesco.bandpower import BAND_LABELS
+    from pesco.experimental.facets import overlap_heatmap_grid
+
+    canon = region_band_power(peaks, list(canonical), datasets)
+    canon = {ds: df.rename(columns=BAND_LABELS) for ds, df in canon.items()}  # symbols -> δ θ α β γ words
+    frausch = region_band_power(peaks, frauscher_bands(), datasets)
+
+    region_lobe = (
+        peaks.dropna(subset=["region"])
+        .drop_duplicates("region")
+        .set_index("region")["Lobe"]
+        .to_dict()
+    )
+    a, b = datasets[0], datasets[1]
+    regions = sorted(set(canon[a].index) & set(canon[b].index))
+    panels = [
+        {"df": canon[a].reindex(regions), "title": f"{a} · canonical", "xlabel": "Frequency band"},
+        {"df": frausch[a].reindex(regions), "title": f"{a} · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+        {"df": canon[b].reindex(regions), "title": f"{b} · canonical", "xlabel": "Frequency band"},
+        {"df": frausch[b].reindex(regions), "title": f"{b} · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+    ]
+    vmax = float(np.nanmax([np.nanmax(p["df"].to_numpy()) for p in panels]))
+    fig, _ = overlap_heatmap_grid(
+        panels,
+        region_lobe,
+        vmin=0.0,
+        vmax=vmax,  # shared scale; amplitude is the same wherever a peak is binned
+        nrows=2,  # iEEG (top) over HD-EEG (bottom); canonical | Frauscher across cols
+        cmap=cmap,
+        cbar_label="median modelled power",
+        row_height=0.32,
+        tick_fontsize=13,
+        ytick_fontsize=12,
+        title_fontsize=15,
+        axis_label_fontsize=12,
+    )
+    return fig
+
+
 def no_peak_fraction(
     peaks: pd.DataFrame,
     group: str = "Lobe",
