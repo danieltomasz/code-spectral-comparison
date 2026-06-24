@@ -147,6 +147,7 @@ Channels with no fitted specparam peak, by lobe and modality.
 ![Distribution of fitted peak centre frequencies per modality, against the canonical band edges (dashed). HD-EEG shows a single sharp ~10 Hz alpha mode; iEEG is broad with a high-gamma cluster.](figures/chapter2/peaks/peak_centre_frequency_distribution.pdf){#fig-centre-freq width="80%"}
   
 We examined the per-region dominant peak frequency using the subject-bootstrap mode of each channel's highest-amplitude peak. Dominant peak is within alpha (~9-11 Hz) across almost every region in source HD-EEG. In iEEG it is far more variable: delta- to theta-locked in medial-frontal and limbic cortex (medial segment of the superior frontal gyrus, triangular part of the inferior frontal gyrus, hippocampus), yet pushed up into beta over lateral parietal and cingulate cortex — most extremely the supramarginal gyrus, posterior cingulate, and opercular part of the inferior frontal gyrus (@fig-dominant-dumbbell). 
+
 ![Dominant peak frequency per region: the centre frequency of the highest-amplitude peak, connecting iEEG (blue) and source HD-EEG (red) for each region. Regions follow the lobe order and colouring of the heatmaps.](figures/chapter2/peaks/dominant_frequency_dumbbell.pdf){#fig-dominant-dumbbell width="70%"}
 
 The full per-region distribution of peak frequencies confirms a narrow posterior alpha ridge in HD against broader, multimodal iEEG ridges (@fig-region-ridges).
@@ -178,9 +179,11 @@ The amplitude of the highest peak per band (median across the channels that carr
 
 ### Cross modal agreement 
 
-Cross-modal agreement of the regional prevalence *pattern* (Spearman across the 38 bilateral regions) is confined to the low and mid bands: alpha $\rho = 0.60$ and beta $\rho = 0.47$, against delta $\rho = 0.04$, theta $\rho = -0.07$ and gamma $\rho = -0.25$. In alpha the points sit above the identity line — HD detects alpha in more regions than iEEG — yet the two modalities still rank regions consistently. This mirrors the uncorrected relative-band-power result (alpha strongest, gamma anti-correlated), now with the aperiodic background modelled out rather than carried in the power.
+As a separate analysis, we quantified cross-modal agreement of the regional prevalence *pattern* with a per-band Spearman correlation of region-wise prevalence (HD vs iEEG, across the 38 bilateral regions). Agreement is confined to the low and mid bands: alpha $\rho = 0.60$ and beta $\rho = 0.47$, against delta $\rho = 0.04$, theta $\rho = -0.07$ and gamma $\rho = -0.25$. The two modalities thus rank regions consistently in alpha and beta, even though HD detects alpha in more regions overall. This mirrors the uncorrected relative-band-power result (alpha strongest, gamma anti-correlated), now with the aperiodic background modelled out rather than carried in the power.
 
-![Prevalence difference (source HD-EEG − iEEG atlas). Blue: HD detects the band more often (strong in alpha); red: iEEG more often (beta/gamma).](figures/chapter2/peaks/peak_prevalence_difference_heatmap.pdf){#fig-prevalence-scatter} width="70%"}
+The signed direction of these prevalence differences is mapped per region and band in @fig-prevalence-diff. Alpha is blue across almost every region — HD detects it more often, most strongly in posterior, limbic and temporal cortex — whereas gamma is red (iEEG more often) and delta and parts of beta (anterior insula, opercular regions) lean weakly toward iEEG. At the finer Frauscher resolution the differences collapse toward zero outside the 9-12 Hz alpha bins (blue) and the top 31.75-80 Hz interval (red), the same contrast read at narrow bandwidth.
+
+![Prevalence difference (source HD-EEG − iEEG atlas) by region and band, in the five canonical bands (A) and the 22 data-driven Frauscher intervals (B, @frauscher2018AtlasNormalIntracranial). Blue: HD detects the band more often (strong, near-uniform in alpha); red: iEEG more often (gamma throughout, with parts of delta and beta — anterior insula, opercular regions). The diverging scale is symmetric about 0 (no difference) and shared across both panels.](figures/chapter2/peaks/peak_prevalence_difference_heatmap.pdf){#fig-prevalence-diff width="70%"}
 
 
 
