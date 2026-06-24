@@ -1,0 +1,92 @@
+---
+title: "Spectral peaks: per-band prevalence, modelled power, and lobe oscillatory power"
+format:
+  typst:
+    number-sections: false
+    toc: false
+    link-citations: true
+    include-in-header:
+      - text: |
+          #show link: set text(fill: rgb("0000FF"))
+jupyter: spectral-comparison-3.14
+reference-section-title: References
+citeproc: true
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+
+def compute_bilinear_bivariate_heatmap(variable_1_matrix, variable_2_matrix):
+    # Normalize inputs to [0, 1] bounds
+    v1_min, v1_max = variable_1_matrix.min(), variable_1_matrix.max()
+    v2_min, v2_max = variable_2_matrix.min(), variable_2_matrix.max()
+    
+    v1_norm = (variable_1_matrix - v1_min) / (v1_max - v1_min) if v1_max > v1_min else np.zeros_like(variable_1_matrix)
+    v2_norm = (variable_2_matrix - v2_min) / (v2_max - v2_min) if v2_max > v2_min else np.zeros_like(variable_2_matrix)
+    
+    # Define primary RGB anchor vectors for the 4 corners
+    color_00 = np.array([0.95, 0.95, 0.95])  # Low V1, Low V2 (Light Gray)
+    color_10 = np.array([0.10, 0.60, 0.80])  # High V1, Low V2 (Cyan)
+    color_01 = np.array([0.90, 0.20, 0.50])  # Low V1, High V2 (Magenta)
+    color_11 = np.array([0.20, 0.10, 0.40])  # High V1, High V2 (Dark Purple)
+    
+    # Expand dimensions for RGB broadcasting (M, N, 1)
+    v1_dim = v1_norm[..., np.newaxis]
+    v2_dim = v2_norm[..., np.newaxis]
+    
+    # Bilinear interpolation formula
+    rgb_image_matrix = (
+        (1 - v1_dim) * (1 - v2_dim) * color_00 +
+        v1_dim * (1 - v2_dim) * color_10 +
+        (1 - v1_dim) * v2_dim * color_01 +
+        v1_dim * v2_dim * color_11
+    )
+    return rgb_image_matrix
+
+# Generate dummy monotonically increasing arrays
+axis_x = np.linspace(0, 10, 100)
+axis_y = np.linspace(0, 10, 100)
+v1_grid, v2_grid = np.meshgrid(axis_x, axis_y)
+
+heatmap_rgb = compute_bilinear_bivariate_heatmap(v1_grid, v2_grid)
+
+plt.imshow(heatmap_rgb, origin='lower')
+plt.xlabel('Variable 1')
+plt.ylabel('Variable 2')
+plt.show()
+```
+
+```{python}
+from matplotlib.colors import hsv_to_rgb
+
+def compute_hsv_bivariate_heatmap(variable_1_matrix, variable_2_matrix):
+    v1_min, v1_max = variable_1_matrix.min(), variable_1_matrix.max()
+    v2_min, v2_max = variable_2_matrix.min(), variable_2_matrix.max()
+    
+    v1_norm = (variable_1_matrix - v1_min) / (v1_max - v1_min) if v1_max > v1_min else np.zeros_like(variable_1_matrix)
+    v2_norm = (variable_2_matrix - v2_min) / (v2_max - v2_min) if v2_max > v2_min else np.zeros_like(variable_2_matrix)
+    
+    # Map Variable 1 to a restricted Hue range (e.g., 0.5 to 0.80 / Cyan to Blue)
+    hue_matrix = 0.5 + (v1_norm * 0.3)
+    # Map Variable 2 monotonically to Saturation
+    saturation_matrix = v2_norm
+    # Maintain constant Value (brightness)
+    value_matrix = np.ones_like(v1_norm) * 0.9
+    
+    hsv_image_matrix = np.stack([hue_matrix, saturation_matrix, value_matrix], axis=-1)
+    rgb_image_matrix = hsv_to_rgb(hsv_image_matrix)
+    return rgb_image_matrix
+
+heatmap_hsv_rgb = compute_hsv_bivariate_heatmap(v1_grid, v2_grid)
+
+plt.imshow(heatmap_hsv_rgb, origin='lower')
+plt.xlabel('Variable 1 (Hue Shift)')
+plt.ylabel('Variable 2 (Saturation)')
+plt.show()
+```

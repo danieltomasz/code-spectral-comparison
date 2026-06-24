@@ -151,20 +151,30 @@ Jointly resolving peak amplitude and centre frequency per lobe (@fig-size-freq-l
 
 Once oscillations are modelled explicitly, peak prevalence — the fraction of a region's channels carrying at least one fitted peak in a band — diverges sharply between modalities (@fig-peak-prevalence). Source HD-EEG is dominated by alpha: mean prevalence across regions is 0.63 in alpha but only 0.11 in theta, 0.05 in gamma and 0.01 in delta. The iEEG atlas is broader, with substantial beta (0.40), gamma (0.26) and alpha (0.24) prevalence. The difference map (HD − iEEG) is strongly positive in alpha — HD detects alpha peaks far more often, especially in posterior regions — and negative across beta and gamma, where iEEG detects high-frequency peaks that the source fit does not recover.
 
-Cross-modal agreement of the regional prevalence *pattern* (Spearman across the 38 bilateral regions) is confined to the low and mid bands: alpha $\rho = 0.60$ and beta $\rho = 0.47$, against delta $\rho = 0.04$, theta $\rho = -0.07$ and gamma $\rho = -0.25$ (@fig-prevalence-scatter). In alpha the points sit above the identity line — HD detects alpha in more regions than iEEG — yet the two modalities still rank regions consistently. This mirrors the uncorrected relative-band-power result (alpha strongest, gamma anti-correlated), now with the aperiodic background modelled out rather than carried in the power.
 
 Because modelled power exists only where a peak is fitted, prevalence is also the peak-detection rate and must be read alongside the amplitude and centre-frequency descriptors. Mean peaks per channel were similar across modalities (iEEG 1.45, HD 1.37 under the main settings), but 99.7% of iEEG channels passed the $R^2 > 0.9$ screen against only 74.0% of HD channels, with the missing HD peaks concentrated in the high-frequency bands where the source spectrum is flattest.
 
 ![Per-band peak prevalence by region and modality (specparam peaks, BIC-selected aperiodic mode). Regions are grouped by lobe; cell colour is the fraction of a region's channels with at least one peak in the band.](figures/chapter2/peaks/peak_prevalence_heatmap.pdf){#fig-peak-prevalence width="100%" column="page"}
+
+
+
+
+The amplitude of the highest peak per band (median across the channels that carry a peak) is not redundant with prevalence. In HD-EEG the largest modelled power sits in posterior alpha, matching the prevalence pattern. In iEEG, by contrast, amplitude is spread across bands and regions with no single dominant band — the tallest peaks fall in scattered delta, theta and alpha regions rather than tracking the broad beta detection of the prevalence map (@fig-modelled-power).
+
+
+
+![Modelled band power by region and modality: median amplitude (log-power height above the aperiodic component) of the highest peak in each band, over channels with a detected peak.](figures/chapter2/peaks/modelled_power_heatmap.pdf){#fig-modelled-power width="100%" column="page"}
+
+
+### Cross modal agreement 
+
+Cross-modal agreement of the regional prevalence *pattern* (Spearman across the 38 bilateral regions) is confined to the low and mid bands: alpha $\rho = 0.60$ and beta $\rho = 0.47$, against delta $\rho = 0.04$, theta $\rho = -0.07$ and gamma $\rho = -0.25$ (@fig-prevalence-scatter). In alpha the points sit above the identity line — HD detects alpha in more regions than iEEG — yet the two modalities still rank regions consistently. This mirrors the uncorrected relative-band-power result (alpha strongest, gamma anti-correlated), now with the aperiodic background modelled out rather than carried in the power.
 
 ![Prevalence difference (source HD-EEG − iEEG atlas). Blue: HD detects the band more often (strong in alpha); red: iEEG more often (beta/gamma).](figures/chapter2/peaks/peak_prevalence_difference_heatmap.pdf){#fig-prevalence-diff width="70%"}
 
 
 #### Modelled power
 
-The amplitude of the highest peak per band (median across the channels that carry a peak) is not redundant with prevalence. In HD-EEG the largest modelled power sits in posterior alpha, matching the prevalence pattern. In iEEG, by contrast, amplitude is spread across bands and regions with no single dominant band — the tallest peaks fall in scattered delta, theta and alpha regions rather than tracking the broad beta detection of the prevalence map (@fig-modelled-power).
-
-![Modelled band power by region and modality: median amplitude (log-power height above the aperiodic component) of the highest peak in each band, over channels with a detected peak.](figures/chapter2/peaks/modelled_power_heatmap.pdf){#fig-modelled-power width="100%" column="page"}
 
 
 

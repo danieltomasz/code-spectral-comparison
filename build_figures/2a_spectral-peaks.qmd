@@ -385,6 +385,91 @@ prevalence_fig
 ![Per-band peak prevalence by region and modality (specparam peaks, BIC-selected aperiodic mode). Regions are grouped by lobe; cell colour is the fraction of a region's channels with at least one peak in the band.](figures/chapter2/peaks/peak_prevalence_heatmap.pdf){#fig-peak-prevalence width="100%" column="page"}
 
 ```{python}
+#| label: build-prevalence-frauscher
+# Same peak prevalence, with the 22 data-driven Frauscher intervals beside the
+# canonical bands (twin of the aperiodic-removed power heatmap
+# @fig-relpower-heatmaps-corrected in 1b_overlap_in_bands): iEEG (top, A-B) over
+# HD-EEG (bottom, C-D), reusing overlap_heatmap_grid / plot_overlap_frauscher_heatmap.
+from pesco.experimental.facets import overlap_heatmap_grid
+from pesco.experimental.peak_testing import cutintervals
+from pesco.experimental.clustering import Band
+
+# Frauscher's 22 paper intervals, as defined in 1b_overlap_in_bands.
+_, _fb_edges = cutintervals(np.array([FREQ_RANGE[0], FREQ_RANGE[1]]))
+FRAUSCHER_BANDS = [
+    Band(float(lo), float(hi), f"{lo:g}-{hi:g}", "", float((lo + hi) / 2))
+    for lo, hi in zip(_fb_edges[:-1], _fb_edges[1:])
+]
+
+
+def region_band_prevalence_wide(all_peaks, channel_band, bands):
+    """region x band peak prevalence per modality, for any band scheme.
+
+    Prevalence is the fraction of a region's channels with at least one fitted
+    peak whose centre frequency falls in the band. The denominator is the
+    region's full channel set (channels with no peak count as 0), so the
+    canonical scheme reproduces ``region_prevalence_power``. Returns one
+    region x band frame per dataset.
+    """
+    names = [b.name for b in bands]
+    pk = all_peaks.assign(sb=all_peaks["CF"].map(lambda cf: assign_band(cf, bands)))
+    has = pk.dropna(subset=["sb"])[["dataset", "channel", "sb"]].drop_duplicates()
+    has["has_peak"] = True
+    chans = channel_band[["dataset", "channel", "region"]].drop_duplicates()
+    grid = (
+        chans.assign(key=1)
+        .merge(pd.DataFrame({"sb": names, "key": 1}), on="key")
+        .drop(columns="key")
+        .merge(has, on=["dataset", "channel", "sb"], how="left")
+    )
+    grid["has_peak"] = grid["has_peak"].notna()
+    prev = (
+        grid.groupby(["dataset", "region", "sb"], observed=True)["has_peak"]
+        .mean()
+        .reset_index(name="prevalence")
+    )
+    return {
+        ds: prev[prev["dataset"] == ds]
+        .pivot(index="region", columns="sb", values="prevalence")
+        .reindex(columns=names)
+        for ds in ["iEEG atlas", "source HD-EEG"]
+    }
+
+
+canon = region_band_prevalence_wide(all_peaks, channel_band, list(EEG_BANDS))
+canon = {ds: df.rename(columns=BAND_LABELS) for ds, df in canon.items()}  # δ θ α β γ
+frausch = region_band_prevalence_wide(all_peaks, channel_band, FRAUSCHER_BANDS)
+
+prev_regions = sorted(set(canon["iEEG atlas"].index) & set(canon["source HD-EEG"].index))
+prevalence_panels = [
+    {"df": canon["iEEG atlas"].reindex(prev_regions), "title": "iEEG · canonical", "xlabel": "Frequency band"},
+    {"df": frausch["iEEG atlas"].reindex(prev_regions), "title": "iEEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+    {"df": canon["source HD-EEG"].reindex(prev_regions), "title": "HD-EEG · canonical", "xlabel": "Frequency band"},
+    {"df": frausch["source HD-EEG"].reindex(prev_regions), "title": "HD-EEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+]
+prevalence_fb_fig, _ = overlap_heatmap_grid(
+    prevalence_panels,
+    region_lobe_map(),
+    vmin=0.0,
+    vmax=1.0,  # prevalence is bounded [0, 1]; one shared 0-1 scale across panels
+    nrows=2,  # iEEG (top) over HD-EEG (bottom); canonical | Frauscher across cols
+    cmap="rocket_r",  # match @fig-relpower-heatmaps-corrected; near-white = low
+    cbar_label="peak prevalence",
+    row_height=0.32,
+    tick_fontsize=13,
+    ytick_fontsize=12,
+    title_fontsize=15,
+    axis_label_fontsize=12,
+)
+prevalence_fb_fig.savefig(
+    fig_dir / "peak_prevalence_heatmap_frauscher.pdf", bbox_inches="tight", dpi=300
+)
+prevalence_fb_fig
+```
+
+![Per-band peak prevalence by region and modality (specparam peaks, BIC-selected aperiodic mode), in the five canonical bands (left) and the 22 data-driven Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial), stacked iEEG (top, A-B) over HD-EEG (bottom, C-D). Cell colour is the fraction of a region's channels with at least one peak in the band, on a shared 0-1 scale. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels; the sub-1 Hz Frauscher interval is empty because peaks are fitted over 1-80 Hz.](figures/chapter2/peaks/peak_prevalence_heatmap_frauscher.pdf){#fig-peak-prevalence-frauscher width="100%" column="page"}
+
+```{python}
 #| label: build-prevalence-diff
 def plot_prevalence_difference(prevalence_pairs, region_order):
     d = prevalence_pairs.copy()
@@ -503,6 +588,74 @@ power_fig
 ```
 
 ![Modelled band power by region and modality: median amplitude (log-power height above the aperiodic component) of the highest peak in each band, over channels with a detected peak.](figures/chapter2/peaks/modelled_power_heatmap.pdf){#fig-modelled-power width="100%" column="page"}
+
+```{python}
+#| label: build-modelled-power-frauscher
+# Same modelled power, with the 22 Frauscher intervals beside the canonical
+# bands (twin of @fig-peak-prevalence-frauscher and the aperiodic-removed power
+# heatmap @fig-relpower-heatmaps-corrected): iEEG (top, A-B) over HD-EEG
+# (bottom, C-D). Reuses FRAUSCHER_BANDS / overlap_heatmap_grid from above.
+def region_band_power_wide(all_peaks, bands):
+    """region x band median modelled power per modality, for any band scheme.
+
+    Per channel, the band's modelled power is the amplitude (PW) of its highest
+    peak in the band; the regional value is the median across the channels that
+    carry a peak there (no-peak channels are absent, not zero), reproducing the
+    ``median_power`` of ``region_prevalence_power``. Returns one frame per dataset.
+    """
+    names = [b.name for b in bands]
+    pk = all_peaks.assign(sb=all_peaks["CF"].map(lambda cf: assign_band(cf, bands)))
+    pk = pk.dropna(subset=["sb"])
+    best = pk.groupby(["dataset", "channel", "region", "sb"], observed=True)["PW"].max()
+    med = (
+        best.reset_index()
+        .groupby(["dataset", "region", "sb"], observed=True)["PW"]
+        .median()
+        .reset_index(name="median_power")
+    )
+    return {
+        ds: med[med["dataset"] == ds]
+        .pivot(index="region", columns="sb", values="median_power")
+        .reindex(columns=names)
+        for ds in ["iEEG atlas", "source HD-EEG"]
+    }
+
+
+power_canon = region_band_power_wide(all_peaks, list(EEG_BANDS))
+power_canon = {ds: df.rename(columns=BAND_LABELS) for ds, df in power_canon.items()}  # δ θ α β γ
+power_frausch = region_band_power_wide(all_peaks, FRAUSCHER_BANDS)
+
+power_regions = sorted(set(power_canon["iEEG atlas"].index) & set(power_canon["source HD-EEG"].index))
+power_panels = [
+    {"df": power_canon["iEEG atlas"].reindex(power_regions), "title": "iEEG · canonical", "xlabel": "Frequency band"},
+    {"df": power_frausch["iEEG atlas"].reindex(power_regions), "title": "iEEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+    {"df": power_canon["source HD-EEG"].reindex(power_regions), "title": "HD-EEG · canonical", "xlabel": "Frequency band"},
+    {"df": power_frausch["source HD-EEG"].reindex(power_regions), "title": "HD-EEG · Frauscher", "xlabel": "Frauscher interval (Hz)"},
+]
+# Amplitude is on one scale across schemes/modalities (a peak's height is the
+# same wherever it is binned), so share a single 0-max colour scale.
+power_vmax = float(np.nanmax([np.nanmax(p["df"].to_numpy()) for p in power_panels]))
+power_fb_fig, _ = overlap_heatmap_grid(
+    power_panels,
+    region_lobe_map(),
+    vmin=0.0,
+    vmax=power_vmax,
+    nrows=2,  # iEEG (top) over HD-EEG (bottom); canonical | Frauscher across cols
+    cmap="rocket_r",  # match @fig-relpower-heatmaps-corrected; white = no peak
+    cbar_label="median modelled power",
+    row_height=0.32,
+    tick_fontsize=13,
+    ytick_fontsize=12,
+    title_fontsize=15,
+    axis_label_fontsize=12,
+)
+power_fb_fig.savefig(
+    fig_dir / "modelled_power_heatmap_frauscher.pdf", bbox_inches="tight", dpi=300
+)
+power_fb_fig
+```
+
+![Modelled band power by region and modality — median amplitude (log-power height above the aperiodic component) of the highest peak in each band, over channels with a detected peak — in the five canonical bands (left) and the 22 Frauscher intervals (right, @frauscher2018AtlasNormalIntracranial), stacked iEEG (top, A-B) over HD-EEG (bottom, C-D). One shared colour scale across panels (amplitude is scheme-independent); white cells carry no detected peak. Rows are bilateral MICCAI regions grouped by lobe, with lobe-coloured labels.](figures/chapter2/peaks/modelled_power_heatmap_frauscher.pdf){#fig-modelled-power-frauscher width="100%" column="page"}
 
 **Centre frequency and dominant rhythm.** Because canonical-band assignment is sensitive to peaks near a band edge, we also examined the fitted centre frequencies directly. The HD-EEG centre-frequency distribution is a sharp alpha mode at ~10 Hz, sitting squarely against the 8 and 13 Hz band edges, whereas iEEG peaks are broadly distributed with an additional high-gamma cluster near 70 Hz (@fig-centre-freq). The per-region dominant peak frequency — the centre frequency of the single highest-amplitude peak — is alpha-locked across almost all regions in HD-EEG but scatters into beta and gamma for several frontal and temporal regions in iEEG (@fig-dominant-dumbbell). The full per-region distribution of peak frequencies confirms a narrow posterior alpha ridge in HD against broader, multimodal iEEG ridges (@fig-region-ridges).
 

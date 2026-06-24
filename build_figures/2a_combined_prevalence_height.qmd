@@ -1,0 +1,324 @@
+---
+title: "Combined peak prevalence + height: three encodings to compare"
+format:
+  typst:
+    number-sections: false
+    toc: false
+jupyter: spectral-comparison-3.14
+execute:
+  echo: true
+  output: true
+  cache: false
+  freeze: false
+---
+
+Scratch doc to compare three ways of putting **peak prevalence** and **median
+peak height** in one heatmap, for both band schemes (canonical, Frauscher).
+Reads the cached selected-model peaks written by `2a_spectral-peaks.qmd`; no
+specparam refit. Render with `quarto render build_figures/2a_combined_prevalence_height.qmd`.
+
+```{python}
+#| label: setup
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import seaborn as sns  # registers the rocket_r colormap
+import matplotlib.pyplot as plt
+from matplotlib import cm, colors
+from matplotlib.lines import Line2D
+from matplotlib.patches import Rectangle
+from matplotlib.collections import PatchCollection
+
+from pesco.experimental.clustering import EEG_BANDS, Band
+from pesco.experimental.peak_testing import cutintervals
+from pesco.experimental.plotting import _LOBE_ORDER, _LOBE_COLORS
+from pesco.bandpower import BAND_LABELS
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+specparam_dir = PROJECT_DIR / "data/interim/specparam_model_selection"
+REGION_INFO_CSV = PROJECT_DIR / "data/Frauscher2018/RegionInformation.csv"
+fig_dir = Path("figures/chapter2/peaks")
+fig_dir.mkdir(parents=True, exist_ok=True)
+
+FREQ_RANGE = (1.0, 80.0)
+DATASETS = ["iEEG atlas", "source HD-EEG"]
+INPUT_CSV = {
+    "iEEG atlas": specparam_dir / "specparam_input_normalized_psd_ieeg.csv",
+    "source HD-EEG": specparam_dir / "specparam_input_normalized_psd_source_hd_eeg.csv",
+}
+
+
+def assign_band(cf, bands):
+    for i, b in enumerate(bands):
+        if (b.lo <= cf < b.hi) or (i == len(bands) - 1 and cf == b.hi):
+            return b.name
+    return None
+
+
+def region_lobe_map():
+    info = pd.read_csv(REGION_INFO_CSV)
+    r = info["Region name"].astype(str).str.strip().str.strip("'")
+    l = info["Lobe"].astype(str).str.strip().str.strip("'")
+    return dict(zip(r, l))
+
+
+REGION_LOBE = region_lobe_map()
+```
+
+```{python}
+#| label: load
+# Full channel set (prevalence denominator) from the specparam input metadata,
+# and the fitted peaks written by 2a_spectral-peaks.qmd.
+def load_channels(path, dataset):
+    df = pd.read_csv(path, index_col=0)
+    num = [c for c in df.columns if str(c).replace(".", "", 1).isdigit()]
+    meta = df[[c for c in df.columns if c not in num]]
+    return pd.DataFrame({
+        "dataset": dataset,
+        "channel": df.index.to_numpy(),
+        "region": meta["Region name"].astype(str).str.strip("'").to_numpy(),
+    })
+
+
+channels = pd.concat([load_channels(p, ds) for ds, p in INPUT_CSV.items()], ignore_index=True)
+all_peaks = pd.read_csv(specparam_dir / "specparam_selected_model_peaks_by_channel.csv")
+
+# Frauscher's 22 paper intervals (same as 1b_overlap_in_bands).
+_, _fb_edges = cutintervals(np.array([FREQ_RANGE[0], FREQ_RANGE[1]]))
+FRAUSCHER_BANDS = [
+    Band(float(lo), float(hi), f"{lo:g}-{hi:g}", "", float((lo + hi) / 2))
+    for lo, hi in zip(_fb_edges[:-1], _fb_edges[1:])
+]
+```
+
+```{python}
+#| label: aggregate
+def prevalence_wide(all_peaks, channels, bands):
+    """fraction of a region's channels with >=1 peak in the band (0 where none)."""
+    names = [b.name for b in bands]
+    pk = all_peaks.assign(sb=all_peaks["CF"].map(lambda cf: assign_band(cf, bands)))
+    has = pk.dropna(subset=["sb"])[["dataset", "channel", "sb"]].drop_duplicates()
+    has["has_peak"] = True
+    grid = (
+        channels.assign(key=1)
+        .merge(pd.DataFrame({"sb": names, "key": 1}), on="key").drop(columns="key")
+        .merge(has, on=["dataset", "channel", "sb"], how="left")
+    )
+    grid["has_peak"] = grid["has_peak"].notna()
+    prev = grid.groupby(["dataset", "region", "sb"], observed=True)["has_peak"].mean().reset_index(name="v")
+    return {ds: prev[prev.dataset == ds].pivot(index="region", columns="sb", values="v").reindex(columns=names) for ds in DATASETS}
+
+
+def height_wide(all_peaks, bands):
+    """median highest-peak amplitude over channels that carry a peak (NaN where none)."""
+    names = [b.name for b in bands]
+    pk = all_peaks.assign(sb=all_peaks["CF"].map(lambda cf: assign_band(cf, bands)))
+    pk = pk.dropna(subset=["sb"])
+    best = pk.groupby(["dataset", "channel", "region", "sb"], observed=True)["PW"].max()
+    med = best.reset_index().groupby(["dataset", "region", "sb"], observed=True)["PW"].median().reset_index(name="v")
+    return {ds: med[med.dataset == ds].pivot(index="region", columns="sb", values="v").reindex(columns=names) for ds in DATASETS}
+
+
+def region_order():
+    regions = set(channels[channels.dataset == DATASETS[0]].region) & set(channels[channels.dataset == DATASETS[1]].region)
+    return sorted(regions, key=lambda r: (
+        _LOBE_ORDER.index(REGION_LOBE.get(r)) if REGION_LOBE.get(r) in _LOBE_ORDER else len(_LOBE_ORDER), r))
+```
+
+```{python}
+#| label: renderers
+def _lobe_ylabels(ax, regions, top_down=True):
+    rs = regions if top_down else list(reversed(regions))
+    ax.set_yticks(range(len(rs)))
+    ax.set_yticklabels(rs, fontsize=6)
+    for t, r in zip(ax.get_yticklabels(), rs):
+        t.set_color(_LOBE_COLORS.get(REGION_LOBE.get(r), "black"))
+
+
+def bubble(prev, hgt, names, labels, scheme, fname, dot=320):
+    """size = prevalence, colour = median peak height."""
+    regions = region_order()
+    ny = len(regions)
+    hmax = float(np.nanmax([hgt[ds].reindex(regions).to_numpy() for ds in DATASETS]))
+    norm = colors.Normalize(0, hmax)
+    w = 0.42 * len(names) + 4
+    fig, axes = plt.subplots(1, 2, figsize=(2 * w, 0.32 * ny + 2), sharey=True)
+    for ax, ds in zip(axes, DATASETS):
+        P, H = prev[ds].reindex(regions).to_numpy(), hgt[ds].reindex(regions).to_numpy()
+        xs, ys, ss, cs = [], [], [], []
+        for i in range(ny):
+            for j in range(len(names)):
+                if P[i, j] and P[i, j] > 0:
+                    xs.append(j); ys.append(ny - 1 - i); ss.append(P[i, j] * dot); cs.append(H[i, j])
+        ax.scatter(xs, ys, s=ss, c=cs, cmap="rocket_r", norm=norm, edgecolor="#555", linewidth=0.3)
+        ax.set_title(ds); ax.set_xlim(-0.5, len(names) - 0.5); ax.set_ylim(-0.5, ny - 0.5)
+        ax.set_xticks(range(len(names))); ax.set_xticklabels(labels, rotation=90 if len(names) > 8 else 0, fontsize=7)
+        ax.tick_params(length=0)
+    _lobe_ylabels(axes[0], regions, top_down=False)
+    fig.colorbar(cm.ScalarMappable(norm=norm, cmap="rocket_r"), ax=axes, label="median peak height", shrink=0.5, pad=0.02)
+    leg = [Line2D([0], [0], marker="o", color="w", markerfacecolor="gray", markersize=np.sqrt(p * dot), label=f"{p:.0%}") for p in (0.25, 0.5, 0.75, 1.0)]
+    axes[1].legend(handles=leg, title="prevalence", loc="lower right", labelspacing=1.1, frameon=True, fontsize=7)
+    fig.suptitle(f"Bubble — size = prevalence, colour = peak height ({scheme})", y=1.0)
+    fig.savefig(fig_dir / fname, bbox_inches="tight", dpi=200)
+    return fig
+
+
+def square(prev, hgt, names, labels, scheme, fname):
+    """centred square per cell: side = prevalence (1 fills the cell), colour = height."""
+    regions = region_order()
+    ny, nx = len(regions), len(names)
+    hmax = float(np.nanmax([hgt[ds].reindex(regions).to_numpy() for ds in DATASETS]))
+    norm = colors.Normalize(0, hmax)
+    rocket = sns.color_palette("rocket_r", as_cmap=True)
+    # size the figure to the data so equal-aspect cells stay square with little waste
+    per = 0.3  # inches per cell
+    fig, axes = plt.subplots(1, 2, figsize=(2 * nx * per + 5, ny * per + 1.5), sharey=True)
+    for ax, ds in zip(axes, DATASETS):
+        P, H = prev[ds].reindex(regions).to_numpy(), hgt[ds].reindex(regions).to_numpy()
+        rects, fc = [], []
+        for i in range(ny):
+            for j in range(nx):
+                p = P[i, j]
+                if p and p > 0 and not np.isnan(H[i, j]):
+                    yy, s = ny - 1 - i, float(p)  # side in data units; 1 fills the 1x1 cell
+                    rects.append(Rectangle((j - s / 2, yy - s / 2), s, s))
+                    fc.append(rocket(norm(H[i, j])))
+        ax.add_collection(PatchCollection(rects, facecolors=fc, edgecolor="none"))
+        # faint cell separators so empty (prevalence 0) cells still read as a grid
+        ax.set_xticks(np.arange(-0.5, nx, 1), minor=True)
+        ax.set_yticks(np.arange(-0.5, ny, 1), minor=True)
+        ax.grid(which="minor", color="#eeeeee", linewidth=0.5)
+        ax.set_xlim(-0.5, nx - 0.5); ax.set_ylim(-0.5, ny - 0.5)
+        ax.set_title(ds); ax.set_aspect("equal")  # true squares: prevalence 1 fills the cell
+        ax.set_xticks(range(nx)); ax.set_xticklabels(labels, rotation=90 if nx > 8 else 0, fontsize=7)
+        ax.tick_params(length=0)
+    _lobe_ylabels(axes[0], regions, top_down=False)
+    fig.colorbar(cm.ScalarMappable(norm=norm, cmap="rocket_r"), ax=axes, label="median peak height", shrink=0.5, pad=0.02)
+    leg = [Line2D([0], [0], marker="s", color="w", markerfacecolor="gray", markersize=p * 14, label=f"{p:.0%}") for p in (0.25, 0.5, 0.75, 1.0)]
+    axes[1].legend(handles=leg, title="prevalence", loc="lower right", labelspacing=1.2, frameon=True, fontsize=7)
+    fig.suptitle(f"Square — side = prevalence (fills from centre), colour = peak height ({scheme})", y=1.0)
+    fig.savefig(fig_dir / fname, bbox_inches="tight", dpi=200)
+    return fig
+
+
+def alpha_heat(prev, hgt, names, labels, scheme, fname):
+    """colour = median peak height, opacity = prevalence."""
+    regions = region_order()
+    hmax = float(np.nanmax([hgt[ds].reindex(regions).to_numpy() for ds in DATASETS]))
+    norm = colors.Normalize(0, hmax)
+    rocket = sns.color_palette("rocket_r", as_cmap=True)
+    w = 0.36 * len(names) + 3.5
+    fig, axes = plt.subplots(1, 2, figsize=(2 * w, 0.32 * len(regions) + 2), sharey=True)
+    for ax, ds in zip(axes, DATASETS):
+        P, H = prev[ds].reindex(regions).to_numpy(), hgt[ds].reindex(regions).to_numpy()
+        rgba = rocket(norm(np.nan_to_num(H)))
+        rgba[..., 3] = np.where(np.isnan(H), 0.0, np.clip(np.nan_to_num(P), 0, 1))
+        ax.imshow(rgba, aspect="auto", interpolation="nearest")
+        ax.set_title(ds)
+        ax.set_xticks(range(len(names))); ax.set_xticklabels(labels, rotation=90 if len(names) > 8 else 0, fontsize=7)
+        ax.tick_params(length=0)
+    _lobe_ylabels(axes[0], regions, top_down=True)
+    fig.colorbar(cm.ScalarMappable(norm=norm, cmap="rocket_r"), ax=axes, label="median peak height", shrink=0.5, pad=0.02)
+    fig.suptitle(f"Alpha — colour = peak height, opacity = prevalence ({scheme})", y=1.0)
+    fig.savefig(fig_dir / fname, bbox_inches="tight", dpi=200)
+    return fig
+
+
+# bivariate corners: (prev, height)
+_C00 = np.array([0.92, 0.92, 0.92])   # rare & weak  -> light grey
+_C10 = np.array([0.20, 0.35, 0.55])   # common & weak -> blue
+_C01 = np.array([0.85, 0.45, 0.55])   # rare & strong -> pink
+_C11 = np.array([0.20, 0.05, 0.25])   # common & strong -> dark
+
+
+def _bivar(p, h, hmax):
+    p = np.clip(p, 0, 1)[..., None]; h = np.clip(h / hmax, 0, 1)[..., None]
+    return ((1 - p) * (1 - h) * _C00 + p * (1 - h) * _C10 + (1 - p) * h * _C01 + p * h * _C11)
+
+
+def bivariate(prev, hgt, names, labels, scheme, fname):
+    """one 2D colour: prevalence x median peak height (Stevens corner blend)."""
+    regions = region_order()
+    hmax = float(np.nanmax([hgt[ds].reindex(regions).to_numpy() for ds in DATASETS]))
+    w = 0.36 * len(names) + 3.5
+    fig, axes = plt.subplots(1, 2, figsize=(2 * w, 0.32 * len(regions) + 2), sharey=True)
+    for ax, ds in zip(axes, DATASETS):
+        P, H = prev[ds].reindex(regions).to_numpy(), hgt[ds].reindex(regions).to_numpy()
+        img = _bivar(np.nan_to_num(P), np.nan_to_num(H), hmax)
+        img[np.isnan(H)] = 1.0  # no peak -> white
+        ax.imshow(img, aspect="auto", interpolation="nearest")
+        ax.set_title(ds)
+        ax.set_xticks(range(len(names))); ax.set_xticklabels(labels, rotation=90 if len(names) > 8 else 0, fontsize=7)
+        ax.tick_params(length=0)
+    _lobe_ylabels(axes[0], regions, top_down=True)
+    n = 6
+    gx, gy = np.meshgrid(np.linspace(0, 1, n), np.linspace(0, 1, n))
+    cax = fig.add_axes([0.92, 0.42, 0.06, 0.12])
+    cax.imshow(_bivar(gx, gy, 1.0), origin="lower", aspect="auto", extent=[0, 1, 0, 1])
+    cax.set_xlabel("prevalence", fontsize=7); cax.set_ylabel("height", fontsize=7)
+    cax.set_xticks([0, 1]); cax.set_yticks([0, 1]); cax.tick_params(labelsize=6, length=0)
+    fig.suptitle(f"Bivariate — 2D colour: prevalence x peak height ({scheme})", y=1.0)
+    fig.savefig(fig_dir / fname, bbox_inches="tight", dpi=200)
+    return fig
+```
+
+```{python}
+#| label: aggregate-both
+CAN_NAMES = [b.name for b in EEG_BANDS]
+CAN_LABELS = [BAND_LABELS[n] for n in CAN_NAMES]
+FB_LABELS = [b.name for b in FRAUSCHER_BANDS]
+
+prev_can = prevalence_wide(all_peaks, channels, list(EEG_BANDS))
+hgt_can = height_wide(all_peaks, list(EEG_BANDS))
+prev_fb = prevalence_wide(all_peaks, channels, FRAUSCHER_BANDS)
+hgt_fb = height_wide(all_peaks, FRAUSCHER_BANDS)
+```
+
+## Bubble (recommended)
+
+```{python}
+#| label: fig-bubble-canonical
+bubble(prev_can, hgt_can, CAN_NAMES, CAN_LABELS, "canonical", "combined_bubble_canonical.pdf")
+```
+
+```{python}
+#| label: fig-bubble-frauscher
+bubble(prev_fb, hgt_fb, FB_LABELS, FB_LABELS, "Frauscher", "combined_bubble_frauscher.pdf", dot=180)
+```
+
+## Square (size = prevalence, fills cell from centre)
+
+```{python}
+#| label: fig-square-canonical
+square(prev_can, hgt_can, CAN_NAMES, CAN_LABELS, "canonical", "combined_square_canonical.pdf")
+```
+
+```{python}
+#| label: fig-square-frauscher
+square(prev_fb, hgt_fb, FB_LABELS, FB_LABELS, "Frauscher", "combined_square_frauscher.pdf")
+```
+
+## Alpha-modulated
+
+```{python}
+#| label: fig-alpha-canonical
+alpha_heat(prev_can, hgt_can, CAN_NAMES, CAN_LABELS, "canonical", "combined_alpha_canonical.pdf")
+```
+
+```{python}
+#| label: fig-alpha-frauscher
+alpha_heat(prev_fb, hgt_fb, FB_LABELS, FB_LABELS, "Frauscher", "combined_alpha_frauscher.pdf")
+```
+
+## Bivariate 2D colour
+
+```{python}
+#| label: fig-bivariate-canonical
+bivariate(prev_can, hgt_can, CAN_NAMES, CAN_LABELS, "canonical", "combined_bivariate_canonical.pdf")
+```
+
+```{python}
+#| label: fig-bivariate-frauscher
+bivariate(prev_fb, hgt_fb, FB_LABELS, FB_LABELS, "Frauscher", "combined_bivariate_frauscher.pdf")
+```
