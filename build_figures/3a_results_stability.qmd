@@ -1,0 +1,223 @@
+---
+title: "Ch2 §3a — Results stability (sensitivity figures, PDF)"
+author: Daniel Borek
+format: typst
+pdf-engine: typst
+jupyter: spectral-comparison-3.14
+
+execute:
+  echo: false
+  output: false
+  cache: true
+  freeze: auto
+---
+
+<!-- Builds the four sensitivity figures referenced by chapters/ch2_3a_results_stability.qmd
+     as PDFs. Merged from the archived generators h3_knee_vs_fixed.qmd,
+     h3_fitting_range.qmd and irasa.qmd; only the figures the chapter cites are
+     produced. Outputs to figures/chapter2/sensitivity/, mirroring the chapter
+     figure tree for a straight copy. -->
+
+```{python}
+#| label: setup
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+from specparam import SpectralGroupModel
+from plotnine import (
+    aes,
+    element_text,
+    facet_wrap,
+    geom_abline,
+    geom_hline,
+    geom_point,
+    geom_text,
+    ggplot,
+    labs,
+    scale_color_cmap,
+    theme,
+    theme_bw,
+)
+
+from pesco import config, store
+from pesco.io import load_sources
+from pesco.preprocess import compute_psd
+from pesco.spectral import specparam2pandas
+
+PROJECT_DIR = Path("/Users/daniel/PhD/spectral-comparison/code/")
+DB_PATH = PROJECT_DIR / "data/interim/analysis.duckdb"
+DATA_PATH_SOURCES = PROJECT_DIR / "data/Mantini2018"
+
+fig_dir = Path("figures/chapter2/sensitivity")
+fig_dir.mkdir(parents=True, exist_ok=True)
+
+H_FULL = store.params_hash(
+    config.SPECPARAM_SETTINGS, config.FREQ_RANGE, config.SELECTED_MODE
+)
+```
+
+## Knee vs fixed
+
+```{python}
+#| label: knee-vs-fixed
+con = store.open_db(DB_PATH)
+ap = store.load(con, "aperiodic", H_FULL)
+con.close()
+
+wide = ap.pivot_table(
+    index=["channel", "dataset"], columns="mode", values="exponent"
+).reset_index()
+wide.columns = ["channel", "dataset", "exp_fixed", "exp_knee"]
+knee_freq = ap.loc[ap["mode"] == "knee", ["channel", "dataset", "knee_freq"]]
+paired = wide.merge(knee_freq, on=["channel", "dataset"]).dropna(
+    subset=["exp_fixed", "exp_knee"]
+)
+paired["dataset"] = pd.Categorical(paired["dataset"], config.DATASETS, ordered=True)
+
+
+def corr_table(paired, x, y):
+    rows = []
+    for ds, g in paired.groupby("dataset", observed=True):
+        r, _ = stats.pearsonr(g[x], g[y])
+        rho, _ = stats.spearmanr(g[x], g[y])
+        rows.append({"dataset": ds, "pearson_r": round(r, 3), "spearman_rho": round(rho, 3)})
+    return pd.DataFrame(rows)
+
+
+kf_corr = corr_table(paired, "exp_fixed", "exp_knee")
+ann = kf_corr.assign(
+    label=lambda d: "r=" + d["pearson_r"].map("{:.2f}".format)
+    + "  ρ=" + d["spearman_rho"].map("{:.2f}".format),
+    x=paired.groupby("dataset", observed=True)["exp_fixed"].min().values,
+    y=paired.groupby("dataset", observed=True)["exp_knee"].max().values,
+)
+knee_vs_fixed = (
+    ggplot(paired, aes("exp_fixed", "exp_knee"))
+    + geom_abline(slope=1, intercept=0, linetype="dashed", color="#999999")
+    + geom_point(aes(color="knee_freq"), size=1.4, alpha=0.5, stroke=0)
+    + geom_text(ann, aes("x", "y", label="label"), ha="left", va="top", size=9)
+    + facet_wrap("dataset", scales="free")
+    + scale_color_cmap(cmap_name="viridis", name="knee freq (Hz)")
+    + labs(
+        x="fixed-model exponent χ",
+        y="knee-model exponent χ",
+        title="Knee vs fixed aperiodic exponent (per channel)",
+    )
+    + theme_bw()
+    + theme(figure_size=(9, 4.2), plot_title=element_text(size=11))
+)
+knee_vs_fixed.save(
+    fig_dir / "h3_knee_vs_fixed_exponent.pdf", width=9, height=4.2, dpi=150, verbose=False
+)
+```
+
+## Fitting range
+
+```{python}
+#| label: fitting-range
+con = store.open_db(DB_PATH)
+H_45 = store.find_run(con, label="range_1-45")
+full = store.load(con, "aperiodic", H_FULL).query("mode == 'fixed'")
+narrow = store.load(con, "aperiodic", H_45).query("mode == 'fixed'")
+con.close()
+
+rng = (
+    full[["channel", "dataset", "exponent"]].rename(columns={"exponent": "chi_1_80"})
+    .merge(
+        narrow[["channel", "dataset", "exponent"]].rename(columns={"exponent": "chi_1_45"}),
+        on=["channel", "dataset"],
+    )
+)
+rng["delta"] = rng["chi_1_80"] - rng["chi_1_45"]
+rng["mean_chi"] = (rng["chi_1_80"] + rng["chi_1_45"]) / 2
+rng["dataset"] = pd.Categorical(rng["dataset"], config.DATASETS, ordered=True)
+
+rng_corr = corr_table(rng.rename(columns={"chi_1_45": "x", "chi_1_80": "y"}), "x", "y")
+ann_r = rng_corr.assign(
+    label=lambda d: "r=" + d["pearson_r"].map("{:.2f}".format)
+    + "  ρ=" + d["spearman_rho"].map("{:.2f}".format),
+    x=rng.groupby("dataset", observed=True)["chi_1_45"].min().values,
+    y=rng.groupby("dataset", observed=True)["chi_1_80"].max().values,
+)
+range_scatter = (
+    ggplot(rng, aes("chi_1_45", "chi_1_80"))
+    + geom_abline(slope=1, intercept=0, linetype="dashed", color="#999999")
+    + geom_point(size=1.2, alpha=0.4, stroke=0, color="#2C7FB8")
+    + geom_text(ann_r, aes("x", "y", label="label"), ha="left", va="top", size=9)
+    + facet_wrap("dataset", scales="free")
+    + labs(
+        x="exponent χ (1-45 Hz)", y="exponent χ (1-80 Hz)",
+        title="Fitting-range agreement of the fixed exponent",
+    )
+    + theme_bw()
+    + theme(figure_size=(9, 4.2), plot_title=element_text(size=11))
+)
+range_ba = (
+    ggplot(rng, aes("mean_chi", "delta"))
+    + geom_hline(yintercept=0, color="#999999", linetype="dashed")
+    + geom_point(size=1.2, alpha=0.4, stroke=0, color="#E8546B")
+    + facet_wrap("dataset", scales="free")
+    + labs(
+        x="mean exponent  (χ₁₋₈₀ + χ₁₋₄₅)/2",
+        y="Δχ = χ₁₋₈₀ − χ₁₋₄₅",
+        title="Bland-Altman: range effect is a systematic shift",
+    )
+    + theme_bw()
+    + theme(figure_size=(9, 4.2), plot_title=element_text(size=11))
+)
+range_scatter.save(
+    fig_dir / "h3_fitting_range_scatter.pdf", width=9, height=4.2, dpi=150, verbose=False
+)
+range_ba.save(
+    fig_dir / "h3_fitting_range_bland_altman.pdf", width=9, height=4.2, dpi=150, verbose=False
+)
+```
+
+## IRASA vs specparam
+
+```{python}
+#| label: irasa-vs-specparam
+from pesco.irasa import irasa2pandas, run_irasa
+
+SPECPARAM_SETTINGS = dict(peak_width_limits=[1, 8], max_n_peaks=8, peak_threshold=3.0)
+IRASA_BAND = (2.0, 40.0)  # Nyquist-limited: band_hi * h_max(=2) < fs/2, fs=200
+
+sources_raw, sources_meta = load_sources(DATA_PATH_SOURCES)
+hd_data = sources_raw.get_data()
+hd_fs = sources_raw.info["sfreq"]
+hd_f, hd_psd = compute_psd(hd_data, hd_fs, fmin=0.5, fmax=80.0)
+hd_freqs = np.asarray(hd_f, dtype=float)
+hd_psd_mat = np.asarray(hd_psd, dtype=float)
+
+irasa_hd = run_irasa(hd_data, fs=int(hd_fs), band=IRASA_BAND)
+irasa_hd_ch = (
+    irasa2pandas(irasa_hd, fit_func="fixed")
+    .drop_duplicates("ID")[["ID", "exponent"]]
+    .rename(columns={"exponent": "exponent_irasa"})
+)
+
+fg = SpectralGroupModel(**SPECPARAM_SETTINGS, aperiodic_mode="fixed")
+fg.fit(hd_freqs, hd_psd_mat, freq_range=list(IRASA_BAND), n_jobs=1)
+sp_hd_ch = (
+    specparam2pandas(fg)
+    .drop_duplicates("ID")[["ID", "exponent"]]
+    .rename(columns={"exponent": "exponent_specparam"})
+)
+exp_cmp = sp_hd_ch.merge(irasa_hd_ch, on="ID")
+
+irasa_fig = (
+    ggplot(exp_cmp, aes("exponent_specparam", "exponent_irasa"))
+    + geom_abline(slope=1, intercept=0, linetype="dashed", color="red")
+    + geom_point(alpha=0.3)
+    + labs(
+        x="specparam exponent",
+        y="IRASA exponent",
+        title="HD-EEG aperiodic exponent: specparam vs IRASA (fixed, 2-40 Hz)",
+    )
+)
+irasa_fig.save(
+    fig_dir / "hd_exponent_specparam_vs_irasa.pdf", width=6, height=6, dpi=300, verbose=False
+)
+```

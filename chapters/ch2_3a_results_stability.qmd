@@ -17,15 +17,15 @@ with $f_k$. Colouring each channel by its fitted knee frequency (@fig-knee-vs-fi
 HD-EEG the knee is essentially absent, so $\chi$ describes the whole band in both modes; the two definitions converge, the exponents coincide (median 0.94 vs 0.93), and they track closely across channels ($r = 0.88$, $\rho = 0.92$). 
 
 
-![Knee- vs fixed-model aperiodic exponent per channel, one panel per modality (dashed line = identity). Points coloured by the fitted knee frequency. iEEG exponents diverge between modes; HD-EEG exponents coincide.](figures/chapter2/h3_knee_vs_fixed_exponent.svg){#fig-knee-vs-fixed width="100%" column="page"}
+![Knee- vs fixed-model aperiodic exponent per channel, one panel per modality (dashed line = identity). Points coloured by the fitted knee frequency. iEEG exponents diverge between modes; HD-EEG exponents coincide.](figures/chapter2/sensitivity/h3_knee_vs_fixed_exponent.pdf){#fig-knee-vs-fixed width="100%" column="page"}
 
 #### Fitting range
 
 The upper edge of the fit window matters mainly for iEEG. Narrowing the fixed-mode range from 1-80 Hz to 1-45 Hz lowered the iEEG exponent by a mean $\Delta\chi = +0.47$ (median 1.94 → 1.50), a large and consistent shift: the two estimates correlate well (Pearson $r = 0.77$, Spearman $\rho = 0.76$) but sit off the identity line (@fig-range-scatter), and the Bland-Altman plot [@bland1986StatisticalMethodsAssessing] (@fig-range-ba) shows the difference is an approximately constant positive offset rather than noise — the steeper high-frequency portion of the iEEG spectrum pulls the 1-80 Hz exponent up. This range-sensitivity is the same knee signature seen above (@fig-knee-vs-fixed): a spectrum with a genuine corner frequency has no single slope, so the fixed-mode exponent depends on which side of the knee the window emphasises. The iEEG fixed exponent is therefore a harmonised single-slope quantity, used here only for the cross-modal range comparison rather than as the primary iEEG aperiodic estimand, which is the knee exponent (@sec-aperiodic-selection). In HD-EEG the range had essentially no effect ($\Delta\chi = -0.04$; Pearson $r = 0.91$, Spearman $\rho = 0.93$), because the source spectrum is already close to a single power law over the whole band. The iEEG change  is broadly distributed across regions; HD-EEG is near zero everywhere. Cross-modal exponent comparisons must therefore hold the fit range fixed, and are only meaningful below ~45 Hz where the two modalities behave comparably.
 
-![Fitting-range agreement of the fixed exponent: χ over 1-45 Hz vs 1-80 Hz, per modality (dashed = identity).](figures/chapter2/h3_fitting_range_scatter.svg){#fig-range-scatter width="100%" column="page"}
+![Fitting-range agreement of the fixed exponent: χ over 1-45 Hz vs 1-80 Hz, per modality (dashed = identity).](figures/chapter2/sensitivity/h3_fitting_range_scatter.pdf){#fig-range-scatter width="100%" column="page"}
 
-![Bland-Altman of the range effect: mean exponent vs $\Delta\chi = \chi_{1\text{-}80} - \chi_{1\text{-}45}$. The iEEG shift is a near-constant positive offset; HD-EEG is centred on zero.](figures/chapter2/h3_fitting_range_bland_altman.svg){#fig-range-ba width="100%" column="page"}
+![Bland-Altman of the range effect: mean exponent vs $\Delta\chi = \chi_{1\text{-}80} - \chi_{1\text{-}45}$. The iEEG shift is a near-constant positive offset; HD-EEG is centred on zero.](figures/chapter2/sensitivity/h3_fitting_range_bland_altman.pdf){#fig-range-ba width="100%" column="page"}
 
 
 
@@ -35,5 +35,5 @@ As a cross-method check in HD-EEG, the specparam fixed-mode exponent (refit over
 <!-- REVIEW: "agree almost perfectly" + "essentially method-independent" — two superlatives for one r=0.97. Keep one, e.g. "agree closely (r=0.97)". -->
 
 
-![HD-EEG aperiodic exponent from specparam (fixed, 2-40 Hz) vs IRASA (2-40 Hz), one point per channel; dashed line is identity.](figures/chapter2/hd_exponent_specparam_vs_irasa.svg){#fig-irasa width="60%"}
+![HD-EEG aperiodic exponent from specparam (fixed, 2-40 Hz) vs IRASA (2-40 Hz), one point per channel; dashed line is identity.](figures/chapter2/sensitivity/hd_exponent_specparam_vs_irasa.pdf){#fig-irasa width="60%"}
 
