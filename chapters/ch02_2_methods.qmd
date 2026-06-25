@@ -116,14 +116,14 @@ Relative band power does not separate the rhythmic peak from the aperiodic backg
 
 We quantified cross-modal agreement of the regional band-power maps in two complementary ways. First, for each canonical band we correlated the per-region relative power between modalities across the 38 bilateral regions (Pearson, source HD-EEG against the iEEG atlas). We treat these correlations descriptively, for two reasons. The 38 regions are not independent observations — neighbouring regions are spatially correlated and channels are nested within subjects — so naive correlation p-values would overstate significance. And because relative band powers are compositional (the bands sum to a fixed total per channel), a correlation computed on the raw proportions is subcompositionally incoherent: its value depends on which bands are included and on the normalisation [@filzmoser2012CorrelationAnalysisCompositional], so the five per-band coefficients cannot be read as independent tests. We therefore base formal cross-modal inference on the subject-clustered bootstrap of the band-overlap (below) and on the aperiodic-separated peak descriptors (@sec-peaks).
 
-Second, we quantified cross-modal agreement directly on the unit-power spectra using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$ we treated the iEEG atlas as the reference modality and the source HD-EEG as the estimated modality. Let $\widetilde{P}^{,\text{iEEG}}_r(f)$ and $\widetilde{P}^{,\text{HD}}_r(f)$ denote the median relative PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{,\text{HD}}_r(f)$ the standard deviation of the estimated (HD-EEG) relative PSD across those channels. The bin-wise overlap is
+Second, we quantified cross-modal agreement directly on the unit-power spectra using the band-overlap metric of @afnan2023ValidatingMEGSource. Channels were pooled across hemispheres by grouping on the hemisphere-agnostic MICCAI region name, collapsing left and right ROIs into the 38 bilateral regions of the atlas. Within each region $r$ we treated the iEEG atlas as the reference modality and the source HD-EEG as the estimated modality. Let $\widetilde{P}^{\,\text{iEEG}}_r(f)$ and $\widetilde{P}^{\,\text{HD}}_r(f)$ denote the median relative PSD across the channels of region $r$ at frequency bin $f$, and $\text{SD}^{\,\text{HD}}_r(f)$ the standard deviation of the estimated (HD-EEG) relative PSD across those channels. The bin-wise overlap is
 
 $$
 \text{overlap}_r(f) =
 \begin{cases}
-    1 - \dfrac{\bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert}
+    1 - \dfrac{\bigl\lvert \widetilde{P}^{\,\text{iEEG}}_r(f) - \widetilde{P}^{\,\text{HD}}_r(f) \bigr\rvert}
               {\text{SD}^{\,\text{HD}}_r(f)},
-        & \bigl\lvert \widetilde{L}^{\,\text{iEEG}}_r(f) - \widetilde{L}^{\,\text{HD}}_r(f) \bigr\rvert
+        & \bigl\lvert \widetilde{P}^{\,\text{iEEG}}_r(f) - \widetilde{P}^{\,\text{HD}}_r(f) \bigr\rvert
           \le \text{SD}^{\,\text{HD}}_r(f) \\[2mm]
     0,  & \text{otherwise.}
 \end{cases}
